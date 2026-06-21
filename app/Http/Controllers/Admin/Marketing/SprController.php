@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Models\BankKredit;
 use App\Models\CashSale;
 use App\Models\Costumer;
 use App\Models\DetailRumah;
@@ -42,9 +43,11 @@ class SprController extends Controller
             ->with([
                 'costumer:id,nama,no_identitas,telepon',
                 'detailRumah.perumahan:id,nama_perusahaan',
+                'bankKredit:id,nama_bank,bunga_tahunan,tenor_min_bulan,tenor_max_bulan,minimal_dp_persen,biaya_provisi_persen,biaya_admin',
                 'creator:id,name',
                 'berkasCostumers.dokumen:id,kode_dokumen,nama_dokumen',
             ])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where('kode_spr', 'like', "%{$search}%")
                     ->orWhere('status', 'like', "%{$search}%")
@@ -65,6 +68,7 @@ class SprController extends Controller
             'filters' => ['search' => $search],
             'customers' => $this->customerOptions(),
             'units' => $this->unitOptions(),
+            'bankKreditOptions' => $this->bankKreditOptions(),
             'dokumenOptions' => $this->dokumenOptions(),
             'options' => [
                 'paymentOptions' => $this->paymentOptions(),
@@ -95,9 +99,11 @@ class SprController extends Controller
             ->with([
                 'costumer:id,nama,no_identitas,telepon',
                 'detailRumah.perumahan:id,nama_perusahaan',
+                'bankKredit:id,nama_bank,bunga_tahunan,tenor_min_bulan,tenor_max_bulan,minimal_dp_persen,biaya_provisi_persen,biaya_admin',
                 'creator:id,name',
                 'berkasCostumers.dokumen:id,kode_dokumen,nama_dokumen',
             ])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
             ->findOrFail($id);
 
         return Inertia::render('Admin/Marketing/Spr/Form', [
@@ -117,6 +123,9 @@ class SprController extends Controller
             'detail_rumah_id' => ['required', 'exists:detail_rumahs,id'],
             'tanggal_spr' => ['required', 'date'],
             'metode_pembayaran' => ['required', Rule::in(array_column($this->paymentOptions(), 'value'))],
+            'bank_kredit_id' => ['nullable', 'exists:bank_kredits,id'],
+            'kpr_tenor_bulan' => ['nullable', 'integer', 'min:1'],
+            'kpr_bunga_tahunan' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'harga_jual' => ['required', 'numeric', 'min:0'],
             'booking_fee' => ['nullable', 'numeric', 'min:0'],
             'booking_fee_includes_dp' => ['nullable', 'boolean'],
@@ -139,8 +148,10 @@ class SprController extends Controller
         ]);
 
         $this->validateTerminRules($validated);
+        $this->validateKprBankRules($validated);
 
         DB::transaction(function () use ($request, $validated, $leadStatus) {
+            $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
             $this->ensureUnitIsAvailable((int) $validated['detail_rumah_id']);
             $payload = $this->normalizeSprPayload($validated);
 
@@ -165,6 +176,9 @@ class SprController extends Controller
             'detail_rumah_id' => ['required', 'exists:detail_rumahs,id'],
             'tanggal_spr' => ['required', 'date'],
             'metode_pembayaran' => ['required', Rule::in(array_column($this->paymentOptions(), 'value'))],
+            'bank_kredit_id' => ['nullable', 'exists:bank_kredits,id'],
+            'kpr_tenor_bulan' => ['nullable', 'integer', 'min:1'],
+            'kpr_bunga_tahunan' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'harga_jual' => ['required', 'numeric', 'min:0'],
             'booking_fee' => ['nullable', 'numeric', 'min:0'],
             'booking_fee_includes_dp' => ['nullable', 'boolean'],
@@ -187,8 +201,10 @@ class SprController extends Controller
         ]);
 
         $this->validateTerminRules($validated);
+        $this->validateKprBankRules($validated);
 
         $spr = Spr::query()->findOrFail($id);
+        $this->abortIfCurrentMarketingCannotAccessSpr($request, $spr);
         $this->abortIfLocked($spr);
         if (! in_array($spr->status, [Spr::STATUS_MENUNGGU_MANAGER, Spr::STATUS_MENUNGGU_OWNER], true)) {
             throw ValidationException::withMessages([
@@ -196,6 +212,7 @@ class SprController extends Controller
             ]);
         }
         $this->ensureUnitIsAvailable((int) $validated['detail_rumah_id'], $spr->id);
+        $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
 
         DB::transaction(function () use ($request, $spr, $validated) {
             $payload = $this->normalizeSprPayload($validated);
@@ -219,6 +236,7 @@ class SprController extends Controller
         ]);
 
         $spr = Spr::query()->findOrFail($id);
+        $this->abortIfCurrentMarketingCannotAccessSpr($request, $spr);
         $this->abortIfLocked($spr);
 
         $spr->update(['status' => $validated['status']]);
@@ -258,6 +276,7 @@ class SprController extends Controller
                         ['spr_id' => $spr->id],
                         [
                             'kode_kpr' => $this->nextKprCode(),
+                            'bank_kredit_id' => $spr->bank_kredit_id,
                             'handled_by' => $user?->id,
                             'tanggal_pengajuan' => now()->toDateString(),
                             'nilai_pengajuan' => $spr->nilai_pengajuan_kpr,
@@ -363,6 +382,10 @@ class SprController extends Controller
             'tanggal_spr' => now()->toDateString(),
             'metode_key' => 'kpr_bank',
             'metode_pembayaran' => $this->labelFromOptions('kpr_bank', $this->paymentOptions()),
+            'bank_kredit_id' => '',
+            'bank_kredit' => '-',
+            'kpr_tenor_bulan' => '',
+            'kpr_bunga_tahunan' => '',
             'harga_jual' => 0,
             'booking_fee' => 0,
             'booking_fee_includes_dp' => false,
@@ -395,8 +418,9 @@ class SprController extends Controller
             'description' => 'Buat Surat Pemesanan Rumah dan proses approval manager serta owner sebelum masuk KPR.',
             'baseUrl' => route('admin.marketing.spr.index', absolute: false),
             'row' => $row,
-            'customers' => $this->customerOptions(),
-            'units' => $this->unitOptions(),
+            'customers' => $this->customerOptions($spr),
+            'units' => $this->unitOptions($spr),
+            'bankKreditOptions' => $this->bankKreditOptions(),
             'dokumenOptions' => $this->dokumenOptions(),
             'options' => [
                 'paymentOptions' => $this->paymentOptions(),
@@ -427,6 +451,10 @@ class SprController extends Controller
             'perumahan' => $spr->detailRumah?->perumahan?->nama_perusahaan ?? '-',
             'metode_key' => $spr->metode_pembayaran,
             'metode_pembayaran' => $this->labelFromOptions($spr->metode_pembayaran, $this->paymentOptions()),
+            'bank_kredit_id' => $spr->bank_kredit_id ? (string) $spr->bank_kredit_id : '',
+            'bank_kredit' => $spr->bankKredit?->nama_bank ?? '-',
+            'kpr_tenor_bulan' => $spr->kpr_tenor_bulan,
+            'kpr_bunga_tahunan' => $spr->kpr_bunga_tahunan,
             'harga_jual' => $spr->harga_jual,
             'booking_fee' => $spr->booking_fee,
             'booking_fee_includes_dp' => (bool) ($spr->booking_fee_includes_dp ?? false),
@@ -450,6 +478,8 @@ class SprController extends Controller
             'status_label' => $this->labelFromOptions($spr->status, $this->statusOptions()),
             'catatan' => $spr->catatan,
             'created_by' => $spr->creator?->name ?? '-',
+            'created_at' => optional($spr->created_at)->format('d/m/Y H:i'),
+            'updated_at' => optional($spr->updated_at)->format('d/m/Y H:i'),
             'record_status' => $spr->record_status ?? 'draft',
             'record_status_label' => ($spr->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
             'berkas_count' => $spr->berkasCostumers()->count(),
@@ -555,9 +585,20 @@ class SprController extends Controller
         }
     }
 
-    protected function customerOptions(): array
+    protected function customerOptions(?Spr $currentSpr = null): array
     {
         return Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))
+            ->whereDoesntHave('sprs', function (Builder $query) use ($currentSpr): void {
+                $query->where(function (Builder $query): void {
+                    $query->whereIn('status', $this->activeSprStatuses)
+                        ->orWhere(function (Builder $query): void {
+                            $query->where('status', '!=', Spr::STATUS_DITOLAK)
+                                ->whereHas('payments', fn (Builder $paymentQuery) => $paymentQuery->where('status', '!=', 'ditolak'));
+                        });
+                })
+                    ->when($currentSpr, fn (Builder $query) => $query->where('id', '!=', $currentSpr->id));
+            })
             ->select(['id', 'nama', 'no_identitas', 'telepon'])
             ->latest('id')
             ->limit(200)
@@ -573,14 +614,29 @@ class SprController extends Controller
             ->all();
     }
 
-    protected function unitOptions(): array
+    protected function unitOptions(?Spr $currentSpr = null): array
     {
         return DetailRumah::query()
             ->with(['perumahan:id,nama_perusahaan'])
+            ->whereDoesntHave('sprs', function (Builder $query) use ($currentSpr): void {
+                $query->where(function (Builder $query): void {
+                    $query->whereIn('status', $this->activeSprStatuses)
+                        ->orWhere(function (Builder $query): void {
+                            $query->where('status', '!=', Spr::STATUS_DITOLAK)
+                                ->whereHas('payments', fn (Builder $paymentQuery) => $paymentQuery->where('status', '!=', 'ditolak'));
+                        });
+                })
+                    ->when($currentSpr, fn (Builder $query) => $query->where('id', '!=', $currentSpr->id));
+            })
             ->withCount([
-                'sprs as active_spr_count' => fn (Builder $query) => $query->whereIn('status', $this->activeSprStatuses),
+                'sprs as active_spr_count' => fn (Builder $query) => $query
+                    ->whereIn('status', $this->activeSprStatuses)
+                    ->when($currentSpr, fn (Builder $query) => $query->where('id', '!=', $currentSpr->id)),
+                'sprs as paid_spr_count' => fn (Builder $query) => $query
+                    ->whereHas('payments', fn (Builder $paymentQuery) => $paymentQuery->where('status', '!=', 'ditolak'))
+                    ->when($currentSpr, fn (Builder $query) => $query->where('id', '!=', $currentSpr->id)),
             ])
-            ->select(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah', 'tipe_rumah', 'harga_jual', 'status'])
+            ->select(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah', 'tipe_rumah', 'luas_tanah', 'luas_bangunan', 'harga_jual', 'status_penjualan', 'status_pembangunan', 'status'])
             ->orderBy('kode_nlok')
             ->orderBy('nomor_rumah')
             ->limit(500)
@@ -598,10 +654,30 @@ class SprController extends Controller
                 'status_penjualan' => $rumah->status_penjualan ?? '-',
                 'status_pembangunan' => $rumah->status_pembangunan ?? '-',
                 'status' => $rumah->status,
-                'is_available' => (int) ($rumah->active_spr_count ?? 0) === 0,
-                'availability_label' => (int) ($rumah->active_spr_count ?? 0) === 0 ? 'Tersedia' : 'Sudah Ada SPR Aktif',
-                'search' => strtolower(trim(($rumah->kode_nlok ?? '').' '.($rumah->nomor_rumah ?? '').' '.($rumah->perumahan?->nama_perusahaan ?? '').' '.($rumah->status ?? '').' '.(((int) ($rumah->active_spr_count ?? 0) === 0) ? 'tersedia' : 'spr aktif'))),
+                'is_available' => (int) ($rumah->active_spr_count ?? 0) === 0 && (int) ($rumah->paid_spr_count ?? 0) === 0,
+                'availability_label' => (int) ($rumah->paid_spr_count ?? 0) > 0 ? 'Sudah Ada Pembayaran SPR' : ((int) ($rumah->active_spr_count ?? 0) === 0 ? 'Tersedia' : 'Sudah Ada SPR Aktif'),
+                'search' => strtolower(trim(($rumah->kode_nlok ?? '').' '.($rumah->nomor_rumah ?? '').' '.($rumah->perumahan?->nama_perusahaan ?? '').' '.($rumah->status ?? '').' '.(((int) ($rumah->active_spr_count ?? 0) === 0 && (int) ($rumah->paid_spr_count ?? 0) === 0) ? 'tersedia' : 'spr aktif sudah bayar'))),
             ])
+            ->all();
+    }
+
+    protected function bankKreditOptions(): array
+    {
+        return BankKredit::query()
+            ->where('status', 'aktif')
+            ->orderBy('nama_bank')
+            ->get(['id', 'nama_bank', 'bunga_tahunan', 'tenor_min_bulan', 'tenor_max_bulan', 'minimal_dp_persen', 'biaya_provisi_persen', 'biaya_admin'])
+            ->map(fn (BankKredit $bank) => [
+                'value' => (string) $bank->id,
+                'label' => $bank->nama_bank.' - '.$bank->bunga_tahunan.'% / tahun',
+                'bunga_tahunan' => (float) $bank->bunga_tahunan,
+                'tenor_min_bulan' => (int) $bank->tenor_min_bulan,
+                'tenor_max_bulan' => (int) $bank->tenor_max_bulan,
+                'minimal_dp_persen' => (float) $bank->minimal_dp_persen,
+                'biaya_provisi_persen' => (float) $bank->biaya_provisi_persen,
+                'biaya_admin' => (float) $bank->biaya_admin,
+            ])
+            ->values()
             ->all();
     }
 
@@ -680,8 +756,34 @@ class SprController extends Controller
 
     }
 
+    protected function validateKprBankRules(array $validated): void
+    {
+        if (($validated['metode_pembayaran'] ?? null) !== 'kpr_bank') {
+            return;
+        }
+
+        if (empty($validated['bank_kredit_id'])) {
+            throw ValidationException::withMessages([
+                'bank_kredit_id' => 'Metode KPR Bank wajib memilih bank kredit.',
+            ]);
+        }
+
+        $bank = BankKredit::query()->find($validated['bank_kredit_id']);
+        $tenor = (int) ($validated['kpr_tenor_bulan'] ?? $bank?->tenor_max_bulan ?? 0);
+
+        if ($bank && ($tenor < (int) $bank->tenor_min_bulan || $tenor > (int) $bank->tenor_max_bulan)) {
+            throw ValidationException::withMessages([
+                'kpr_tenor_bulan' => "Tenor {$bank->nama_bank} harus antara {$bank->tenor_min_bulan} sampai {$bank->tenor_max_bulan} bulan.",
+            ]);
+        }
+    }
+
     protected function normalizeSprPayload(array $validated): array
     {
+        $bankKredit = null;
+        if (($validated['metode_pembayaran'] ?? null) === 'kpr_bank' && ! empty($validated['bank_kredit_id'])) {
+            $bankKredit = BankKredit::query()->find($validated['bank_kredit_id']);
+        }
         $bookingFee = (float) ($validated['booking_fee'] ?? 0);
         $bookingFeeIncludesDp = (bool) ($validated['booking_fee_includes_dp'] ?? false);
         $tanggalPembayaranBookingFee = filled($validated['tanggal_pembayaran_booking_fee'] ?? null) ? $validated['tanggal_pembayaran_booking_fee'] : null;
@@ -705,6 +807,9 @@ class SprController extends Controller
             'detail_rumah_id' => $validated['detail_rumah_id'],
             'tanggal_spr' => $validated['tanggal_spr'],
             'metode_pembayaran' => $validated['metode_pembayaran'],
+            'bank_kredit_id' => $bankKredit?->id,
+            'kpr_tenor_bulan' => $bankKredit ? (int) ($validated['kpr_tenor_bulan'] ?? $bankKredit->tenor_max_bulan) : null,
+            'kpr_bunga_tahunan' => $bankKredit ? (float) ($validated['kpr_bunga_tahunan'] ?? $bankKredit->bunga_tahunan) : null,
             'harga_jual' => (float) ($validated['harga_jual'] ?? 0),
             'booking_fee' => $bookingFee,
             'booking_fee_includes_dp' => $bookingFeeIncludesDp,
@@ -776,7 +881,13 @@ class SprController extends Controller
     {
         $reserved = Spr::query()
             ->where('detail_rumah_id', $detailRumahId)
-            ->whereIn('status', $this->activeSprStatuses)
+            ->where(function (Builder $query): void {
+                $query->whereIn('status', $this->activeSprStatuses)
+                    ->orWhere(function (Builder $query): void {
+                        $query->where('status', '!=', Spr::STATUS_DITOLAK)
+                            ->whereHas('payments', fn (Builder $paymentQuery) => $paymentQuery->where('status', '!=', 'ditolak'));
+                    });
+            })
             ->when($ignoreSprId !== null, fn (Builder $query) => $query->where('id', '!=', $ignoreSprId))
             ->exists();
 
@@ -785,5 +896,37 @@ class SprController extends Controller
                 'detail_rumah_id' => 'Unit ini sudah memiliki SPR aktif, silakan pilih unit lain.',
             ]);
         }
+    }
+
+    protected function ensureCustomerCanBeUsed(Request $request, int $customerId): void
+    {
+        if (! $this->shouldScopeToCurrentMarketing($request)) {
+            return;
+        }
+
+        abort_unless(
+            Costumer::query()
+                ->whereKey($customerId)
+                ->where('created_by', $request->user()?->id)
+                ->exists(),
+            403,
+        );
+    }
+
+    protected function abortIfCurrentMarketingCannotAccessSpr(Request $request, Spr $spr): void
+    {
+        abort_if(
+            $this->shouldScopeToCurrentMarketing($request)
+            && (int) $spr->created_by !== (int) $request->user()?->id,
+            403,
+        );
+    }
+
+    protected function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
     }
 }

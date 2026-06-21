@@ -7,6 +7,7 @@ use App\Models\Costumer;
 use App\Models\MarketingLeadActivity;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -25,6 +26,7 @@ class LeadReportController extends Controller
         $activities = MarketingLeadActivity::query()
             ->with(['costumer:id,kode_costumer,nama,no_identitas,telepon,marketing_lead_source_id', 'costumer.leadSource:id,nama_sumber', 'user:id,name'])
             ->whereBetween('activity_at', [$from, $to])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->orderBy('activity_at')
             ->get();
 
@@ -32,6 +34,7 @@ class LeadReportController extends Controller
         $dailyRows = $this->buildDailyRows($activities, $statusOptions);
 
         $currentStatus = Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
             ->selectRaw('status_lead, count(*) as total')
             ->groupBy('status_lead')
             ->pluck('total', 'status_lead')
@@ -39,6 +42,7 @@ class LeadReportController extends Controller
 
         $sourceRows = Costumer::query()
             ->with('leadSource:id,nama_sumber')
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
             ->whereBetween('created_at', [$from, $to])
             ->get(['id', 'marketing_lead_source_id'])
             ->groupBy(fn (Costumer $customer) => $customer->leadSource?->nama_sumber ?? 'Tanpa Sumber')
@@ -52,6 +56,7 @@ class LeadReportController extends Controller
 
         $timeline = MarketingLeadActivity::query()
             ->with(['costumer:id,kode_costumer,nama,no_identitas,telepon', 'user:id,name'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->latest('activity_at')
             ->limit(80)
             ->get()
@@ -76,7 +81,9 @@ class LeadReportController extends Controller
             ],
             'statusOptions' => $statusOptions,
             'summary' => [
-                'total_customers' => Costumer::query()->count(),
+                'total_customers' => Costumer::query()
+                    ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+                    ->count(),
                 'activities' => $activities->count(),
                 'closing_period' => $periodStats[MarketingLeadStatusService::CLOSING]['total'] ?? 0,
                 'booking_period' => $periodStats[MarketingLeadStatusService::BOOKING_FEE]['total'] ?? 0,
@@ -162,5 +169,13 @@ class LeadReportController extends Controller
         }
 
         return $status;
+    }
+
+    private function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
     }
 }

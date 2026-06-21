@@ -39,6 +39,7 @@ class SurveyScheduleController extends Controller
                 'creator:id,name',
                 'updater:id,name',
             ])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
             ->when($search !== '', fn (Builder $query) => $query->where(function (Builder $query) use ($search): void {
                 $query->where('kode_survey', 'like', "%{$search}%")
                     ->orWhere('status', 'like', "%{$search}%")
@@ -115,6 +116,7 @@ class SurveyScheduleController extends Controller
     public function store(Request $request, MarketingLeadStatusService $leadStatus): RedirectResponse
     {
         $validated = $this->validatePayload($request);
+        $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
 
         $schedule = MarketingSurveySchedule::query()->create([
             ...$validated,
@@ -136,9 +138,12 @@ class SurveyScheduleController extends Controller
     public function update(Request $request, string $id): RedirectResponse
     {
         $leadStatus = app(MarketingLeadStatusService::class);
-        $schedule = MarketingSurveySchedule::query()->findOrFail($id);
+        $schedule = MarketingSurveySchedule::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->findOrFail($id);
         $this->abortIfLocked($schedule);
         $validated = $this->validatePayload($request);
+        $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
         $schedule->update([
             ...$validated,
             'marketing_id' => $schedule->marketing_id ?: $request->user()?->id,
@@ -157,7 +162,9 @@ class SurveyScheduleController extends Controller
     public function updateStatus(Request $request, string $id): RedirectResponse
     {
         $leadStatus = app(MarketingLeadStatusService::class);
-        $schedule = MarketingSurveySchedule::query()->findOrFail($id);
+        $schedule = MarketingSurveySchedule::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->findOrFail($id);
 
         $validated = $request->validate([
             'status' => ['required', Rule::in(array_column($this->statusOptions(), 'value'))],
@@ -188,9 +195,11 @@ class SurveyScheduleController extends Controller
         return back()->with('success', 'Status survey berhasil diperbarui.');
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(Request $request, string $id): RedirectResponse
     {
-        $schedule = MarketingSurveySchedule::query()->findOrFail($id);
+        $schedule = MarketingSurveySchedule::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->findOrFail($id);
         $this->abortIfLocked($schedule);
         $schedule->delete();
 
@@ -229,9 +238,25 @@ class SurveyScheduleController extends Controller
         };
     }
 
+    private function ensureCustomerCanBeUsed(Request $request, int $customerId): void
+    {
+        if (! $this->shouldScopeToCurrentMarketing($request)) {
+            return;
+        }
+
+        abort_unless(
+            Costumer::query()
+                ->whereKey($customerId)
+                ->where('created_by', $request->user()?->id)
+                ->exists(),
+            403,
+        );
+    }
+
     private function customerOptions(): array
     {
         return Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))
             ->latest('id')
             ->limit(300)
             ->get(['id', 'kode_costumer', 'nama', 'no_identitas', 'telepon'])
@@ -298,5 +323,13 @@ class SurveyScheduleController extends Controller
         }
 
         return $value ?? '-';
+    }
+
+    protected function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
     }
 }

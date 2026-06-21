@@ -765,7 +765,7 @@ function EditSprModal({ open, onClose, baseUrl, row, customers, units, options, 
     );
 }
 
-export default function Index({ title, description, baseUrl, rows, filters = {}, customers = [], units = [], dokumenOptions = [], options = {}, permissions = {} }) {
+export default function Index({ title, description, baseUrl, rows, filters = {}, customers = [], units = [], bankKreditOptions = [], dokumenOptions = [], options = {}, permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
 
     const submitSearch = (event) => {
@@ -843,7 +843,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                         <table className="min-w-full divide-y divide-silver-deep/60 text-xs dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
                                 <tr>
-                                    {['Kode', 'Customer', 'Unit', 'Metode', 'Harga', 'Pengajuan KPR', 'Lock', 'Status', 'Aksi'].map((column) => (
+                                    {['Kode', 'Customer', 'Unit', 'Metode', 'Bank KPR', 'Harga', 'Pengajuan KPR', 'Dibuat', 'Diupdate', 'Lock', 'Status', 'Aksi'].map((column) => (
                                         <th className={`px-4 py-3 font-extrabold ${column === 'Aksi' ? 'text-right' : ''}`} key={column}>{column}</th>
                                     ))}
                                 </tr>
@@ -855,8 +855,11 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-4 py-3 font-semibold">{row.customer}</td>
                                         <td className="px-4 py-3 font-semibold">{row.unit}</td>
                                         <td className="px-4 py-3 font-semibold">{row.metode_pembayaran}</td>
+                                        <td className="px-4 py-3 font-semibold">{row.metode_key === 'kpr_bank' ? row.bank_kredit : '-'}</td>
                                         <td className="px-4 py-3 font-semibold">{money(row.harga_jual)}</td>
                                         <td className="px-4 py-3 font-semibold">{money(row.nilai_pengajuan_kpr)}</td>
+                                        <td className="px-4 py-3 font-semibold">{row.created_at ?? '-'}</td>
+                                        <td className="px-4 py-3 font-semibold">{row.updated_at ?? '-'}</td>
                                         <td className="px-4 py-3 font-semibold">{row.record_status_label}</td>
                                         <td className="px-4 py-3 font-semibold">
                                             <div className="grid gap-2 min-w-[180px]">
@@ -915,7 +918,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                 ))}
                                 {rows.data.length === 0 && (
                                     <tr>
-                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={9}>Belum ada SPR.</td>
+                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={12}>Belum ada SPR.</td>
                                     </tr>
                                 )}
                             </tbody>

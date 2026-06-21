@@ -3,6 +3,7 @@ import {
     ClipboardList,
     LayoutDashboard,
     ReceiptText,
+    ShieldCheck,
     ShoppingCart,
 } from "lucide-react";
 
@@ -14,6 +15,17 @@ const keuanganSidebar = [
                 title: "Dashboard",
                 icon: LayoutDashboard,
                 link: "/admin/dashboard",
+            },
+            {
+                title: "Transaksi Pemasukan",
+                icon: ReceiptText,
+                items: [
+                    {
+                        title: "Konfirmasi Booking Fee & Uang Muka",
+                        icon: ShieldCheck,
+                        link: "/admin/keuangan/pembayaran-spr?tab=booking",
+                    },
+                ],
             },
             {
                 title: "Transaksi Pengeluaran",

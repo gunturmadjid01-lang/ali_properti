@@ -1,7 +1,7 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { CalendarCheck, Eye, FileUp, KeyRound, Lock, PencilLine, Plus, Search, Trash2, Unlock, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Button, Input, Modal, Textarea } from '../../../../Components/UI';
+import { Button, Dropdown, Input, Modal, Textarea } from '../../../../Components/UI';
 import AdminLayout from '../../../../Layouts/AdminLayout';
 
 function Pagination({ links = [] }) {
@@ -23,9 +23,10 @@ function Pagination({ links = [] }) {
     );
 }
 
-function MilestoneModal({ open, onClose, row, type, baseUrl }) {
+function MilestoneModal({ open, onClose, row, type, baseUrl, submissionOptions = [] }) {
     const milestone = row?.milestone;
     const form = useForm({
+        kpr_submission_id: row?.id ? String(row.id) : '',
         tanggal_proses: milestone?.tanggal_proses ?? new Date().toISOString().slice(0, 16),
         lokasi: milestone?.lokasi ?? '',
         nomor_dokumen: milestone?.nomor_dokumen ?? '',
@@ -35,22 +36,24 @@ function MilestoneModal({ open, onClose, row, type, baseUrl }) {
     });
 
     useEffect(() => {
-        if (!row) return;
+        if (!open) return;
+
         form.setData({
-            tanggal_proses: row.milestone?.tanggal_proses ?? new Date().toISOString().slice(0, 16),
-            lokasi: row.milestone?.lokasi ?? '',
-            nomor_dokumen: row.milestone?.nomor_dokumen ?? '',
-            pihak_terkait: row.milestone?.pihak_terkait ?? '',
-            catatan: row.milestone?.catatan ?? '',
+            kpr_submission_id: row?.id ? String(row.id) : '',
+            tanggal_proses: row?.milestone?.tanggal_proses ?? new Date().toISOString().slice(0, 16),
+            lokasi: row?.milestone?.lokasi ?? '',
+            nomor_dokumen: row?.milestone?.nomor_dokumen ?? '',
+            pihak_terkait: row?.milestone?.pihak_terkait ?? '',
+            catatan: row?.milestone?.catatan ?? '',
             dokumen: [],
         });
-    }, [row?.id, row?.milestone?.id]);
+    }, [open, row?.id, row?.milestone?.id]);
 
-    if (!row) return null;
+    if (!open) return null;
 
     const submit = (event) => {
         event.preventDefault();
-        const url = milestone ? `${baseUrl}/${milestone.id}` : `${baseUrl}/submission/${row.id}`;
+        const url = milestone ? `${baseUrl}/${milestone.id}` : row ? `${baseUrl}/submission/${row.id}` : baseUrl;
         const options = {
             preserveScroll: true,
             forceFormData: true,
@@ -68,20 +71,43 @@ function MilestoneModal({ open, onClose, row, type, baseUrl }) {
     };
 
     const label = type === 'akad' ? 'Akad KPR' : 'Serah Terima Unit';
+    const selectedSubmission = row ?? submissionOptions.find((option) => option.value === form.data.kpr_submission_id);
 
     return (
-        <Modal open={open} onClose={onClose} title={`${milestone ? 'Edit' : 'Input'} ${label} - ${row.kode_kpr}`} size="full">
+        <Modal open={open} onClose={onClose} title={`${milestone ? 'Edit' : 'Input'} ${label}${selectedSubmission?.kode_kpr ? ` - ${selectedSubmission.kode_kpr}` : ''}`} size="full">
             <div className="grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
                 <section className="rounded-xl border border-silver-deep/60 bg-silver-soft/60 p-5 dark:border-white/10 dark:bg-white/5">
                     <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-ink-soft">Informasi Customer</p>
-                    <h3 className="mt-2 text-xl font-extrabold">{row.customer}</h3>
-                    <div className="mt-5 grid gap-3 text-sm">
-                        <div><b>KPR:</b> {row.kode_kpr}</div>
-                        <div><b>SPR:</b> {row.kode_spr}</div>
-                        <div><b>Unit:</b> {row.unit} - {row.perumahan}</div>
-                        <div><b>Bank:</b> {row.bank}</div>
-                        <div><b>Status KPR:</b> {row.status_kpr}</div>
-                    </div>
+                    {!row && (
+                        <div className="mt-4 grid gap-2">
+                            <span className="text-sm font-extrabold text-ink/75 dark:text-white/78">Customer Siap {type === 'akad' ? 'Akad' : 'Serah Terima'}</span>
+                            <Dropdown
+                                value={form.data.kpr_submission_id}
+                                label={type === 'akad' ? 'Pilih customer status SP3K Keluar' : 'Pilih customer yang sudah akad'}
+                                options={submissionOptions}
+                                onChange={(value) => form.setData('kpr_submission_id', value)}
+                            />
+                            {form.errors.kpr_submission_id && <span className="text-xs font-bold text-red-600">{form.errors.kpr_submission_id}</span>}
+                        </div>
+                    )}
+                    {selectedSubmission ? (
+                        <>
+                            <h3 className="mt-5 text-xl font-extrabold">{selectedSubmission.customer}</h3>
+                            <div className="mt-5 grid gap-3 text-sm">
+                                <div><b>KPR:</b> {selectedSubmission.kode_kpr}</div>
+                                <div><b>SPR:</b> {selectedSubmission.kode_spr}</div>
+                                <div><b>Unit:</b> {selectedSubmission.unit} - {selectedSubmission.perumahan}</div>
+                                <div><b>Bank:</b> {selectedSubmission.bank}</div>
+                                <div><b>Status KPR:</b> {selectedSubmission.status_kpr}</div>
+                            </div>
+                        </>
+                    ) : (
+                        <p className="mt-5 rounded-lg border border-dashed border-silver-deep/70 p-4 text-sm font-bold text-ink-soft dark:border-white/10">
+                            {submissionOptions.length === 0
+                                ? `Belum ada customer yang siap untuk ${type === 'akad' ? 'akad' : 'serah terima'}.`
+                                : 'Pilih customer terlebih dahulu.'}
+                        </p>
+                    )}
                     {milestone?.documents?.length > 0 && (
                         <div className="mt-6 grid gap-2">
                             <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-ink-soft">Dokumentasi Tersimpan</p>
@@ -123,7 +149,7 @@ function MilestoneModal({ open, onClose, row, type, baseUrl }) {
                     <Textarea className="md:col-span-2" label="Catatan" value={form.data.catatan} error={form.errors.catatan} onChange={(event) => form.setData('catatan', event.target.value)} />
                     <div className="flex justify-end gap-2 md:col-span-2">
                         <Button type="button" variant="outline" onClick={onClose}><XCircle size={16} /> Batal</Button>
-                        <Button disabled={form.processing} type="submit"><FileUp size={16} /> {form.processing ? 'Menyimpan...' : 'Simpan'}</Button>
+                        <Button disabled={form.processing || (!row && !form.data.kpr_submission_id)} type="submit"><FileUp size={16} /> {form.processing ? 'Menyimpan...' : 'Simpan'}</Button>
                     </div>
                 </form>
             </div>
@@ -162,9 +188,10 @@ function DetailModal({ row, onClose, baseUrl }) {
     );
 }
 
-export default function Index({ title, description, type, baseUrl, rows, filters = {} }) {
+export default function Index({ title, description, type, baseUrl, rows, filters = {}, submissionOptions = [] }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [formRow, setFormRow] = useState(null);
+    const [createOpen, setCreateOpen] = useState(false);
     const [detailRow, setDetailRow] = useState(null);
     const Icon = type === 'akad' ? CalendarCheck : KeyRound;
 
@@ -183,9 +210,14 @@ export default function Index({ title, description, type, baseUrl, rows, filters
             <Head title={title} />
             <div className="grid gap-6">
                 <section className="rounded-2xl border border-white/80 bg-white/80 p-6 shadow-soft dark:border-white/10 dark:bg-white/7">
-                    <div className="flex items-center gap-4">
-                        <span className="grid h-12 w-12 place-items-center rounded-xl bg-ink text-white dark:bg-white dark:text-ink"><Icon size={22} /></span>
-                        <div><h1 className="font-display text-3xl font-extrabold">{title}</h1><p className="mt-1 text-ink-soft dark:text-white/60">{description}</p></div>
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div className="flex items-center gap-4">
+                            <span className="grid h-12 w-12 place-items-center rounded-xl bg-ink text-white dark:bg-white dark:text-ink"><Icon size={22} /></span>
+                            <div><h1 className="font-display text-3xl font-extrabold">{title}</h1><p className="mt-1 text-ink-soft dark:text-white/60">{description}</p></div>
+                        </div>
+                        <Button type="button" onClick={() => setCreateOpen(true)}>
+                            <Plus size={16} /> Tambah {type === 'akad' ? 'Akad' : 'Serah Terima'}
+                        </Button>
                     </div>
                 </section>
 
@@ -225,7 +257,8 @@ export default function Index({ title, description, type, baseUrl, rows, filters
                     <Pagination links={rows.links} />
                 </section>
             </div>
-            <MilestoneModal open={Boolean(formRow)} onClose={() => setFormRow(null)} row={formRow} type={type} baseUrl={baseUrl} />
+            <MilestoneModal open={createOpen} onClose={() => setCreateOpen(false)} row={null} type={type} baseUrl={baseUrl} submissionOptions={submissionOptions} />
+            <MilestoneModal open={Boolean(formRow)} onClose={() => setFormRow(null)} row={formRow} type={type} baseUrl={baseUrl} submissionOptions={submissionOptions} />
             <DetailModal row={detailRow} onClose={() => setDetailRow(null)} baseUrl={baseUrl} />
         </>
     );

@@ -33,6 +33,7 @@ class KprMilestoneController extends Controller
                 'milestones' => fn ($query) => $query->where('jenis', $type)->with(['documents', 'creator:id,name', 'updater:id,name', 'locker:id,name']),
             ])
             ->whereNotIn('status', ['ditolak'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->when($type === KprMilestone::AKAD, fn (Builder $query) => $query->whereIn('status', ['sp3k_keluar', 'akad', 'menunggu_serah_terima', 'serah_terima_selesai']))
             ->when($type === KprMilestone::SERAH_TERIMA, fn (Builder $query) => $query->whereHas('milestones', fn (Builder $query) => $query->where('jenis', KprMilestone::AKAD)))
             ->when($search !== '', function (Builder $query) use ($search): void {
@@ -61,13 +62,31 @@ class KprMilestoneController extends Controller
             'baseUrl' => route('admin.kpr.milestone.index', $type, absolute: false),
             'filters' => ['search' => $search],
             'rows' => $rows,
+            'submissionOptions' => $this->submissionOptions($type),
         ]);
+    }
+
+    public function storeSelected(Request $request, string $type): RedirectResponse
+    {
+        $type = $this->validatedType($type);
+        $validated = $request->validate([
+            'kpr_submission_id' => ['required', 'exists:kpr_submissions,id'],
+        ]);
+
+        return $this->storeForSubmission($request, $type, (string) $validated['kpr_submission_id']);
     }
 
     public function store(Request $request, string $type, string $submissionId): RedirectResponse
     {
         $type = $this->validatedType($type);
-        $submission = KprSubmission::query()->with('spr.detailRumah')->findOrFail($submissionId);
+
+        return $this->storeForSubmission($request, $type, $submissionId);
+    }
+
+    protected function storeForSubmission(Request $request, string $type, string $submissionId): RedirectResponse
+    {
+        $type = $this->validatedType($type);
+        $submission = $this->submissionQueryFor($request)->with('spr.detailRumah')->findOrFail($submissionId);
         abort_if($type === KprMilestone::SERAH_TERIMA && ! $submission->milestones()->where('jenis', KprMilestone::AKAD)->exists(), 422, 'Akad harus dicatat sebelum serah terima.');
         abort_if($submission->milestones()->where('jenis', $type)->exists(), 422, 'Data proses ini sudah pernah dibuat.');
 
@@ -91,7 +110,7 @@ class KprMilestoneController extends Controller
     public function update(Request $request, string $type, string $id): RedirectResponse
     {
         $type = $this->validatedType($type);
-        $milestone = KprMilestone::query()->where('jenis', $type)->findOrFail($id);
+        $milestone = $this->milestoneQueryFor($request, $type)->findOrFail($id);
         abort_if($milestone->record_status === 'locked', 422, 'Data yang sudah di-lock tidak dapat diedit.');
         $validated = $this->validated($request);
 
@@ -106,10 +125,12 @@ class KprMilestoneController extends Controller
         return back()->with('success', 'Data berhasil diperbarui.');
     }
 
-    public function destroy(string $type, string $id): RedirectResponse
+    public function destroy(Request $request, string $type, string $id): RedirectResponse
     {
         $type = $this->validatedType($type);
-        $milestone = KprMilestone::query()->with(['submission.spr.detailRumah', 'documents'])->where('jenis', $type)->findOrFail($id);
+        $milestone = $this->milestoneQueryFor($request, $type)
+            ->with(['submission.spr.detailRumah', 'documents'])
+            ->findOrFail($id);
         abort_if($milestone->record_status === 'locked', 422, 'Data yang sudah di-lock tidak dapat dihapus.');
         abort_if(
             $type === KprMilestone::AKAD
@@ -137,10 +158,10 @@ class KprMilestoneController extends Controller
         return back()->with('success', 'Data berhasil dihapus.');
     }
 
-    public function destroyDocument(string $type, string $id, string $documentId): RedirectResponse
+    public function destroyDocument(Request $request, string $type, string $id, string $documentId): RedirectResponse
     {
         $type = $this->validatedType($type);
-        $milestone = KprMilestone::query()->where('jenis', $type)->findOrFail($id);
+        $milestone = $this->milestoneQueryFor($request, $type)->findOrFail($id);
         abort_if($milestone->record_status === 'locked', 422, 'Dokumen pada data locked tidak dapat dihapus.');
         $document = KprMilestoneDocument::query()->where('kpr_milestone_id', $milestone->id)->findOrFail($documentId);
         Storage::disk('public')->delete($document->path_file);
@@ -149,10 +170,10 @@ class KprMilestoneController extends Controller
         return back()->with('success', 'Dokumentasi berhasil dihapus.');
     }
 
-    public function lock(string $type, string $id): RedirectResponse
+    public function lock(Request $request, string $type, string $id): RedirectResponse
     {
         $type = $this->validatedType($type);
-        KprMilestone::query()->where('jenis', $type)->findOrFail($id)->update([
+        $this->milestoneQueryFor($request, $type)->findOrFail($id)->update([
             'record_status' => 'locked',
             'locked_at' => now(),
             'locked_by' => auth()->id(),
@@ -264,10 +285,74 @@ class KprMilestoneController extends Controller
         ];
     }
 
+    protected function submissionOptions(string $type): array
+    {
+        return KprSubmission::query()
+            ->with(['spr.costumer:id,nama,no_identitas,telepon', 'spr.detailRumah.perumahan:id,nama_perusahaan', 'bank:id,nama_bank'])
+            ->whereNotIn('status', ['ditolak'])
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', request()->user()?->id)))
+            ->whereDoesntHave('milestones', fn (Builder $query) => $query->where('jenis', $type))
+            ->when(
+                $type === KprMilestone::AKAD,
+                fn (Builder $query) => $query->where('status', 'sp3k_keluar'),
+            )
+            ->when(
+                $type === KprMilestone::SERAH_TERIMA,
+                fn (Builder $query) => $query
+                    ->whereIn('status', ['akad', 'menunggu_serah_terima'])
+                    ->whereHas('milestones', fn (Builder $query) => $query->where('jenis', KprMilestone::AKAD)),
+            )
+            ->latest('id')
+            ->get()
+            ->map(function (KprSubmission $submission): array {
+                $unit = $submission->spr?->detailRumah;
+                $unitLabel = $unit ? trim(($unit->kode_nlok ?? '').' '.($unit->nomor_rumah ?? '')) : '-';
+                $customer = $submission->spr?->costumer;
+                $label = trim(($customer?->nama ?? '-').' - '.$submission->kode_kpr.' - '.$unitLabel);
+
+                return [
+                    'value' => (string) $submission->id,
+                    'label' => $label,
+                    'kode_kpr' => $submission->kode_kpr,
+                    'kode_spr' => $submission->spr?->kode_spr ?? '-',
+                    'customer' => $customer?->nama ?? '-',
+                    'no_identitas' => $customer?->no_identitas ?? '-',
+                    'telepon' => $customer?->telepon ?? '-',
+                    'unit' => $unitLabel,
+                    'perumahan' => $unit?->perumahan?->nama_perusahaan ?? '-',
+                    'bank' => $submission->bank?->nama_bank ?? '-',
+                    'status_kpr' => $submission->status,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
     protected function validatedType(string $type): string
     {
         abort_unless(in_array($type, [KprMilestone::AKAD, KprMilestone::SERAH_TERIMA], true), 404);
 
         return $type;
+    }
+
+    protected function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
+    }
+
+    protected function submissionQueryFor(Request $request): Builder
+    {
+        return KprSubmission::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)));
+    }
+
+    protected function milestoneQueryFor(Request $request, string $type): Builder
+    {
+        return KprMilestone::query()
+            ->where('jenis', $type)
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('submission.spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)));
     }
 }

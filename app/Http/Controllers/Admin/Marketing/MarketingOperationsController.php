@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Admin\Marketing;
 use App\Http\Controllers\Controller;
 use App\Models\BerkasCostumer;
 use App\Models\Costumer;
+use App\Models\CostumerFollowUp;
 use App\Models\KprSubmission;
 use App\Models\MarketingCampaign;
 use App\Models\MarketingCommission;
 use App\Models\MarketingDocumentReview;
 use App\Models\MarketingLeadActivity;
 use App\Models\MarketingReminder;
+use App\Models\MarketingSurveySchedule;
 use App\Models\MarketingTarget;
 use App\Models\MarketingTemplate;
 use App\Models\Spr;
@@ -44,7 +46,7 @@ class MarketingOperationsController extends Controller
             'section' => $section,
             'baseUrl' => route('admin.marketing.operasional.show', $section, absolute: false),
             'data' => $this->data($request, $section),
-            'options' => $this->options(),
+            'options' => $this->options($request),
         ]);
     }
 
@@ -93,12 +95,14 @@ class MarketingOperationsController extends Controller
         return back()->with('success', 'Data berhasil dihapus.');
     }
 
-    public function completeReminder(string $id): RedirectResponse
+    public function completeReminder(Request $request, string $id): RedirectResponse
     {
-        MarketingReminder::query()->findOrFail($id)->update([
+        $reminder = $this->reminderQueryFor($request)->findOrFail($id);
+        $reminder->update([
             'status' => 'selesai',
             'completed_at' => now(),
         ]);
+        $this->syncReminderSource($reminder);
 
         return back()->with('success', 'Reminder ditandai selesai.');
     }
@@ -159,10 +163,11 @@ class MarketingOperationsController extends Controller
         return back()->with('success', "{$total} booking kedaluwarsa berhasil dilepas.");
     }
 
-    public function receipt(string $id): Response
+    public function receipt(Request $request, string $id): Response
     {
         $payment = SprPayment::query()
             ->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id', 'masterBank:id,nama_bank,nomor_rekening,nama_rekening'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->findOrFail($id);
 
         return Inertia::render('Admin/Marketing/Receipt/Show', [
@@ -183,30 +188,33 @@ class MarketingOperationsController extends Controller
     protected function data(Request $request, string $section): array
     {
         return match ($section) {
-            'dashboard' => $this->dashboardData(),
-            'pipeline' => $this->pipelineData(),
+            'dashboard' => $this->dashboardData($request),
+            'pipeline' => $this->pipelineData($request),
             'campaign' => $this->campaignData(),
-            'reminder' => $this->reminderData(),
-            'dokumen' => $this->documentData(),
-            'piutang' => $this->receivableData(),
-            'target-komisi' => $this->targetData(),
+            'reminder' => $this->reminderData($request),
+            'dokumen' => $this->documentData($request),
+            'piutang' => $this->receivableData($request),
+            'target-komisi' => $this->targetData($request),
             'template' => $this->templateData(),
         };
     }
 
-    protected function dashboardData(): array
+    protected function dashboardData(Request $request): array
     {
         $month = now()->month;
         $year = now()->year;
 
         return [
             'stats' => [
-                'lead' => Costumer::query()->count(),
-                'follow_up_due' => MarketingReminder::query()->where('status', 'menunggu')->where('remind_at', '<=', now()->addDays(3))->count(),
-                'spr_month' => Spr::query()->whereMonth('tanggal_spr', $month)->whereYear('tanggal_spr', $year)->count(),
-                'kpr_active' => KprSubmission::query()->whereNotIn('status', ['ditolak', 'serah_terima_selesai'])->count(),
-                'booking_expiring' => Spr::query()->where('status', Spr::STATUS_DISETUJUI)->whereBetween('booking_expires_at', [now(), now()->addDays(7)])->count(),
-                'overdue' => \App\Models\SprBillingSchedule::query()->whereIn('status', ['jatuh_tempo', 'sebagian'])->count(),
+                'lead' => $this->customerQueryFor($request)->count(),
+                'follow_up_due' => $this->reminderQueryFor($request)->where('status', 'menunggu')->where('remind_at', '<=', now()->addDays(3))->count(),
+                'spr_month' => $this->sprQueryFor($request)->whereMonth('tanggal_spr', $month)->whereYear('tanggal_spr', $year)->count(),
+                'kpr_active' => $this->kprQueryFor($request)->whereNotIn('status', ['ditolak', 'serah_terima_selesai'])->count(),
+                'booking_expiring' => $this->sprQueryFor($request)->where('status', Spr::STATUS_DISETUJUI)->whereBetween('booking_expires_at', [now(), now()->addDays(7)])->count(),
+                'overdue' => \App\Models\SprBillingSchedule::query()
+                    ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+                    ->whereIn('status', ['jatuh_tempo', 'sebagian'])
+                    ->count(),
             ],
             'performance' => User::query()
                 ->withCount([
@@ -214,10 +222,16 @@ class MarketingOperationsController extends Controller
                     'kprSubmissions as kpr_count' => fn (Builder $query) => $query->whereMonth('created_at', $month)->whereYear('created_at', $year),
                 ])
                 ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['marketing', 'supervisor_marketing', 'area_marketing']))
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereKey($request->user()?->id))
                 ->get(['id', 'name'])
                 ->map(fn (User $user) => ['id' => $user->id, 'name' => $user->name, 'spr' => $user->spr_count, 'kpr' => $user->kpr_count])
                 ->values(),
-            'recent' => MarketingLeadActivity::query()->with(['costumer:id,nama', 'user:id,name'])->latest('activity_at')->limit(10)->get()
+            'recent' => MarketingLeadActivity::query()
+                ->with(['costumer:id,nama', 'user:id,name'])
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+                ->latest('activity_at')
+                ->limit(10)
+                ->get()
                 ->map(fn ($row) => [
                     'id' => $row->id,
                     'customer' => $row->costumer?->nama ?? '-',
@@ -228,10 +242,10 @@ class MarketingOperationsController extends Controller
         ];
     }
 
-    protected function pipelineData(): array
+    protected function pipelineData(Request $request): array
     {
         $statuses = app(MarketingLeadStatusService::class)->statusOptions();
-        $customers = Costumer::query()
+        $customers = $this->customerQueryFor($request)
             ->with(['leadSource:id,nama_sumber', 'campaign:id,nama_campaign'])
             ->withMax('leadActivities', 'activity_at')
             ->latest('id')
@@ -267,10 +281,10 @@ class MarketingOperationsController extends Controller
         ];
     }
 
-    protected function reminderData(): array
+    protected function reminderData(Request $request): array
     {
         return [
-            'rows' => MarketingReminder::query()->with(['costumer:id,nama,telepon', 'user:id,name'])->orderByRaw("CASE WHEN status = 'menunggu' THEN 0 ELSE 1 END")->orderBy('remind_at')->get()
+            'rows' => $this->reminderQueryFor($request)->with(['costumer:id,nama,telepon', 'user:id,name'])->orderByRaw("CASE WHEN status = 'menunggu' THEN 0 ELSE 1 END")->orderBy('remind_at')->get()
                 ->map(fn (MarketingReminder $row) => [
                     ...$row->only(['id', 'costumer_id', 'user_id', 'jenis', 'judul', 'status', 'catatan']),
                     'customer' => $row->costumer?->nama ?? '-',
@@ -282,21 +296,38 @@ class MarketingOperationsController extends Controller
         ];
     }
 
-    protected function documentData(): array
+    protected function documentData(Request $request): array
     {
         $reviews = MarketingDocumentReview::query()->get()->keyBy(fn ($row) => $row->document_type.'-'.$row->document_id);
-        $sprDocuments = SprBerkasCostumer::query()->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id', 'dokumen:id,nama_dokumen'])->latest('id')->get()
+        $sprDocuments = SprBerkasCostumer::query()
+            ->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id,created_by', 'dokumen:id,nama_dokumen'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->latest('id')
+            ->get()
             ->map(fn ($row) => $this->documentRow($row, SprBerkasCostumer::class, $reviews));
-        $kprDocuments = BerkasCostumer::query()->with(['submission.spr.costumer:id,nama', 'submission:id,kode_kpr,spr_id', 'dokumen:id,nama_dokumen'])->latest('id')->get()
+        $kprDocuments = BerkasCostumer::query()
+            ->with(['submission.spr.costumer:id,nama', 'submission:id,kode_kpr,spr_id', 'dokumen:id,nama_dokumen'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('submission.spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->latest('id')
+            ->get()
             ->map(fn ($row) => $this->documentRow($row, BerkasCostumer::class, $reviews));
 
         return ['rows' => $sprDocuments->concat($kprDocuments)->sortByDesc('created_at')->values()];
     }
 
-    protected function receivableData(): array
+    protected function receivableData(Request $request): array
     {
-        $schedules = \App\Models\SprBillingSchedule::query()->with(['spr.costumer:id,nama', 'spr.detailRumah.perumahan:id,nama_perusahaan'])->orderBy('tanggal_jatuh_tempo')->get();
-        $payments = SprPayment::query()->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id', 'masterBank:id,nama_bank,nomor_rekening'])->latest('tanggal_pembayaran')->limit(100)->get();
+        $schedules = \App\Models\SprBillingSchedule::query()
+            ->with(['spr.costumer:id,nama', 'spr.detailRumah.perumahan:id,nama_perusahaan'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->orderBy('tanggal_jatuh_tempo')
+            ->get();
+        $payments = SprPayment::query()
+            ->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id,created_by', 'masterBank:id,nama_bank,nomor_rekening'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->latest('tanggal_pembayaran')
+            ->limit(100)
+            ->get();
 
         return [
             'summary' => [
@@ -331,15 +362,26 @@ class MarketingOperationsController extends Controller
         ];
     }
 
-    protected function targetData(): array
+    protected function targetData(Request $request): array
     {
         return [
-            'targets' => MarketingTarget::query()->with('user:id,name')->latest('tahun')->latest('bulan')->get()->map(fn ($row) => [
+            'targets' => MarketingTarget::query()
+                ->with('user:id,name')
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+                ->latest('tahun')
+                ->latest('bulan')
+                ->get()
+                ->map(fn ($row) => [
                 ...$row->only(['id', 'user_id', 'tahun', 'bulan', 'target_lead', 'target_survey', 'target_spr', 'target_closing', 'target_nilai_penjualan', 'catatan', 'record_status']),
                 'user' => $row->user?->name ?? '-',
                 'type' => 'target',
             ]),
-            'commissions' => MarketingCommission::query()->with(['user:id,name', 'spr:id,kode_spr'])->latest('id')->get()->map(fn ($row) => [
+            'commissions' => MarketingCommission::query()
+                ->with(['user:id,name', 'spr:id,kode_spr,created_by'])
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+                ->latest('id')
+                ->get()
+                ->map(fn ($row) => [
                 ...$row->only(['id', 'spr_id', 'user_id', 'dasar_perhitungan', 'persentase', 'nominal', 'status', 'catatan', 'record_status']),
                 'user' => $row->user?->name ?? '-',
                 'spr' => $row->spr?->kode_spr ?? '-',
@@ -355,12 +397,12 @@ class MarketingOperationsController extends Controller
         return ['rows' => MarketingTemplate::query()->latest('id')->get()];
     }
 
-    protected function options(): array
+    protected function options(Request $request): array
     {
         return [
-            'customers' => Costumer::query()->orderBy('nama')->get(['id', 'nama', 'no_identitas'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->nama} - {$row->no_identitas}"]),
+            'customers' => $this->customerQueryFor($request)->orderBy('nama')->get(['id', 'nama', 'no_identitas'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->nama} - {$row->no_identitas}"]),
             'users' => User::query()->orderBy('name')->get(['id', 'name'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->name]),
-            'sprs' => Spr::query()->with('costumer:id,nama')->where('status', Spr::STATUS_DISETUJUI)->latest('id')->get(['id', 'kode_spr', 'costumer_id', 'nilai_pengajuan_akhir', 'harga_jual', 'created_by'])->map(fn ($row) => [
+            'sprs' => $this->sprQueryFor($request)->with('costumer:id,nama')->where('status', Spr::STATUS_DISETUJUI)->latest('id')->get(['id', 'kode_spr', 'costumer_id', 'nilai_pengajuan_akhir', 'harga_jual', 'created_by'])->map(fn ($row) => [
                 'value' => (string) $row->id,
                 'label' => "{$row->kode_spr} - ".($row->costumer?->nama ?? '-'),
                 'amount' => (float) ($row->nilai_pengajuan_akhir ?: $row->harga_jual),
@@ -421,12 +463,26 @@ class MarketingOperationsController extends Controller
 
     protected function storeReminder(Request $request): void
     {
-        MarketingReminder::create($request->validate($this->reminderRules()));
+        $data = $request->validate($this->reminderRules());
+        if ($this->shouldScopeToCurrentMarketing($request)) {
+            $this->ensureCustomerCanBeUsed($request, (int) ($data['costumer_id'] ?? 0));
+            $data['user_id'] = $request->user()?->id;
+        }
+
+        MarketingReminder::create($data);
     }
 
     protected function updateReminder(Request $request, string $id): void
     {
-        MarketingReminder::query()->findOrFail($id)->update($request->validate($this->reminderRules()));
+        $reminder = $this->reminderQueryFor($request)->findOrFail($id);
+        $data = $request->validate($this->reminderRules());
+        if ($this->shouldScopeToCurrentMarketing($request)) {
+            $this->ensureCustomerCanBeUsed($request, (int) ($data['costumer_id'] ?? 0));
+            $data['user_id'] = $request->user()?->id;
+        }
+
+        $reminder->update($data);
+        $this->syncReminderSource($reminder);
     }
 
     protected function reminderRules(): array
@@ -440,6 +496,43 @@ class MarketingOperationsController extends Controller
             'status' => ['required', Rule::in(['menunggu', 'selesai', 'dibatalkan'])],
             'catatan' => ['nullable', 'string'],
         ];
+    }
+
+    protected function syncReminderSource(MarketingReminder $reminder): void
+    {
+        if (! $reminder->source_type || ! $reminder->source_id) {
+            return;
+        }
+
+        if ($reminder->source_type === CostumerFollowUp::class) {
+            CostumerFollowUp::query()
+                ->whereKey($reminder->source_id)
+                ->update([
+                    'status' => $reminder->status,
+                    'updated_by' => $reminder->updated_by ?? auth()->id(),
+                ]);
+
+            return;
+        }
+
+        if ($reminder->source_type === MarketingSurveySchedule::class) {
+            $status = match ($reminder->status) {
+                'selesai' => 'selesai',
+                'dibatalkan' => 'batal',
+                default => null,
+            };
+
+            if (! $status) {
+                return;
+            }
+
+            MarketingSurveySchedule::query()
+                ->whereKey($reminder->source_id)
+                ->update([
+                    'status' => $status,
+                    'updated_by' => $reminder->updated_by ?? auth()->id(),
+                ]);
+        }
     }
 
     protected function storeTargetOrCommission(Request $request): void
@@ -546,6 +639,56 @@ class MarketingOperationsController extends Controller
             'commission' => MarketingCommission::query()->findOrFail($id),
             default => abort(404),
         };
+    }
+
+    protected function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
+    }
+
+    protected function customerQueryFor(Request $request): Builder
+    {
+        return Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id));
+    }
+
+    protected function sprQueryFor(Request $request): Builder
+    {
+        return Spr::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id));
+    }
+
+    protected function kprQueryFor(Request $request): Builder
+    {
+        return KprSubmission::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)));
+    }
+
+    protected function reminderQueryFor(Request $request): Builder
+    {
+        return MarketingReminder::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where(function (Builder $query) use ($request): void {
+                $query->where('user_id', $request->user()?->id)
+                    ->orWhereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id));
+            }));
+    }
+
+    protected function ensureCustomerCanBeUsed(Request $request, int $customerId): void
+    {
+        if (! $this->shouldScopeToCurrentMarketing($request) || $customerId <= 0) {
+            return;
+        }
+
+        abort_unless(
+            Costumer::query()
+                ->whereKey($customerId)
+                ->where('created_by', $request->user()?->id)
+                ->exists(),
+            403,
+        );
     }
 
     protected function title(string $section): string

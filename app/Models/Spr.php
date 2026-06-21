@@ -26,6 +26,9 @@ class Spr extends Model
         'tanggal_spr',
         'booking_expires_at',
         'metode_pembayaran',
+        'bank_kredit_id',
+        'kpr_tenor_bulan',
+        'kpr_bunga_tahunan',
         'skema_bertahap',
         'harga_jual',
         'booking_fee',
@@ -49,12 +52,18 @@ class Spr extends Model
         'tanggal_jatuh_tempo_termin',
         'status',
         'alasan_batal',
+        'refund_master_bank_id',
+        'refund_transaksi_keuangan_id',
+        'refund_amount',
+        'refund_at',
         'catatan',
     ];
 
     protected $casts = [
         'tanggal_spr' => 'date',
         'booking_expires_at' => 'datetime',
+        'kpr_tenor_bulan' => 'integer',
+        'kpr_bunga_tahunan' => 'float',
         'harga_jual' => 'float',
         'booking_fee' => 'float',
         'booking_fee_includes_dp' => 'boolean',
@@ -73,6 +82,8 @@ class Spr extends Model
         'jumlah_termin' => 'integer',
         'nominal_termin' => 'float',
         'tanggal_jatuh_tempo_termin' => 'date',
+        'refund_amount' => 'float',
+        'refund_at' => 'date',
     ];
 
     public function costumer(): BelongsTo
@@ -88,6 +99,21 @@ class Spr extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function bankKredit(): BelongsTo
+    {
+        return $this->belongsTo(BankKredit::class, 'bank_kredit_id');
+    }
+
+    public function refundMasterBank(): BelongsTo
+    {
+        return $this->belongsTo(MasterBank::class, 'refund_master_bank_id');
+    }
+
+    public function refundTransaksiKeuangan(): BelongsTo
+    {
+        return $this->belongsTo(TransaksiKeuangan::class, 'refund_transaksi_keuangan_id');
     }
 
     public function approvals(): HasMany

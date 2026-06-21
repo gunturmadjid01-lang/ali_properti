@@ -36,6 +36,7 @@ class CashSaleController extends Controller
                 'handler:id,name',
                 'payments.creator:id,name',
             ])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('kode_cash', 'like', "%{$search}%")
@@ -77,6 +78,7 @@ class CashSaleController extends Controller
         $spr = Spr::query()
             ->with(['costumer', 'detailRumah.perumahan'])
             ->findOrFail($validated['spr_id']);
+        $this->abortIfCurrentMarketingCannotAccessSpr($request, $spr);
 
         abort_unless($spr->metode_pembayaran === 'cash', 422, 'SPR ini bukan transaksi cash.');
         abort_unless($spr->status === Spr::STATUS_DISETUJUI, 422, 'SPR harus sudah disetujui sebelum dibuat transaksi cash.');
@@ -112,7 +114,10 @@ class CashSaleController extends Controller
 
     public function storePayment(Request $request, string $id): RedirectResponse
     {
-        $sale = CashSale::query()->with(['spr.detailRumah.perumahan'])->findOrFail($id);
+        $sale = CashSale::query()
+            ->with(['spr.detailRumah.perumahan'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->findOrFail($id);
         $this->abortIfLocked($sale);
 
         $validated = $request->validate([
@@ -155,10 +160,12 @@ class CashSaleController extends Controller
         return back()->with('success', 'Pembayaran cash berhasil disimpan dan masuk ke kas.');
     }
 
-    public function handover(string $id): RedirectResponse
+    public function handover(Request $request, string $id): RedirectResponse
     {
         $leadStatus = app(MarketingLeadStatusService::class);
-        $sale = CashSale::query()->findOrFail($id);
+        $sale = CashSale::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->findOrFail($id);
         $this->abortIfLocked($sale);
 
         abort_unless($sale->status_pembayaran === CashSale::STATUS_LUNAS, 422, 'Serah terima hanya bisa dilakukan setelah lunas.');
@@ -224,6 +231,7 @@ class CashSaleController extends Controller
             ->with(['costumer:id,nama,no_identitas', 'detailRumah.perumahan:id,nama_perusahaan'])
             ->where('metode_pembayaran', 'cash')
             ->where('status', Spr::STATUS_DISETUJUI)
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))
             ->whereDoesntHave('cashSale')
             ->orderByDesc('id')
             ->limit(300)
@@ -336,5 +344,22 @@ class CashSaleController extends Controller
     protected function modelClass(): string
     {
         return CashSale::class;
+    }
+
+    protected function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
+    }
+
+    protected function abortIfCurrentMarketingCannotAccessSpr(Request $request, Spr $spr): void
+    {
+        abort_if(
+            $this->shouldScopeToCurrentMarketing($request)
+            && (int) $spr->created_by !== (int) $request->user()?->id,
+            403,
+        );
     }
 }

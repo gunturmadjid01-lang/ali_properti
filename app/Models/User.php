@@ -89,6 +89,26 @@ class User extends Authenticatable
         return $this->hasMany(Spr::class, 'created_by');
     }
 
+    public function costumers(): HasMany
+    {
+        return $this->hasMany(Costumer::class, 'created_by');
+    }
+
+    public function costumerFollowUps(): HasMany
+    {
+        return $this->hasMany(CostumerFollowUp::class, 'user_id');
+    }
+
+    public function surveySchedules(): HasMany
+    {
+        return $this->hasMany(MarketingSurveySchedule::class, 'marketing_id');
+    }
+
+    public function marketingReminders(): HasMany
+    {
+        return $this->hasMany(MarketingReminder::class, 'user_id');
+    }
+
     public function kprSubmissions(): HasMany
     {
         return $this->hasMany(KprSubmission::class, 'handled_by');

@@ -18,6 +18,7 @@ class CostumerFollowUp extends Model
         'metode_follow_up',
         'status_serius',
         'progress_kemampuan',
+        'status',
         'catatan',
         'rencana_follow_up_at',
     ];

@@ -20,9 +20,9 @@ import {
     WalletCards,
 } from "lucide-react";
 
-const marketingSidebar = [
+const supervisorMarketingSidebar = [
     {
-        title: "Menu Marketing",
+        title: "Menu Supervisor Marketing",
         items: [
             {
                 title: "Dashboard",
@@ -33,7 +33,6 @@ const marketingSidebar = [
                 title: "Tahap 1 - Lead",
                 icon: Users,
                 items: [
-                    // Supervisor marketing: master sumber lead sebaiknya dikontrol level supervisor.
                     {
                         title: "Sumber Lead",
                         icon: Share2,
@@ -44,7 +43,6 @@ const marketingSidebar = [
                         icon: UserPlus,
                         link: "/admin/marketing/calon-konsumen",
                     },
-                    // Supervisor marketing: laporan lead dipakai untuk evaluasi performa tim.
                     {
                         title: "Laporan Lead",
                         icon: BarChart3,
@@ -122,7 +120,7 @@ const marketingSidebar = [
                 ],
             },
             {
-                title: "Tools Closing",
+                title: "Stock & Pricing",
                 icon: Target,
                 items: [
                     {
@@ -140,47 +138,32 @@ const marketingSidebar = [
                         icon: Banknote,
                         link: "/admin/marketing/tools/simulasi-pembayaran",
                     },
-                    {
-                        title: "Riwayat Komunikasi Customer",
-                        icon: MessagesSquare,
-                        link: "/admin/marketing/tools/riwayat-komunikasi",
-                    },
-                    {
-                        title: "Hot Lead / Prioritas Lead",
-                        icon: BarChart3,
-                        link: "/admin/marketing/tools/hot-lead",
-                    },
                 ],
             },
             {
                 title: "Operasional Marketing",
                 icon: KanbanSquare,
                 items: [
-                    // Supervisor marketing: pipeline semua prospek adalah area monitoring tim.
                     {
                         title: "Pipeline Marketing",
                         icon: KanbanSquare,
                         link: "/admin/marketing/operasional/pipeline",
                     },
-                    // Supervisor marketing: campaign mengatur target, channel, dan anggaran promosi.
                     {
                         title: "Campaign & Promosi",
                         icon: Megaphone,
                         link: "/admin/marketing/operasional/campaign",
                     },
-                    // Supervisor marketing: untuk marketing biasa idealnya hanya reminder milik sendiri.
                     {
                         title: "Reminder Follow Up",
                         icon: BellRing,
                         link: "/admin/marketing/operasional/reminder",
                     },
-                    // Supervisor marketing: validasi berkas adalah proses review/approval dokumen.
                     {
                         title: "Validasi Berkas",
                         icon: FileCheck2,
                         link: "/admin/marketing/operasional/dokumen",
                     },
-                    // Supervisor marketing: template komunikasi sebaiknya dijaga agar standar pesan konsisten.
                     {
                         title: "Template Komunikasi",
                         icon: MessagesSquare,
@@ -192,29 +175,60 @@ const marketingSidebar = [
                 title: "Kontrol Marketing",
                 icon: BarChart3,
                 items: [
-                    // Supervisor marketing: dashboard performa berisi evaluasi kinerja tim.
+                    {
+                        title: "Distribusi Lead",
+                        icon: Share2,
+                        link: "/admin/marketing/tools/distribusi-lead",
+                    },
+                    {
+                        title: "Monitoring Aktivitas Marketing",
+                        icon: BellRing,
+                        link: "/admin/marketing/tools/monitoring-aktivitas",
+                    },
+                    {
+                        title: "Approval Diskon / Promo",
+                        icon: ReceiptText,
+                        link: "/admin/marketing/tools/approval-diskon",
+                    },
                     {
                         title: "Dashboard Performa",
                         icon: BarChart3,
                         link: "/admin/marketing/operasional/dashboard",
                     },
-                    // Supervisor marketing: laporan pipeline dipakai untuk analisis konversi.
                     {
                         title: "Laporan Pipeline",
                         icon: KanbanSquare,
                         link: "/admin/marketing/laporan-pipeline",
                     },
-                    // Supervisor marketing: tagihan dan kwitansi menyentuh piutang/pembayaran.
                     {
                         title: "Tagihan & Kwitansi",
                         icon: WalletCards,
                         link: "/admin/marketing/operasional/piutang",
                     },
-                    // Supervisor marketing: target KPI dan komisi tidak perlu dikelola marketing biasa.
                     {
                         title: "Target KPI & Komisi",
                         icon: Target,
                         link: "/admin/marketing/operasional/target-komisi",
+                    },
+                    {
+                        title: "Target per Marketing",
+                        icon: Target,
+                        link: "/admin/marketing/operasional/target-komisi",
+                    },
+                    {
+                        title: "Evaluasi Campaign",
+                        icon: Megaphone,
+                        link: "/admin/marketing/operasional/campaign",
+                    },
+                    {
+                        title: "Aging Lead",
+                        icon: KanbanSquare,
+                        link: "/admin/marketing/tools/aging-lead",
+                    },
+                    {
+                        title: "Leaderboard Sales",
+                        icon: BarChart3,
+                        link: "/admin/marketing/tools/leaderboard-sales",
                     },
                 ],
             },
@@ -227,4 +241,4 @@ const marketingSidebar = [
     },
 ];
 
-export default marketingSidebar;
+export default supervisorMarketingSidebar;

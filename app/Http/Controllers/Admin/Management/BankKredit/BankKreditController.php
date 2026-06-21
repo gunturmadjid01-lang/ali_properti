@@ -42,6 +42,9 @@ class BankKreditController extends Controller
             'columns' => [
                 ['key' => 'kode_bank', 'label' => 'Kode Bank'],
                 ['key' => 'nama_bank', 'label' => 'Nama Bank'],
+                ['key' => 'bunga_tahunan', 'label' => 'Bunga %'],
+                ['key' => 'tenor_max_bulan', 'label' => 'Tenor Maks'],
+                ['key' => 'minimal_dp_persen', 'label' => 'Min DP %'],
                 ['key' => 'nama_pic', 'label' => 'PIC'],
                 ['key' => 'telepon_pic', 'label' => 'Telepon PIC'],
                 ['key' => 'record_status', 'label' => 'Lock'],
@@ -49,6 +52,12 @@ class BankKreditController extends Controller
             ],
             'fields' => [
                 ['name' => 'nama_bank', 'label' => 'Nama Bank', 'type' => 'text'],
+                ['name' => 'bunga_tahunan', 'label' => 'Bunga Tahunan (%)', 'type' => 'number'],
+                ['name' => 'tenor_min_bulan', 'label' => 'Tenor Minimal (Bulan)', 'type' => 'number'],
+                ['name' => 'tenor_max_bulan', 'label' => 'Tenor Maksimal (Bulan)', 'type' => 'number'],
+                ['name' => 'minimal_dp_persen', 'label' => 'Minimal DP (%)', 'type' => 'number'],
+                ['name' => 'biaya_provisi_persen', 'label' => 'Biaya Provisi (%)', 'type' => 'number'],
+                ['name' => 'biaya_admin', 'label' => 'Biaya Admin', 'type' => 'number'],
                 ['name' => 'nama_pic', 'label' => 'Nama PIC', 'type' => 'text'],
                 ['name' => 'telepon_pic', 'label' => 'Telepon PIC', 'type' => 'text'],
                 ['name' => 'email_pic', 'label' => 'Email PIC', 'type' => 'email'],
@@ -95,6 +104,12 @@ class BankKreditController extends Controller
     {
         return $request->validate([
             'nama_bank' => ['required', 'string', 'max:255'],
+            'bunga_tahunan' => ['required', 'numeric', 'min:0', 'max:100'],
+            'tenor_min_bulan' => ['required', 'integer', 'min:1'],
+            'tenor_max_bulan' => ['required', 'integer', 'min:1', 'gte:tenor_min_bulan'],
+            'minimal_dp_persen' => ['required', 'numeric', 'min:0', 'max:100'],
+            'biaya_provisi_persen' => ['required', 'numeric', 'min:0', 'max:100'],
+            'biaya_admin' => ['nullable', 'numeric', 'min:0'],
             'nama_pic' => ['nullable', 'string', 'max:255'],
             'telepon_pic' => ['nullable', 'string', 'max:255'],
             'email_pic' => ['nullable', 'email', 'max:255'],

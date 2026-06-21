@@ -24,6 +24,7 @@ class FollowUpController extends Controller
 
         $followUps = CostumerFollowUp::query()
             ->with(['costumer:id,kode_costumer,nama,no_identitas,telepon,email,alamat,pekerjaan', 'user:id,name'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('metode_follow_up', 'like', "%{$search}%")
@@ -54,6 +55,8 @@ class FollowUpController extends Controller
                 'status_serius' => $followUp->status_serius ? 'Serius' : 'Belum Serius',
                 'progress_key' => $followUp->progress_kemampuan,
                 'progress_kemampuan' => $this->labelFromOptions($followUp->progress_kemampuan, $this->progressOptions()),
+                'status_key' => $followUp->status ?? 'selesai',
+                'status_label' => $this->labelFromOptions($followUp->status ?? 'selesai', $this->statusOptions()),
                 'catatan' => $followUp->catatan,
                 'rencana_follow_up_at' => optional($followUp->rencana_follow_up_at)->format('Y-m-d'),
                 'input_oleh' => $followUp->user?->name ?? '-',
@@ -74,6 +77,7 @@ class FollowUpController extends Controller
                 'methodOptions' => $this->methodOptions(),
                 'seriousOptions' => $this->seriousOptions(),
                 'progressOptions' => $this->progressOptions(),
+                'statusOptions' => $this->statusOptions(),
             ],
         ]);
     }
@@ -86,9 +90,12 @@ class FollowUpController extends Controller
             'metode_follow_up' => ['required', Rule::in(array_column($this->methodOptions(), 'value'))],
             'status_serius' => ['required', 'boolean'],
             'progress_kemampuan' => ['required', Rule::in(array_column($this->progressOptions(), 'value'))],
+            'status' => ['required', Rule::in(array_column($this->statusOptions(), 'value'))],
             'catatan' => ['nullable', 'string'],
             'rencana_follow_up_at' => ['nullable', 'date'],
         ]);
+
+        $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
 
         CostumerFollowUp::create([
             ...$validated,
@@ -109,12 +116,16 @@ class FollowUpController extends Controller
             'metode_follow_up' => ['required', Rule::in(array_column($this->methodOptions(), 'value'))],
             'status_serius' => ['required', 'boolean'],
             'progress_kemampuan' => ['required', Rule::in(array_column($this->progressOptions(), 'value'))],
+            'status' => ['required', Rule::in(array_column($this->statusOptions(), 'value'))],
             'catatan' => ['nullable', 'string'],
             'rencana_follow_up_at' => ['nullable', 'date'],
         ]);
 
-        $row = CostumerFollowUp::query()->findOrFail($id);
+        $row = CostumerFollowUp::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+            ->findOrFail($id);
         $this->abortIfLocked($row);
+        $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
 
         $row->update([
             ...$validated,
@@ -126,9 +137,11 @@ class FollowUpController extends Controller
         return back()->with('success', 'Follow up customer berhasil diperbarui.');
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(Request $request, string $id): RedirectResponse
     {
-        $row = CostumerFollowUp::query()->findOrFail($id);
+        $row = CostumerFollowUp::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+            ->findOrFail($id);
         $this->abortIfLocked($row);
         $row->delete();
 
@@ -138,6 +151,7 @@ class FollowUpController extends Controller
     protected function customerOptions(): array
     {
         return Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))
             ->select(['id', 'kode_costumer', 'nama', 'no_identitas', 'telepon', 'email', 'alamat', 'pekerjaan'])
             ->latest('id')
             ->limit(200)
@@ -188,6 +202,15 @@ class FollowUpController extends Controller
         ];
     }
 
+    protected function statusOptions(): array
+    {
+        return [
+            ['value' => 'menunggu', 'label' => 'Menunggu'],
+            ['value' => 'selesai', 'label' => 'Selesai'],
+            ['value' => 'dibatalkan', 'label' => 'Dibatalkan'],
+        ];
+    }
+
     protected function labelFromOptions(?string $value, array $options): string
     {
         foreach ($options as $option) {
@@ -206,8 +229,31 @@ class FollowUpController extends Controller
             : MarketingLeadStatusService::DIHUBUNGI;
     }
 
+    protected function ensureCustomerCanBeUsed(Request $request, int $customerId): void
+    {
+        if (! $this->shouldScopeToCurrentMarketing($request)) {
+            return;
+        }
+
+        abort_unless(
+            Costumer::query()
+                ->whereKey($customerId)
+                ->where('created_by', $request->user()?->id)
+                ->exists(),
+            403,
+        );
+    }
+
     protected function modelClass(): string
     {
         return CostumerFollowUp::class;
+    }
+
+    protected function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
     }
 }

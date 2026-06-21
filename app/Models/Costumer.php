@@ -14,6 +14,8 @@ class Costumer extends Model
 
     protected $fillable = [
         'kode_costumer',
+        'created_by',
+        'updated_by',
         'marketing_lead_source_id',
         'marketing_campaign_id',
         'status_lead',
@@ -83,5 +85,15 @@ class Costumer extends Model
     public function reminders(): HasMany
     {
         return $this->hasMany(MarketingReminder::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function updater(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'updated_by');
     }
 }

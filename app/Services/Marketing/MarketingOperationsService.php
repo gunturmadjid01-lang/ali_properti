@@ -49,6 +49,11 @@ class MarketingOperationsService
             ->when($userId, fn ($query) => $query->where('user_id', $userId))
             ->get()
             ->each(function (CostumerFollowUp $row): void {
+                $existing = MarketingReminder::query()
+                    ->where('source_type', CostumerFollowUp::class)
+                    ->where('source_id', $row->id)
+                    ->first();
+
                 MarketingReminder::query()->updateOrCreate(
                     ['source_type' => CostumerFollowUp::class, 'source_id' => $row->id],
                     [
@@ -57,7 +62,7 @@ class MarketingOperationsService
                         'jenis' => 'follow_up',
                         'judul' => 'Follow up customer berikutnya',
                         'remind_at' => Carbon::parse($row->rencana_follow_up_at)->startOfDay()->addHours(9),
-                        'status' => 'menunggu',
+                        'status' => $existing?->status ?? 'menunggu',
                         'catatan' => $row->catatan,
                     ],
                 );
@@ -68,6 +73,14 @@ class MarketingOperationsService
             ->when($userId, fn ($query) => $query->where('marketing_id', $userId))
             ->get()
             ->each(function (MarketingSurveySchedule $row): void {
+                $existing = MarketingReminder::query()
+                    ->where('source_type', MarketingSurveySchedule::class)
+                    ->where('source_id', $row->id)
+                    ->first();
+                $status = in_array($row->status, ['selesai', 'batal'], true)
+                    ? 'selesai'
+                    : ($existing?->status ?? 'menunggu');
+
                 MarketingReminder::query()->updateOrCreate(
                     ['source_type' => MarketingSurveySchedule::class, 'source_id' => $row->id],
                     [
@@ -76,7 +89,7 @@ class MarketingOperationsService
                         'jenis' => 'survey',
                         'judul' => 'Jadwal survey customer',
                         'remind_at' => $row->tanggal_survey,
-                        'status' => in_array($row->status, ['selesai', 'batal'], true) ? 'selesai' : 'menunggu',
+                        'status' => $status,
                         'catatan' => $row->catatan,
                     ],
                 );
@@ -142,7 +155,10 @@ class MarketingOperationsService
     {
         foreach (['booking_fee', 'uang_muka', 'termin'] as $type) {
             $paymentType = $type === 'termin' ? 'lainnya' : $type;
-            $remaining = (float) $spr->payments->where('jenis_pembayaran', $paymentType)->sum('nominal');
+            $remaining = (float) $spr->payments
+                ->where('jenis_pembayaran', $paymentType)
+                ->where('status', 'dikonfirmasi')
+                ->sum('nominal');
 
             foreach ($spr->billingSchedules()->where('jenis_tagihan', $type)->orderBy('termin_ke')->orderBy('id')->get() as $schedule) {
                 $paid = min($remaining, (float) $schedule->nominal_tagihan);

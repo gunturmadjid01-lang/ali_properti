@@ -26,6 +26,7 @@ class CostumerController extends Controller
 
         $rows = Costumer::query()
             ->with(['leadSource:id,nama_sumber', 'campaign:id,nama_campaign'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->orWhere('nama', 'like', "%{$search}%")
@@ -79,6 +80,8 @@ class CostumerController extends Controller
                 'penghasilan_display' => number_format((float) ($customer->penghasilan ?? 0), 0, ',', '.'),
                 'record_status' => $customer->record_status ?? 'draft',
                 'record_status_label' => ($customer->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
+                'created_at' => optional($customer->created_at)->format('d/m/Y H:i'),
+                'updated_at' => optional($customer->updated_at)->format('d/m/Y H:i'),
             ]);
 
         return Inertia::render('Admin/Marketing/Costumer/Index', [
@@ -96,6 +99,8 @@ class CostumerController extends Controller
                 ['key' => 'pekerjaan', 'label' => 'Pekerjaan'],
                 ['key' => 'penghasilan_display', 'label' => 'Penghasilan'],
                 ['key' => 'record_status_label', 'label' => 'Lock'],
+                ['key' => 'created_at', 'label' => 'Dibuat'],
+                ['key' => 'updated_at', 'label' => 'Diupdate'],
             ],
             'fields' => $this->fields(),
             'rows' => $rows,
@@ -119,6 +124,8 @@ class CostumerController extends Controller
             ...$request->validated(),
             'kode_costumer' => $this->nextCustomerCode(),
             'status_lead' => 'lead_baru',
+            'created_by' => $this->shouldAutoAssignNewCustomer($request) ? $request->user()?->id : null,
+            'updated_by' => $request->user()?->id,
         ]);
 
         $leadStatus->markCustomer(
@@ -135,16 +142,23 @@ class CostumerController extends Controller
 
     public function update(UpdateCostumerRequest $request, string $id): RedirectResponse
     {
-        $row = Costumer::query()->findOrFail($id);
+        $row = Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->findOrFail($id);
         $this->abortIfLocked($row);
-        $row->update($request->validated());
+        $row->update([
+            ...$request->validated(),
+            'updated_by' => $request->user()?->id,
+        ]);
 
         return back()->with('success', 'Calon konsumen berhasil diperbarui.');
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(Request $request, string $id): RedirectResponse
     {
-        $row = Costumer::query()->findOrFail($id);
+        $row = Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->findOrFail($id);
         $this->abortIfLocked($row);
         $row->delete();
 
@@ -268,5 +282,21 @@ class CostumerController extends Controller
     protected function modelClass(): string
     {
         return Costumer::class;
+    }
+
+    protected function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
+    }
+
+    protected function shouldAutoAssignNewCustomer(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin', 'manager', 'manajer_pimpro']);
     }
 }

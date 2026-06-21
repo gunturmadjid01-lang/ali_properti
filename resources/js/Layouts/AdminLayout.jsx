@@ -6,6 +6,7 @@ import managerSidebar from '../Sidebar/manager';
 import pengawasSidebar from '../Sidebar/pengawas';
 import adminSidebar from '../Sidebar/admin';
 import marketingSidebar from '../Sidebar/marketing';
+import supervisorMarketingSidebar from '../Sidebar/supervisor_marketing';
 import gudangSidebar from '../Sidebar/gudang';
 import keuanganSidebar from '../Sidebar/keuangan';
 import { Button, Dropdown } from '../Components/UI';
@@ -176,7 +177,7 @@ export default function AdminLayout({ children, title = 'Dashboard' }) {
             admin: adminSidebar,
             pengawas: pengawasSidebar,
             marketing: marketingSidebar,
-            supervisor_marketing: marketingSidebar,
+            supervisor_marketing: supervisorMarketingSidebar,
             area_marketing: marketingSidebar,
             user_area_gudang: gudangSidebar,
             keuangan: keuanganSidebar,

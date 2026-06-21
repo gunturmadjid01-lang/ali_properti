@@ -8,6 +8,7 @@ use App\Models\DokumenCostumer;
 use App\Models\DetailRumah;
 use App\Models\Perumahan;
 use App\Models\ProgressPembangunan;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -29,7 +30,7 @@ class MarketingController extends Controller
     protected function render(string $slug, Request $request): Response
     {
         $section = $this->sections()[$slug] ?? $this->sections()['marketing'];
-        $summary = $this->summary();
+        $summary = $this->summary($request);
 
         return Inertia::render('Admin/Marketing/Index', [
             'title' => $section['title'],
@@ -41,7 +42,7 @@ class MarketingController extends Controller
             'menus' => $section['menus'],
             'featured' => $section['featured'] ?? [],
             'customers' => $slug === 'marketing' || $slug === 'konsumen' || $slug === 'calon-konsumen'
-                ? $this->customerRows()
+                ? $this->customerRows($request)
                 : [],
             'progressRows' => $slug === 'marketing' || $slug === 'operasional' || $slug === 'laporan'
                 ? $this->progressRows()
@@ -50,10 +51,13 @@ class MarketingController extends Controller
         ]);
     }
 
-    protected function summary(): array
+    protected function summary(Request $request): array
     {
+        $customerQuery = Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id));
+
         return [
-            'total_customers' => Costumer::query()->count(),
+            'total_customers' => (clone $customerQuery)->count(),
             'high_prospects' => 0,
             'documents' => DokumenCostumer::query()->count(),
             'recent_progress' => ProgressPembangunan::query()->whereDate('tanggal', '>=', now()->subDays(30))->count(),
@@ -62,9 +66,10 @@ class MarketingController extends Controller
         ];
     }
 
-    protected function customerRows()
+    protected function customerRows(Request $request)
     {
         return Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
             ->latest('id')
             ->limit(5)
             ->get()
@@ -141,7 +146,7 @@ class MarketingController extends Controller
                     ['label' => 'Jejak Follow Up', 'description' => 'Lihat tindak lanjut setelah data masuk.', 'href' => '/admin/marketing/jejak-follow-up'],
                 ],
                 'featured' => [
-                    ['label' => 'Total Customer', 'value' => (string) Costumer::query()->count()],
+                    ['label' => 'Total Customer', 'value' => (string) Costumer::query()->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))->count()],
                     ['label' => 'Dokumen Customer', 'value' => (string) DokumenCostumer::query()->count()],
                 ],
             ],
@@ -232,5 +237,13 @@ class MarketingController extends Controller
                 ],
             ],
         ];
+    }
+
+    protected function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
     }
 }

@@ -21,6 +21,10 @@ class SprPayment extends Model
         'nominal',
         'bukti_pembayaran',
         'keterangan',
+        'status',
+        'confirmed_at',
+        'confirmed_by',
+        'confirmation_note',
         'record_status',
         'locked_at',
         'locked_by',
@@ -29,6 +33,7 @@ class SprPayment extends Model
     protected $casts = [
         'tanggal_pembayaran' => 'date',
         'nominal' => 'float',
+        'confirmed_at' => 'datetime',
         'locked_at' => 'datetime',
     ];
 
@@ -50,5 +55,10 @@ class SprPayment extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function confirmer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'confirmed_by');
     }
 }

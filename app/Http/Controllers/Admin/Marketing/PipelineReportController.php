@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MarketingLeadActivity;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -24,6 +25,7 @@ class PipelineReportController extends Controller
         $activities = MarketingLeadActivity::query()
             ->with(['costumer:id,kode_costumer,nama,telepon', 'user:id,name'])
             ->whereBetween('activity_at', [$from, $to])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->orderBy('activity_at')
             ->get();
 
@@ -108,5 +110,13 @@ class PipelineReportController extends Controller
             'dailyRows' => $dailyRows,
             'timeline' => $timeline,
         ]);
+    }
+
+    private function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
     }
 }

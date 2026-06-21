@@ -30,6 +30,7 @@ class KprSubmissionController extends Controller
         $rows = KprSubmission::query()
             ->with(['spr.costumer:id,nama,no_identitas,telepon', 'spr.detailRumah.perumahan:id,nama_perusahaan', 'bank:id,nama_bank', 'handler:id,name'])
             ->withCount(['followUps', 'berkasCostumers'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('kode_kpr', 'like', "%{$search}%")
@@ -77,6 +78,7 @@ class KprSubmissionController extends Controller
                 'milestones.creator:id,name',
             ])
             ->withCount(['followUps', 'berkasCostumers'])
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', request()->user()?->id)))
             ->findOrFail($id);
 
         if ($submission->stageHistories->isEmpty()) {
@@ -112,7 +114,7 @@ class KprSubmissionController extends Controller
             'catatan' => ['nullable', 'string'],
         ]);
 
-        $row = KprSubmission::query()->findOrFail($id);
+        $row = $this->submissionQueryFor($request)->findOrFail($id);
         $this->abortIfLocked($row);
         $row->update([
             ...$validated,
@@ -132,7 +134,7 @@ class KprSubmissionController extends Controller
 
     public function storeFollowUp(Request $request, string $id): RedirectResponse
     {
-        $submission = KprSubmission::query()->findOrFail($id);
+        $submission = $this->submissionQueryFor($request)->findOrFail($id);
 
         $validated = $request->validate([
             'tanggal_follow_up' => ['required', 'date'],
@@ -169,7 +171,7 @@ class KprSubmissionController extends Controller
 
     public function updateFollowUp(Request $request, string $id, string $followUpId): RedirectResponse
     {
-        $submission = KprSubmission::query()->findOrFail($id);
+        $submission = $this->submissionQueryFor($request)->findOrFail($id);
         $followUp = KprFollowUp::query()
             ->where('kpr_submission_id', $submission->id)
             ->findOrFail($followUpId);
@@ -208,9 +210,9 @@ class KprSubmissionController extends Controller
         return back()->with('success', 'Follow up KPR berhasil diperbarui.');
     }
 
-    public function destroyFollowUp(string $id, string $followUpId): RedirectResponse
+    public function destroyFollowUp(Request $request, string $id, string $followUpId): RedirectResponse
     {
-        $submission = KprSubmission::query()->findOrFail($id);
+        $submission = $this->submissionQueryFor($request)->findOrFail($id);
         $followUp = KprFollowUp::query()
             ->where('kpr_submission_id', $submission->id)
             ->findOrFail($followUpId);
@@ -221,9 +223,9 @@ class KprSubmissionController extends Controller
         return back()->with('success', 'Follow up KPR berhasil dihapus.');
     }
 
-    public function lockFollowUp(string $id, string $followUpId): RedirectResponse
+    public function lockFollowUp(Request $request, string $id, string $followUpId): RedirectResponse
     {
-        $submission = KprSubmission::query()->findOrFail($id);
+        $submission = $this->submissionQueryFor($request)->findOrFail($id);
         $followUp = KprFollowUp::query()
             ->where('kpr_submission_id', $submission->id)
             ->findOrFail($followUpId);
@@ -237,11 +239,11 @@ class KprSubmissionController extends Controller
         return back()->with('success', 'Follow up berhasil di-lock.');
     }
 
-    public function unlockFollowUp(string $id, string $followUpId): RedirectResponse
+    public function unlockFollowUp(Request $request, string $id, string $followUpId): RedirectResponse
     {
         abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya owner yang dapat membuka lock data.');
 
-        $submission = KprSubmission::query()->findOrFail($id);
+        $submission = $this->submissionQueryFor($request)->findOrFail($id);
         $followUp = KprFollowUp::query()
             ->where('kpr_submission_id', $submission->id)
             ->findOrFail($followUpId);
@@ -257,7 +259,7 @@ class KprSubmissionController extends Controller
 
     public function storeBerkas(Request $request, string $id): RedirectResponse
     {
-        $submission = KprSubmission::query()->findOrFail($id);
+        $submission = $this->submissionQueryFor($request)->findOrFail($id);
         $this->abortIfLocked($submission);
 
         $validated = $request->validate([
@@ -286,9 +288,9 @@ class KprSubmissionController extends Controller
         return back()->with('success', 'Berkas customer berhasil diupload.');
     }
 
-    public function destroyBerkas(string $id, string $berkasId): RedirectResponse
+    public function destroyBerkas(Request $request, string $id, string $berkasId): RedirectResponse
     {
-        $submission = KprSubmission::query()->findOrFail($id);
+        $submission = $this->submissionQueryFor($request)->findOrFail($id);
         $this->abortIfLocked($submission);
 
         $berkas = BerkasCostumer::query()
@@ -326,6 +328,8 @@ class KprSubmissionController extends Controller
             'status_label' => $this->labelFromOptions($submission->status, $this->statusOptions()),
             'catatan' => $submission->catatan,
             'handled_by' => $submission->handler?->name ?? '-',
+            'created_at' => optional($submission->created_at)->format('d/m/Y H:i'),
+            'updated_at' => optional($submission->updated_at)->format('d/m/Y H:i'),
             'follow_ups_count' => $submission->follow_ups_count,
             'berkas_costumers_count' => $submission->berkas_costumers_count,
             'record_status' => $submission->record_status ?? 'draft',
@@ -484,6 +488,20 @@ class KprSubmissionController extends Controller
     protected function modelClass(): string
     {
         return KprSubmission::class;
+    }
+
+    protected function shouldScopeToCurrentMarketing(Request $request): bool
+    {
+        $user = $request->user();
+
+        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
+            && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
+    }
+
+    protected function submissionQueryFor(Request $request): Builder
+    {
+        return KprSubmission::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)));
     }
 
     protected function syncUnitSaleState(KprSubmission $submission, ?string $status): void

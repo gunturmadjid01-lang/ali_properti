@@ -33,6 +33,7 @@ use App\Http\Controllers\Admin\Marketing\LeadSourceController as AdminLeadSource
 use App\Http\Controllers\Admin\Marketing\LeadReportController as AdminLeadReportController;
 use App\Http\Controllers\Admin\Marketing\MarketingController as AdminMarketingController;
 use App\Http\Controllers\Admin\Marketing\MarketingOperationsController as AdminMarketingOperationsController;
+use App\Http\Controllers\Admin\Marketing\MarketingToolsController as AdminMarketingToolsController;
 use App\Http\Controllers\Admin\Marketing\PipelineReportController as AdminPipelineReportController;
 use App\Http\Controllers\Admin\Marketing\SprPaymentController as AdminSprPaymentController;
 use App\Http\Controllers\Admin\Marketing\SprController as AdminSprController;
@@ -214,9 +215,13 @@ Route::prefix('admin')->group(function () {
     Route::get('/pemeriksaan-barang-masuk', [MaterialPurchaseController::class, 'inspectionIndex'])->name('admin.material-purchase.inspection.index');
     Route::post('/pemeriksaan-barang-masuk/{id}/item/{detailId}', [MaterialPurchaseController::class, 'inspectItem'])->name('admin.material-purchase.inspection.item');
     Route::get('/rekening-bank', [BankAccountLedgerController::class, 'index'])->name('admin.bank-account-ledger.index');
+    Route::get('/keuangan/pembayaran-spr', [AdminSprPaymentController::class, 'financeIndex'])->name('admin.keuangan.pembayaran-spr.index');
+    Route::post('/keuangan/pembayaran-spr/payment/{paymentId}/confirm', [AdminSprPaymentController::class, 'confirmPayment'])->name('admin.keuangan.pembayaran-spr.payment.confirm');
+    Route::post('/keuangan/pembayaran-spr/payment/{paymentId}/reject', [AdminSprPaymentController::class, 'rejectPayment'])->name('admin.keuangan.pembayaran-spr.payment.reject');
 
     Route::get('/kpr', [AdminKprSubmissionController::class, 'index'])->name('admin.kpr.index');
     Route::get('/kpr/proses/{type}', [AdminKprMilestoneController::class, 'index'])->name('admin.kpr.milestone.index');
+    Route::post('/kpr/proses/{type}', [AdminKprMilestoneController::class, 'storeSelected'])->name('admin.kpr.milestone.store-selected');
     Route::post('/kpr/proses/{type}/submission/{submissionId}', [AdminKprMilestoneController::class, 'store'])->name('admin.kpr.milestone.store');
     Route::post('/kpr/proses/{type}/{id}', [AdminKprMilestoneController::class, 'update'])->name('admin.kpr.milestone.update');
     Route::delete('/kpr/proses/{type}/{id}', [AdminKprMilestoneController::class, 'destroy'])->name('admin.kpr.milestone.destroy');
@@ -308,6 +313,8 @@ Route::prefix('admin')->group(function () {
         Route::post('operasional/dokumen/review', [AdminMarketingOperationsController::class, 'reviewDocument'])->name('operasional.document.review');
         Route::post('operasional/booking-expired/process', [AdminMarketingOperationsController::class, 'expireBookings'])->name('operasional.booking-expired.process');
         Route::get('kwitansi/{id}', [AdminMarketingOperationsController::class, 'receipt'])->name('kwitansi.show');
+        Route::get('tools/{section}', [AdminMarketingToolsController::class, 'show'])->name('tools.show');
+        Route::post('tools/distribusi-lead/assign', [AdminMarketingToolsController::class, 'assignLead'])->name('tools.distribusi-lead.assign');
         Route::get('transaksi-pembelian/cash', [AdminCashSaleController::class, 'index'])->name('transaksi-pembelian.cash.index');
         Route::post('transaksi-pembelian/cash', [AdminCashSaleController::class, 'store'])->name('transaksi-pembelian.cash.store');
         Route::post('transaksi-pembelian/cash/{id}/payments', [AdminCashSaleController::class, 'storePayment'])->name('transaksi-pembelian.cash.payment.store');
@@ -344,6 +351,8 @@ Route::prefix('admin')->group(function () {
         Route::post('pembayaran-spr/{sprId}/booking-fee', [AdminSprPaymentController::class, 'storeBookingFee'])->name('pembayaran-spr.booking-fee.store');
         Route::post('pembayaran-spr/{sprId}/uang-muka', [AdminSprPaymentController::class, 'storeDownPayment'])->name('pembayaran-spr.uang-muka.store');
         Route::post('pembayaran-spr/{sprId}/cancel', [AdminSprPaymentController::class, 'cancelSpr'])->name('pembayaran-spr.cancel');
+        Route::post('pembayaran-spr/payment/{paymentId}/confirm', [AdminSprPaymentController::class, 'confirmPayment'])->name('pembayaran-spr.payment.confirm');
+        Route::post('pembayaran-spr/payment/{paymentId}/reject', [AdminSprPaymentController::class, 'rejectPayment'])->name('pembayaran-spr.payment.reject');
         Route::get('{slug}', [AdminMarketingController::class, 'show'])->name('show');
     });
 });

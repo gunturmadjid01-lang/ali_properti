@@ -17,6 +17,12 @@ class BankKredit extends Model
         'nama_pic',
         'telepon_pic',
         'email_pic',
+        'bunga_tahunan',
+        'tenor_min_bulan',
+        'tenor_max_bulan',
+        'minimal_dp_persen',
+        'biaya_provisi_persen',
+        'biaya_admin',
         'status',
         'record_status',
         'locked_at',
@@ -24,6 +30,12 @@ class BankKredit extends Model
     ];
 
     protected $casts = [
+        'bunga_tahunan' => 'float',
+        'tenor_min_bulan' => 'integer',
+        'tenor_max_bulan' => 'integer',
+        'minimal_dp_persen' => 'float',
+        'biaya_provisi_persen' => 'float',
+        'biaya_admin' => 'float',
         'locked_at' => 'datetime',
     ];
 

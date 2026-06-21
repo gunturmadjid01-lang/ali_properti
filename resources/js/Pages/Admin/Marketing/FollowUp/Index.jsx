@@ -111,6 +111,7 @@ function FollowUpModal({ open, onClose, baseUrl, customers, options, initialCust
         metode_follow_up: '',
         status_serius: '0',
         progress_kemampuan: '',
+        status: 'selesai',
         catatan: '',
         rencana_follow_up_at: '',
     });
@@ -212,6 +213,17 @@ function FollowUpModal({ open, onClose, baseUrl, customers, options, initialCust
                     {form.errors.progress_kemampuan && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.progress_kemampuan}</span>}
                 </div>
 
+                <div className="grid gap-2">
+                    <span className="text-sm font-extrabold text-ink/75 dark:text-white/78">Status Follow Up</span>
+                    <Dropdown
+                        value={form.data.status}
+                        label="Pilih status"
+                        options={options.statusOptions}
+                        onChange={(value) => form.setData('status', value)}
+                    />
+                    {form.errors.status && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.status}</span>}
+                </div>
+
                 <Input
                     label="Rencana Follow Up Berikutnya"
                     type="date"
@@ -240,6 +252,7 @@ function EditFollowUpModal({ open, onClose, baseUrl, customers, options, row }) 
         metode_follow_up: row?.metode_key ?? '',
         status_serius: row?.status_serius_value ?? '0',
         progress_kemampuan: row?.progress_key ?? '',
+        status: row?.status_key ?? 'selesai',
         catatan: row?.catatan ?? '',
         rencana_follow_up_at: row?.rencana_follow_up_at ?? '',
     });
@@ -335,6 +348,17 @@ function EditFollowUpModal({ open, onClose, baseUrl, customers, options, row }) 
                         </span>
                     )}
                     {form.errors.progress_kemampuan && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.progress_kemampuan}</span>}
+                </div>
+
+                <div className="grid gap-2">
+                    <span className="text-sm font-extrabold text-ink/75 dark:text-white/78">Status Follow Up</span>
+                    <Dropdown
+                        value={form.data.status}
+                        label="Pilih status"
+                        options={options.statusOptions}
+                        onChange={(value) => form.setData('status', value)}
+                    />
+                    {form.errors.status && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.status}</span>}
                 </div>
 
                 <Input
@@ -449,6 +473,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                     <th className="px-4 py-3 font-extrabold">Media</th>
                                     <th className="px-4 py-3 font-extrabold">Status</th>
                                     <th className="px-4 py-3 font-extrabold">Progress</th>
+                                    <th className="px-4 py-3 font-extrabold">Follow Up</th>
                                     <th className="px-4 py-3 font-extrabold">Lock</th>
                                     <th className="px-4 py-3 font-extrabold">Rencana</th>
                                     <th className="px-4 py-3 text-right font-extrabold">Aksi</th>
@@ -471,6 +496,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                             </span>
                                         </td>
                                         <td className="px-4 py-3 font-semibold text-ink/80 dark:text-white/72">{row.progress_kemampuan}</td>
+                                        <td className="px-4 py-3 font-semibold text-ink/80 dark:text-white/72">{row.status_label}</td>
                                         <td className="px-4 py-3 font-semibold text-ink/80 dark:text-white/72">{row.record_status_label}</td>
                                         <td className="px-4 py-3 font-semibold text-ink/80 dark:text-white/72">{row.rencana_follow_up_at || '-'}</td>
                                         <td className="px-4 py-3 text-right">
@@ -499,7 +525,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                 ))}
                                 {rows.data.length === 0 && (
                                     <tr>
-                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={9}>
+                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={10}>
                                             Belum ada data follow up.
                                         </td>
                                     </tr>

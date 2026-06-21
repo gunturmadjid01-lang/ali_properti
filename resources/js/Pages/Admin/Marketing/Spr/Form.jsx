@@ -100,7 +100,7 @@ function SectionTitle({ title, description }) {
     );
 }
 
-export default function SprForm({ title, description, baseUrl, submitUrl, method = 'post', mode = 'create', row = {}, customers = [], units = [], dokumenOptions = [], options = {} }) {
+export default function SprForm({ title, description, baseUrl, submitUrl, method = 'post', mode = 'create', row = {}, customers = [], units = [], bankKreditOptions = [], dokumenOptions = [], options = {} }) {
     const yesNoOptions = [
         { value: '1', label: 'Ya' },
         { value: '0', label: 'Tidak' },
@@ -125,6 +125,9 @@ export default function SprForm({ title, description, baseUrl, submitUrl, method
         detail_rumah_id: row?.detail_rumah_id ? String(row.detail_rumah_id) : '',
         tanggal_spr: row?.tanggal_spr ?? new Date().toISOString().slice(0, 10),
         metode_pembayaran: row?.metode_key ?? 'kpr_bank',
+        bank_kredit_id: row?.bank_kredit_id ? String(row.bank_kredit_id) : '',
+        kpr_tenor_bulan: row?.kpr_tenor_bulan ? String(row.kpr_tenor_bulan) : '',
+        kpr_bunga_tahunan: row?.kpr_bunga_tahunan ? String(row.kpr_bunga_tahunan) : '',
         harga_jual: row?.harga_jual ? String(row.harga_jual) : '',
         booking_fee: row?.booking_fee ? String(row.booking_fee) : '',
         booking_fee_includes_dp: row?.booking_fee_includes_dp ? '1' : '0',
@@ -150,6 +153,7 @@ export default function SprForm({ title, description, baseUrl, submitUrl, method
 
     const selectedCustomer = customers.find((customer) => Number(customer.id) === Number(form.data.costumer_id));
     const selectedUnit = units.find((unit) => Number(unit.id) === Number(form.data.detail_rumah_id));
+    const selectedBankKredit = bankKreditOptions.find((bank) => String(bank.value) === String(form.data.bank_kredit_id));
     const currentBerkas = berkasRows;
 
     const calcTanahQty = Number(form.data.penambahan_tanah || 0);
@@ -159,7 +163,17 @@ export default function SprForm({ title, description, baseUrl, submitUrl, method
     const calcTotal = calcTanah + calcLain;
     const calcFinal = Number(form.data.nilai_pengajuan_kpr || 0) + calcTotal;
     const isBertahap = form.data.metode_pembayaran === 'bertahap';
+    const isKprBank = form.data.metode_pembayaran === 'kpr_bank';
     const calcNominalTermin = isBertahap && Number(form.data.jumlah_termin || 0) > 0 ? Math.round(calcFinal / Number(form.data.jumlah_termin || 1)) : 0;
+    const kprRate = Number(form.data.kpr_bunga_tahunan || selectedBankKredit?.bunga_tahunan || 0);
+    const kprMonths = Math.max(1, Number(form.data.kpr_tenor_bulan || selectedBankKredit?.tenor_max_bulan || 1));
+    const kprPrincipal = Number(form.data.nilai_pengajuan_kpr || 0);
+    const kprMonthlyRate = kprRate / 100 / 12;
+    const kprInstallment = kprPrincipal <= 0 ? 0 : kprMonthlyRate > 0
+        ? kprPrincipal * (kprMonthlyRate * ((1 + kprMonthlyRate) ** kprMonths)) / (((1 + kprMonthlyRate) ** kprMonths) - 1)
+        : kprPrincipal / kprMonths;
+    const kprMinimalDp = selectedBankKredit ? Math.round(Number(form.data.harga_jual || 0) * Number(selectedBankKredit.minimal_dp_persen || 0) / 100) : 0;
+    const kprProvisi = selectedBankKredit ? Math.round(kprPrincipal * Number(selectedBankKredit.biaya_provisi_persen || 0) / 100) : 0;
 
     const syncBerkas = (rows) => {
         setBerkasRows(rows);
@@ -266,10 +280,43 @@ export default function SprForm({ title, description, baseUrl, submitUrl, method
                             form.setData('tanggal_jatuh_tempo_angsuran', '');
                             form.setData('uang_muka_jumlah_pembayaran', '');
                         }
+                        if (value !== 'kpr_bank') {
+                            form.setData('bank_kredit_id', '');
+                            form.setData('kpr_tenor_bulan', '');
+                            form.setData('kpr_bunga_tahunan', '');
+                        }
                     }}
                 />
                 {form.errors.metode_pembayaran && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.metode_pembayaran}</span>}
             </div>
+            {isKprBank && (
+                <div className="grid gap-4 lg:col-span-3 lg:grid-cols-3">
+                    <div className="grid gap-2">
+                        <span className="text-sm font-extrabold text-ink/75 dark:text-white/78">Bank Kredit</span>
+                        <Dropdown
+                            value={form.data.bank_kredit_id}
+                            options={bankKreditOptions}
+                            onChange={(value) => {
+                                const bank = bankKreditOptions.find((item) => String(item.value) === String(value));
+                                form.setData({
+                                    ...form.data,
+                                    bank_kredit_id: value,
+                                    kpr_tenor_bulan: bank?.tenor_max_bulan ? String(bank.tenor_max_bulan) : form.data.kpr_tenor_bulan,
+                                    kpr_bunga_tahunan: bank?.bunga_tahunan ? String(bank.bunga_tahunan) : form.data.kpr_bunga_tahunan,
+                                });
+                            }}
+                        />
+                        {form.errors.bank_kredit_id && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.bank_kredit_id}</span>}
+                    </div>
+                    <Input label="Tenor KPR (Bulan)" type="number" min={selectedBankKredit?.tenor_min_bulan ?? 1} max={selectedBankKredit?.tenor_max_bulan ?? undefined} value={form.data.kpr_tenor_bulan} error={form.errors.kpr_tenor_bulan} onChange={(event) => form.setData('kpr_tenor_bulan', event.target.value)} />
+                    <Input label="Bunga KPR / Tahun (%)" type="number" step="0.01" value={form.data.kpr_bunga_tahunan} error={form.errors.kpr_bunga_tahunan} onChange={(event) => form.setData('kpr_bunga_tahunan', event.target.value)} />
+                    {selectedBankKredit && (
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs font-bold text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200 lg:col-span-3">
+                            Minimal DP bank: {money(kprMinimalDp)} ({selectedBankKredit.minimal_dp_persen}%). Estimasi cicilan: {money(kprInstallment)} / bulan. Provisi: {money(kprProvisi)}. Admin: {money(selectedBankKredit.biaya_admin)}.
+                        </div>
+                    )}
+                </div>
+            )}
             <CurrencyInput label="Harga Jual" value={form.data.harga_jual} error={form.errors.harga_jual} onChange={(value) => form.setData('harga_jual', value)} />
             <CurrencyInput label="Booking Fee" value={form.data.booking_fee} error={form.errors.booking_fee} onChange={(value) => form.setData('booking_fee', value)} />
             <div className="grid gap-2">
@@ -390,6 +437,15 @@ export default function SprForm({ title, description, baseUrl, submitUrl, method
                     <p className="mt-1 text-base font-extrabold text-ink dark:text-white">Bertahap</p>
                     <p className="mt-1 text-xs font-semibold text-ink-soft dark:text-white/55">
                         Nominal termin dihitung otomatis dari hasil akhir dibagi jumlah termin.
+                    </p>
+                </div>
+            )}
+            {isKprBank && (
+                <div className="rounded-lg border border-silver-deep/60 bg-silver-soft/40 p-4 dark:border-white/10 dark:bg-white/5">
+                    <p className="text-xs font-bold uppercase tracking-[0.12em] text-ink-soft dark:text-white/50">KPR Bank</p>
+                    <p className="mt-1 text-base font-extrabold text-ink dark:text-white">{selectedBankKredit?.label ?? row?.bank_kredit ?? '-'}</p>
+                    <p className="mt-1 text-xs font-semibold text-ink-soft dark:text-white/55">
+                        {kprRate || 0}% / tahun, {kprMonths} bulan, cicilan estimasi {money(kprInstallment)} / bulan
                     </p>
                 </div>
             )}

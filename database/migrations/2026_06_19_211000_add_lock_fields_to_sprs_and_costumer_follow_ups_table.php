@@ -11,7 +11,8 @@ return new class extends Migration
         foreach (['sprs', 'costumer_follow_ups'] as $table) {
             Schema::table($table, function (Blueprint $blueprint) use ($table) {
                 if (! Schema::hasColumn($table, 'record_status')) {
-                    $blueprint->string('record_status')->default('draft')->after('status');
+                    $afterColumn = Schema::hasColumn($table, 'status') ? 'status' : 'progress_kemampuan';
+                    $blueprint->string('record_status')->default('draft')->after($afterColumn);
                 }
 
                 if (! Schema::hasColumn($table, 'locked_at')) {
