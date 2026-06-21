@@ -1,0 +1,349 @@
+<?php
+
+use Inertia\Inertia;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Admin\Approval\ApprovalRequestController;
+use App\Http\Controllers\Admin\Approval\ApprovalSettingController;
+use App\Http\Controllers\Admin\AreaController;
+use App\Http\Controllers\Admin\ActivePerumahanController;
+use App\Http\Controllers\Admin\GudangController;
+use App\Http\Controllers\Admin\KontraktorController;
+use App\Http\Controllers\Admin\MaterialPurchaseController;
+use App\Http\Controllers\Admin\MaterialPurchaseRequestController;
+use App\Http\Controllers\Admin\BankAccountLedgerController;
+use App\Http\Controllers\Admin\MaterialPriceController;
+use App\Http\Controllers\Admin\MaterialRequestController;
+use App\Http\Controllers\Admin\MaterialReturnController;
+use App\Http\Controllers\Admin\MaterialUsageController;
+use App\Http\Controllers\Admin\MasterMaterialController;
+use App\Http\Controllers\Admin\NotificationController;
+use App\Http\Controllers\Admin\ProgressPembangunanController;
+use App\Http\Controllers\Admin\QualityInspectionController;
+use App\Http\Controllers\Admin\SiteReportController;
+use App\Http\Controllers\Admin\SiteMaterialStockController;
+use App\Http\Controllers\Admin\SiteScheduleController;
+use App\Http\Controllers\Admin\SpkKontraktorController;
+use App\Http\Controllers\Admin\StokMaterialController;
+use App\Http\Controllers\Admin\UnitRumahController as AdminUnitRumahController;
+use App\Http\Controllers\Admin\ProfileController as AdminProfileController;
+use App\Http\Controllers\Admin\Marketing\CostumerController as AdminCostumerController;
+use App\Http\Controllers\Admin\Marketing\CashSaleController as AdminCashSaleController;
+use App\Http\Controllers\Admin\Marketing\FollowUpController as AdminFollowUpController;
+use App\Http\Controllers\Admin\Marketing\LeadSourceController as AdminLeadSourceController;
+use App\Http\Controllers\Admin\Marketing\LeadReportController as AdminLeadReportController;
+use App\Http\Controllers\Admin\Marketing\MarketingController as AdminMarketingController;
+use App\Http\Controllers\Admin\Marketing\MarketingOperationsController as AdminMarketingOperationsController;
+use App\Http\Controllers\Admin\Marketing\PipelineReportController as AdminPipelineReportController;
+use App\Http\Controllers\Admin\Marketing\SprPaymentController as AdminSprPaymentController;
+use App\Http\Controllers\Admin\Marketing\SprController as AdminSprController;
+use App\Http\Controllers\Admin\Marketing\SurveyScheduleController as AdminSurveyScheduleController;
+use App\Http\Controllers\Admin\Kpr\KprSubmissionController as AdminKprSubmissionController;
+use App\Http\Controllers\Admin\Kpr\KprMilestoneController as AdminKprMilestoneController;
+use App\Http\Controllers\Admin\Logistik\TransaksiLogistikController;
+use App\Http\Controllers\Admin\Management\CabangPerusahaan\CabangPerusahaanController as AdminCabangPerusahaanController;
+use App\Http\Controllers\Admin\Management\BankKredit\BankKreditController as AdminBankKreditController;
+use App\Http\Controllers\Admin\Management\DokumenLegalitas\DokumenLegalitasController as AdminDokumenLegalitasController;
+use App\Http\Controllers\Admin\Management\DokumenLegalitasRumah\DokumenLegalitasRumahController as AdminDokumenLegalitasRumahController;
+use App\Http\Controllers\Admin\Management\DokumenCostumer\DokumenCostumerController as AdminDokumenCostumerController;
+use App\Http\Controllers\Admin\Management\KelompokHpp\KelompokHppController as AdminKelompokHppController;
+use App\Http\Controllers\Admin\Management\MasterBank\MasterBankController as AdminMasterBankController;
+use App\Http\Controllers\Admin\Management\Overview\ManagementOverviewController as AdminManagementOverviewController;
+use App\Http\Controllers\Admin\Management\Perumahan\PerumahanController as AdminPerumahanController;
+use App\Http\Controllers\Admin\Management\RolePermission\RolePermissionController as AdminRolePermissionController;
+use App\Http\Controllers\Admin\Management\TipePost\TipePostController as AdminTipePostController;
+use App\Http\Controllers\Admin\Management\User\UserController as AdminUserController;
+use App\Http\Controllers\Auth\LoginController;
+
+Route::get('/media/{path}', function (string $path) {
+    abort_if(str_contains($path, '..'), 404);
+
+    $file = storage_path('app/public/'.$path);
+
+    abort_unless(is_file($file), 404);
+
+    return response()->file($file);
+})->where('path', '.*')->name('media');
+
+Route::get('/', function () {
+    return Inertia::render('Guest/Home');
+})->name('home');
+
+Route::middleware('guest')->group(function () {
+    Route::get('/login', [LoginController::class, 'create'])->name('login');
+    Route::post('/login', [LoginController::class, 'store'])->name('login.store');
+});
+
+Route::post('/logout', [LoginController::class, 'destroy'])
+    ->name('logout');
+
+Route::prefix('admin/area')->group(function () {
+    Route::get('{slug}', [AreaController::class, 'show'])->name('admin.area.show');
+});
+
+Route::get('/profil', function () {
+    return Inertia::render('Guest/Profile');
+})->name('profile');
+
+Route::get('/tipe-rumah', function () {
+    return Inertia::render('Guest/Units');
+})->name('units');
+
+Route::get('/galeri', function () {
+    return Inertia::render('Guest/Gallery');
+})->name('gallery');
+
+Route::get('/kontak', function () {
+    return Inertia::render('Guest/Contact');
+})->name('contact');
+
+Route::prefix('admin')->group(function () {
+    Route::get('/dashboard', function () {
+        return Inertia::render('Admin/Dashboard');
+    })->name('admin.dashboard');
+    Route::get('/profile', [AdminProfileController::class, 'show'])->name('admin.profile');
+    Route::post('/active-perumahan', [ActivePerumahanController::class, 'update'])->name('admin.active-perumahan.update');
+    Route::get('/notifications', [NotificationController::class, 'index'])->name('admin.notifications.index');
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead'])->name('admin.notifications.read');
+
+    Route::get('/gudang', [GudangController::class, 'index'])->name('admin.gudang.index');
+    Route::post('/gudang', [GudangController::class, 'store'])->name('admin.gudang.store');
+    Route::put('/gudang/{id}', [GudangController::class, 'update'])->name('admin.gudang.update');
+    Route::delete('/gudang/{id}', [GudangController::class, 'destroy'])->name('admin.gudang.destroy');
+    Route::post('/gudang/{id}/lock', [GudangController::class, 'lock'])->name('admin.gudang.lock');
+    Route::post('/gudang/{id}/unlock', [GudangController::class, 'unlock'])->name('admin.gudang.unlock');
+    Route::get('/master-material', [MasterMaterialController::class, 'index'])->name('admin.master-material.index');
+    Route::post('/master-material', [MasterMaterialController::class, 'store'])->name('admin.master-material.store');
+    Route::put('/master-material/{id}', [MasterMaterialController::class, 'update'])->name('admin.master-material.update');
+    Route::delete('/master-material/{id}', [MasterMaterialController::class, 'destroy'])->name('admin.master-material.destroy');
+    Route::post('/master-material/{id}/lock', [MasterMaterialController::class, 'lock'])->name('admin.master-material.lock');
+    Route::post('/master-material/{id}/unlock', [MasterMaterialController::class, 'unlock'])->name('admin.master-material.unlock');
+    Route::get('/harga-material', [MaterialPriceController::class, 'index'])->name('admin.harga-material.index');
+    Route::post('/harga-material', [MaterialPriceController::class, 'store'])->name('admin.harga-material.store');
+    Route::delete('/harga-material/{id}', [MaterialPriceController::class, 'destroy'])->name('admin.harga-material.destroy');
+    Route::post('/harga-material/{id}/lock', [MaterialPriceController::class, 'lock'])->name('admin.harga-material.lock');
+    Route::post('/harga-material/{id}/unlock', [MaterialPriceController::class, 'unlock'])->name('admin.harga-material.unlock');
+    Route::get('/stok-material', [StokMaterialController::class, 'index'])->name('admin.stok-material.index');
+    Route::get('/logistik', [TransaksiLogistikController::class, 'index'])->name('admin.logistik.index');
+    Route::get('/kontraktor', [KontraktorController::class, 'index'])->name('admin.kontraktor.index');
+    Route::post('/kontraktor', [KontraktorController::class, 'store'])->name('admin.kontraktor.store');
+    Route::put('/kontraktor/{id}', [KontraktorController::class, 'update'])->name('admin.kontraktor.update');
+    Route::delete('/kontraktor/{id}', [KontraktorController::class, 'destroy'])->name('admin.kontraktor.destroy');
+    Route::post('/kontraktor/{id}/lock', [KontraktorController::class, 'lock'])->name('admin.kontraktor.lock');
+    Route::post('/kontraktor/{id}/unlock', [KontraktorController::class, 'unlock'])->name('admin.kontraktor.unlock');
+    Route::get('/spk-kontraktor', [SpkKontraktorController::class, 'index'])->name('admin.spk-kontraktor.index');
+    Route::get('/spk-kontraktor/approval', [SpkKontraktorController::class, 'approvalIndex'])->name('admin.spk-kontraktor.approval.index');
+    Route::post('/spk-kontraktor', [SpkKontraktorController::class, 'store'])->name('admin.spk-kontraktor.store');
+    Route::put('/spk-kontraktor/{id}', [SpkKontraktorController::class, 'update'])->name('admin.spk-kontraktor.update');
+    Route::delete('/spk-kontraktor/{id}', [SpkKontraktorController::class, 'destroy'])->name('admin.spk-kontraktor.destroy');
+    Route::post('/spk-kontraktor/{id}/lock', [SpkKontraktorController::class, 'lock'])->name('admin.spk-kontraktor.lock');
+    Route::post('/spk-kontraktor/{id}/unlock', [SpkKontraktorController::class, 'unlock'])->name('admin.spk-kontraktor.unlock');
+    Route::post('/spk-kontraktor/{id}/payments/{paymentId}/request', [SpkKontraktorController::class, 'requestPayment'])->name('admin.spk-kontraktor.payment.request');
+    Route::post('/spk-kontraktor/{id}/payments/{paymentId}/approve', [SpkKontraktorController::class, 'approvePayment'])->name('admin.spk-kontraktor.payment.approve');
+    Route::post('/spk-kontraktor/{id}/payments/{paymentId}/release', [SpkKontraktorController::class, 'releasePayment'])->name('admin.spk-kontraktor.payment.release');
+    Route::get('/unit-rumah', [AdminUnitRumahController::class, 'index'])->name('admin.unit-rumah.index');
+    Route::post('/unit-rumah', [AdminUnitRumahController::class, 'store'])->name('admin.unit-rumah.store');
+    Route::put('/unit-rumah/{id}', [AdminUnitRumahController::class, 'update'])->name('admin.unit-rumah.update');
+    Route::delete('/unit-rumah/{id}', [AdminUnitRumahController::class, 'destroy'])->name('admin.unit-rumah.destroy');
+    Route::post('/unit-rumah/{id}/lock', [AdminUnitRumahController::class, 'lock'])->name('admin.unit-rumah.lock');
+    Route::post('/unit-rumah/{id}/unlock', [AdminUnitRumahController::class, 'unlock'])->name('admin.unit-rumah.unlock');
+    Route::get('/permintaan-barang', [MaterialRequestController::class, 'index'])->name('admin.material-request.index');
+    Route::post('/permintaan-barang', [MaterialRequestController::class, 'store'])->name('admin.material-request.store');
+    Route::put('/permintaan-barang/{id}', [MaterialRequestController::class, 'update'])->name('admin.material-request.update');
+    Route::delete('/permintaan-barang/{id}', [MaterialRequestController::class, 'destroy'])->name('admin.material-request.destroy');
+    Route::post('/permintaan-barang/{id}/approve', [MaterialRequestController::class, 'approve'])->name('admin.material-request.approve');
+    Route::post('/permintaan-barang/{id}/approve-owner', [MaterialRequestController::class, 'approveOwner'])->name('admin.material-request.approve-owner');
+    Route::post('/permintaan-barang/{id}/issue', [MaterialRequestController::class, 'issue'])->name('admin.material-request.issue');
+    Route::post('/permintaan-barang/{id}/lock', [MaterialRequestController::class, 'lock'])->name('admin.material-request.lock');
+    Route::post('/permintaan-barang/{id}/unlock', [MaterialRequestController::class, 'unlock'])->name('admin.material-request.unlock');
+    Route::get('/pemakaian-material', [MaterialUsageController::class, 'index'])->name('admin.material-usage.index');
+    Route::post('/pemakaian-material', [MaterialUsageController::class, 'store'])->name('admin.material-usage.store');
+    Route::put('/pemakaian-material/{id}', [MaterialUsageController::class, 'update'])->name('admin.material-usage.update');
+    Route::delete('/pemakaian-material/{id}', [MaterialUsageController::class, 'destroy'])->name('admin.material-usage.destroy');
+    Route::post('/pemakaian-material/{id}/lock', [MaterialUsageController::class, 'lock'])->name('admin.material-usage.lock');
+    Route::post('/pemakaian-material/{id}/unlock', [MaterialUsageController::class, 'unlock'])->name('admin.material-usage.unlock');
+    Route::get('/sisa-material-lokasi', [SiteMaterialStockController::class, 'index'])->name('admin.site-material-stock.index');
+    Route::get('/pengembalian-material', [MaterialReturnController::class, 'index'])->name('admin.material-return.index');
+    Route::post('/pengembalian-material', [MaterialReturnController::class, 'store'])->name('admin.material-return.store');
+    Route::post('/pengembalian-material/{id}/receive', [MaterialReturnController::class, 'receive'])->name('admin.material-return.receive');
+    Route::post('/pengembalian-material/{id}/reject', [MaterialReturnController::class, 'reject'])->name('admin.material-return.reject');
+    Route::post('/pengembalian-material/{id}/lock', [MaterialReturnController::class, 'lock'])->name('admin.material-return.lock');
+    Route::post('/pengembalian-material/{id}/unlock', [MaterialReturnController::class, 'unlock'])->name('admin.material-return.unlock');
+    Route::get('/progress-pembangunan', [ProgressPembangunanController::class, 'index'])->name('admin.progress-pembangunan.index');
+    Route::post('/progress-pembangunan', [ProgressPembangunanController::class, 'store'])->name('admin.progress-pembangunan.store');
+    Route::put('/progress-pembangunan/{id}', [ProgressPembangunanController::class, 'update'])->name('admin.progress-pembangunan.update');
+    Route::delete('/progress-pembangunan/{id}', [ProgressPembangunanController::class, 'destroy'])->name('admin.progress-pembangunan.destroy');
+    Route::post('/progress-pembangunan/{id}/lock', [ProgressPembangunanController::class, 'lock'])->name('admin.progress-pembangunan.lock');
+    Route::post('/progress-pembangunan/{id}/unlock', [ProgressPembangunanController::class, 'unlock'])->name('admin.progress-pembangunan.unlock');
+    Route::post('/progress-pembangunan/{id}/approve', [ProgressPembangunanController::class, 'approve'])->name('admin.progress-pembangunan.approve');
+    Route::get('/laporan-lapangan', [SiteReportController::class, 'index'])->name('admin.site-report.index');
+    Route::post('/laporan-lapangan', [SiteReportController::class, 'store'])->name('admin.site-report.store');
+    Route::put('/laporan-lapangan/{id}', [SiteReportController::class, 'update'])->name('admin.site-report.update');
+    Route::delete('/laporan-lapangan/{id}', [SiteReportController::class, 'destroy'])->name('admin.site-report.destroy');
+    Route::post('/laporan-lapangan/{id}/approve', [SiteReportController::class, 'approve'])->name('admin.site-report.approve');
+    Route::post('/laporan-lapangan/{id}/lock', [SiteReportController::class, 'lock'])->name('admin.site-report.lock');
+    Route::post('/laporan-lapangan/{id}/unlock', [SiteReportController::class, 'unlock'])->name('admin.site-report.unlock');
+    Route::get('/kontrol-kualitas', [QualityInspectionController::class, 'index'])->name('admin.quality-inspection.index');
+    Route::post('/kontrol-kualitas', [QualityInspectionController::class, 'store'])->name('admin.quality-inspection.store');
+    Route::put('/kontrol-kualitas/{id}', [QualityInspectionController::class, 'update'])->name('admin.quality-inspection.update');
+    Route::delete('/kontrol-kualitas/{id}', [QualityInspectionController::class, 'destroy'])->name('admin.quality-inspection.destroy');
+    Route::post('/kontrol-kualitas/{id}/approve', [QualityInspectionController::class, 'approve'])->name('admin.quality-inspection.approve');
+    Route::post('/kontrol-kualitas/{id}/lock', [QualityInspectionController::class, 'lock'])->name('admin.quality-inspection.lock');
+    Route::post('/kontrol-kualitas/{id}/unlock', [QualityInspectionController::class, 'unlock'])->name('admin.quality-inspection.unlock');
+    Route::get('/jadwal-lapangan', [SiteScheduleController::class, 'index'])->name('admin.site-schedule.index');
+    Route::post('/jadwal-lapangan', [SiteScheduleController::class, 'store'])->name('admin.site-schedule.store');
+    Route::put('/jadwal-lapangan/{id}', [SiteScheduleController::class, 'update'])->name('admin.site-schedule.update');
+    Route::delete('/jadwal-lapangan/{id}', [SiteScheduleController::class, 'destroy'])->name('admin.site-schedule.destroy');
+    Route::post('/jadwal-lapangan/{id}/lock', [SiteScheduleController::class, 'lock'])->name('admin.site-schedule.lock');
+    Route::post('/jadwal-lapangan/{id}/unlock', [SiteScheduleController::class, 'unlock'])->name('admin.site-schedule.unlock');
+    Route::get('/pembelian-material', [MaterialPurchaseController::class, 'index'])->name('admin.material-purchase.index');
+    Route::post('/pembelian-material', [MaterialPurchaseController::class, 'store'])->name('admin.material-purchase.store');
+    Route::post('/pembelian-material/from-request/{id}', [MaterialPurchaseController::class, 'fromRequest'])->name('admin.material-purchase.from-request');
+    Route::post('/pembelian-material/{id}/approve', [MaterialPurchaseController::class, 'approve'])->name('admin.material-purchase.approve');
+    Route::post('/pembelian-material/{id}/release-fund', [MaterialPurchaseController::class, 'releaseFund'])->name('admin.material-purchase.release-fund');
+    Route::post('/pembelian-material/{id}/mark-purchased', [MaterialPurchaseController::class, 'markPurchased'])->name('admin.material-purchase.mark-purchased');
+    Route::post('/pembelian-material/{id}/receive', [MaterialPurchaseController::class, 'receive'])->name('admin.material-purchase.receive');
+    Route::post('/pembelian-material/{id}/lock', [MaterialPurchaseController::class, 'lock'])->name('admin.material-purchase.lock');
+    Route::post('/pembelian-material/{id}/unlock', [MaterialPurchaseController::class, 'unlock'])->name('admin.material-purchase.unlock');
+    Route::get('/permintaan-pembelian', [MaterialPurchaseRequestController::class, 'index'])->name('admin.material-purchase-request.index');
+    Route::get('/daftar-permintaan-pembelian', [MaterialPurchaseRequestController::class, 'financeIndex'])->name('admin.material-purchase-request.finance-index');
+    Route::post('/permintaan-pembelian', [MaterialPurchaseRequestController::class, 'store'])->name('admin.material-purchase-request.store');
+    Route::put('/permintaan-pembelian/{id}', [MaterialPurchaseRequestController::class, 'update'])->name('admin.material-purchase-request.update');
+    Route::delete('/permintaan-pembelian/{id}', [MaterialPurchaseRequestController::class, 'destroy'])->name('admin.material-purchase-request.destroy');
+    Route::post('/permintaan-pembelian/{id}/lock', [MaterialPurchaseRequestController::class, 'lock'])->name('admin.material-purchase-request.lock');
+    Route::post('/permintaan-pembelian/{id}/unlock', [MaterialPurchaseRequestController::class, 'unlock'])->name('admin.material-purchase-request.unlock');
+    Route::get('/pemeriksaan-barang-masuk', [MaterialPurchaseController::class, 'inspectionIndex'])->name('admin.material-purchase.inspection.index');
+    Route::post('/pemeriksaan-barang-masuk/{id}/item/{detailId}', [MaterialPurchaseController::class, 'inspectItem'])->name('admin.material-purchase.inspection.item');
+    Route::get('/rekening-bank', [BankAccountLedgerController::class, 'index'])->name('admin.bank-account-ledger.index');
+
+    Route::get('/kpr', [AdminKprSubmissionController::class, 'index'])->name('admin.kpr.index');
+    Route::get('/kpr/proses/{type}', [AdminKprMilestoneController::class, 'index'])->name('admin.kpr.milestone.index');
+    Route::post('/kpr/proses/{type}/submission/{submissionId}', [AdminKprMilestoneController::class, 'store'])->name('admin.kpr.milestone.store');
+    Route::post('/kpr/proses/{type}/{id}', [AdminKprMilestoneController::class, 'update'])->name('admin.kpr.milestone.update');
+    Route::delete('/kpr/proses/{type}/{id}', [AdminKprMilestoneController::class, 'destroy'])->name('admin.kpr.milestone.destroy');
+    Route::delete('/kpr/proses/{type}/{id}/document/{documentId}', [AdminKprMilestoneController::class, 'destroyDocument'])->name('admin.kpr.milestone.document.destroy');
+    Route::post('/kpr/proses/{type}/{id}/lock', [AdminKprMilestoneController::class, 'lock'])->name('admin.kpr.milestone.lock');
+    Route::post('/kpr/proses/{type}/{id}/unlock', [AdminKprMilestoneController::class, 'unlock'])->name('admin.kpr.milestone.unlock');
+    Route::get('/kpr/{id}', [AdminKprSubmissionController::class, 'show'])->name('admin.kpr.show');
+    Route::put('/kpr/{id}', [AdminKprSubmissionController::class, 'update'])->name('admin.kpr.update');
+    Route::post('/kpr/{id}/follow-up', [AdminKprSubmissionController::class, 'storeFollowUp'])->name('admin.kpr.follow-up.store');
+    Route::put('/kpr/{id}/follow-up/{followUpId}', [AdminKprSubmissionController::class, 'updateFollowUp'])->name('admin.kpr.follow-up.update');
+    Route::delete('/kpr/{id}/follow-up/{followUpId}', [AdminKprSubmissionController::class, 'destroyFollowUp'])->name('admin.kpr.follow-up.destroy');
+    Route::post('/kpr/{id}/follow-up/{followUpId}/lock', [AdminKprSubmissionController::class, 'lockFollowUp'])->name('admin.kpr.follow-up.lock');
+    Route::post('/kpr/{id}/follow-up/{followUpId}/unlock', [AdminKprSubmissionController::class, 'unlockFollowUp'])->name('admin.kpr.follow-up.unlock');
+    Route::post('/kpr/{id}/berkas', [AdminKprSubmissionController::class, 'storeBerkas'])->name('admin.kpr.berkas.store');
+    Route::delete('/kpr/{id}/berkas/{berkasId}', [AdminKprSubmissionController::class, 'destroyBerkas'])->name('admin.kpr.berkas.destroy');
+    Route::post('/kpr/{id}/lock', [AdminKprSubmissionController::class, 'lock'])->name('admin.kpr.lock');
+    Route::post('/kpr/{id}/unlock', [AdminKprSubmissionController::class, 'unlock'])->name('admin.kpr.unlock');
+
+    Route::prefix('approval')->name('admin.approval.')->group(function () {
+        Route::get('/', [ApprovalRequestController::class, 'index'])->name('requests.index');
+        Route::post('{approvalRequest}/approve', [ApprovalRequestController::class, 'approve'])->name('requests.approve');
+        Route::post('{approvalRequest}/reject', [ApprovalRequestController::class, 'reject'])->name('requests.reject');
+        Route::get('settings', [ApprovalSettingController::class, 'index'])->name('settings.index');
+        Route::put('settings', [ApprovalSettingController::class, 'update'])->name('settings.update');
+    });
+
+    Route::prefix('management')->name('admin.management.')->group(function () {
+        Route::get('/', [AdminManagementOverviewController::class, 'index'])->name('overview');
+        Route::get('perumahan/{id}/hpp', [AdminPerumahanController::class, 'hpp'])->name('perumahan.hpp.detail');
+        Route::get('perumahan/{id}/detail', [AdminPerumahanController::class, 'detail'])->name('perumahan.detail');
+        Route::get('perumahan/{id}/rumah/{rumahId}/detail', [AdminPerumahanController::class, 'unitDetail'])->name('perumahan.rumah.detail');
+        Route::get('perumahan/{id}/rumah/{rumahId}/hpp', [AdminPerumahanController::class, 'rumahHpp'])->name('perumahan.rumah.hpp.detail');
+        Route::post('perumahan/{id}/rumah', [AdminPerumahanController::class, 'storeRumah'])->name('perumahan.rumah.store');
+        Route::put('perumahan/{id}/rumah/{rumahId}', [AdminPerumahanController::class, 'updateRumah'])->name('perumahan.rumah.update');
+        Route::post('perumahan/{id}/rumah/{rumahId}/progress', [AdminPerumahanController::class, 'storeProgress'])->name('perumahan.rumah.progress.store');
+        Route::put('perumahan/{id}/hpp', [AdminPerumahanController::class, 'updateHpp'])->name('perumahan.hpp.update');
+        Route::put('perumahan/{id}/hpp/{itemId}', [AdminPerumahanController::class, 'updateHppItem'])->name('perumahan.hpp.item.update');
+        Route::put('perumahan/{id}/rumah/{rumahId}/hpp', [AdminPerumahanController::class, 'updateRumahHpp'])->name('perumahan.rumah.hpp.update');
+        Route::put('perumahan/{id}/rumah/{rumahId}/hpp/{itemId}', [AdminPerumahanController::class, 'updateRumahHpp'])->name('perumahan.rumah.hpp.item.update');
+        Route::post('cabang-perusahaan/{id}/lock', [AdminCabangPerusahaanController::class, 'lock'])->name('cabang-perusahaan.lock');
+        Route::post('cabang-perusahaan/{id}/unlock', [AdminCabangPerusahaanController::class, 'unlock'])->name('cabang-perusahaan.unlock');
+        Route::post('perumahan/{id}/lock', [AdminPerumahanController::class, 'lock'])->name('perumahan.lock');
+        Route::post('perumahan/{id}/unlock', [AdminPerumahanController::class, 'unlock'])->name('perumahan.unlock');
+        Route::post('master-bank/{id}/lock', [AdminMasterBankController::class, 'lock'])->name('master-bank.lock');
+        Route::post('master-bank/{id}/unlock', [AdminMasterBankController::class, 'unlock'])->name('master-bank.unlock');
+        Route::post('bank-kredit/{id}/lock', [AdminBankKreditController::class, 'lock'])->name('bank-kredit.lock');
+        Route::post('bank-kredit/{id}/unlock', [AdminBankKreditController::class, 'unlock'])->name('bank-kredit.unlock');
+        Route::post('dokumen-legalitas/{id}/lock', [AdminDokumenLegalitasController::class, 'lock'])->name('dokumen-legalitas.lock');
+        Route::post('dokumen-legalitas/{id}/unlock', [AdminDokumenLegalitasController::class, 'unlock'])->name('dokumen-legalitas.unlock');
+        Route::post('dokumen-legalitas-rumah/{id}/lock', [AdminDokumenLegalitasRumahController::class, 'lock'])->name('dokumen-legalitas-rumah.lock');
+        Route::post('dokumen-legalitas-rumah/{id}/unlock', [AdminDokumenLegalitasRumahController::class, 'unlock'])->name('dokumen-legalitas-rumah.unlock');
+        Route::post('master-dokumen-customer/{id}/lock', [AdminDokumenCostumerController::class, 'lock'])->name('master-dokumen-customer.lock');
+        Route::post('master-dokumen-customer/{id}/unlock', [AdminDokumenCostumerController::class, 'unlock'])->name('master-dokumen-customer.unlock');
+        Route::post('kelompok-hpp/{id}/lock', [AdminKelompokHppController::class, 'lock'])->name('kelompok-hpp.lock');
+        Route::post('kelompok-hpp/{id}/unlock', [AdminKelompokHppController::class, 'unlock'])->name('kelompok-hpp.unlock');
+        Route::post('tipe-post/{id}/lock', [AdminTipePostController::class, 'lock'])->name('tipe-post.lock');
+        Route::post('tipe-post/{id}/unlock', [AdminTipePostController::class, 'unlock'])->name('tipe-post.unlock');
+        Route::post('user/{id}/lock', [AdminUserController::class, 'lock'])->name('user.lock');
+        Route::post('user/{id}/unlock', [AdminUserController::class, 'unlock'])->name('user.unlock');
+        Route::post('role-permission/{id}/lock', [AdminRolePermissionController::class, 'lock'])->name('role-permission.lock');
+        Route::post('role-permission/{id}/unlock', [AdminRolePermissionController::class, 'unlock'])->name('role-permission.unlock');
+        Route::resource('cabang-perusahaan', AdminCabangPerusahaanController::class)->parameters(['cabang-perusahaan' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('perumahan', AdminPerumahanController::class)->parameters(['perumahan' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('master-bank', AdminMasterBankController::class)->parameters(['master-bank' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('bank-kredit', AdminBankKreditController::class)->parameters(['bank-kredit' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('dokumen-legalitas', AdminDokumenLegalitasController::class)->parameters(['dokumen-legalitas' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('dokumen-legalitas-rumah', AdminDokumenLegalitasRumahController::class)->parameters(['dokumen-legalitas-rumah' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('master-dokumen-customer', AdminDokumenCostumerController::class)->parameters(['master-dokumen-customer' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('kelompok-hpp', AdminKelompokHppController::class)->parameters(['kelompok-hpp' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('tipe-post', AdminTipePostController::class)->parameters(['tipe-post' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('user', AdminUserController::class)->parameters(['user' => 'id'])->except(['create', 'show', 'edit']);
+        Route::resource('role-permission', AdminRolePermissionController::class)->parameters(['role-permission' => 'id'])->except(['create', 'show', 'edit']);
+    });
+
+    Route::prefix('marketing')->name('admin.marketing.')->group(function () {
+        Route::get('/', [AdminMarketingController::class, 'index'])->name('index');
+        Route::resource('sumber-lead', AdminLeadSourceController::class)->parameters(['sumber-lead' => 'id'])->except(['create', 'show', 'edit']);
+        Route::post('sumber-lead/{id}/lock', [AdminLeadSourceController::class, 'lock'])->name('sumber-lead.lock');
+        Route::post('sumber-lead/{id}/unlock', [AdminLeadSourceController::class, 'unlock'])->name('sumber-lead.unlock');
+        Route::get('laporan-lead', [AdminLeadReportController::class, 'index'])->name('laporan-lead.index');
+        Route::get('laporan-pipeline', [AdminPipelineReportController::class, 'index'])->name('laporan-pipeline.index');
+        Route::get('operasional/{section}', [AdminMarketingOperationsController::class, 'show'])->name('operasional.show');
+        Route::post('operasional/{section}', [AdminMarketingOperationsController::class, 'store'])->name('operasional.store');
+        Route::put('operasional/{section}/{id}', [AdminMarketingOperationsController::class, 'update'])->name('operasional.update');
+        Route::delete('operasional/{section}/{id}', [AdminMarketingOperationsController::class, 'destroy'])->name('operasional.destroy');
+        Route::post('operasional/{section}/{id}/lock', [AdminMarketingOperationsController::class, 'lock'])->name('operasional.lock');
+        Route::post('operasional/{section}/{id}/unlock', [AdminMarketingOperationsController::class, 'unlock'])->name('operasional.unlock');
+        Route::post('operasional/reminder/{id}/complete', [AdminMarketingOperationsController::class, 'completeReminder'])->name('operasional.reminder.complete');
+        Route::post('operasional/dokumen/review', [AdminMarketingOperationsController::class, 'reviewDocument'])->name('operasional.document.review');
+        Route::post('operasional/booking-expired/process', [AdminMarketingOperationsController::class, 'expireBookings'])->name('operasional.booking-expired.process');
+        Route::get('kwitansi/{id}', [AdminMarketingOperationsController::class, 'receipt'])->name('kwitansi.show');
+        Route::get('transaksi-pembelian/cash', [AdminCashSaleController::class, 'index'])->name('transaksi-pembelian.cash.index');
+        Route::post('transaksi-pembelian/cash', [AdminCashSaleController::class, 'store'])->name('transaksi-pembelian.cash.store');
+        Route::post('transaksi-pembelian/cash/{id}/payments', [AdminCashSaleController::class, 'storePayment'])->name('transaksi-pembelian.cash.payment.store');
+        Route::post('transaksi-pembelian/cash/{id}/handover', [AdminCashSaleController::class, 'handover'])->name('transaksi-pembelian.cash.handover');
+        Route::post('transaksi-pembelian/cash/{id}/lock', [AdminCashSaleController::class, 'lock'])->name('transaksi-pembelian.cash.lock');
+        Route::post('transaksi-pembelian/cash/{id}/unlock', [AdminCashSaleController::class, 'unlock'])->name('transaksi-pembelian.cash.unlock');
+        Route::get('calon-konsumen', [AdminCostumerController::class, 'index'])->name('calon-konsumen.index');
+        Route::post('calon-konsumen', [AdminCostumerController::class, 'store'])->name('calon-konsumen.store');
+        Route::put('calon-konsumen/{id}', [AdminCostumerController::class, 'update'])->name('calon-konsumen.update');
+        Route::delete('calon-konsumen/{id}', [AdminCostumerController::class, 'destroy'])->name('calon-konsumen.destroy');
+        Route::post('calon-konsumen/{id}/lock', [AdminCostumerController::class, 'lock'])->name('calon-konsumen.lock');
+        Route::post('calon-konsumen/{id}/unlock', [AdminCostumerController::class, 'unlock'])->name('calon-konsumen.unlock');
+        Route::get('jejak-follow-up', [AdminFollowUpController::class, 'index'])->name('jejak-follow-up.index');
+        Route::post('jejak-follow-up', [AdminFollowUpController::class, 'store'])->name('jejak-follow-up.store');
+        Route::put('jejak-follow-up/{id}', [AdminFollowUpController::class, 'update'])->name('jejak-follow-up.update');
+        Route::delete('jejak-follow-up/{id}', [AdminFollowUpController::class, 'destroy'])->name('jejak-follow-up.destroy');
+        Route::post('jejak-follow-up/{id}/lock', [AdminFollowUpController::class, 'lock'])->name('jejak-follow-up.lock');
+        Route::post('jejak-follow-up/{id}/unlock', [AdminFollowUpController::class, 'unlock'])->name('jejak-follow-up.unlock');
+        Route::resource('jadwal-survey', AdminSurveyScheduleController::class)->parameters(['jadwal-survey' => 'id'])->except(['create', 'show', 'edit']);
+        Route::put('jadwal-survey/{id}/status', [AdminSurveyScheduleController::class, 'updateStatus'])->name('jadwal-survey.status.update');
+        Route::post('jadwal-survey/{id}/lock', [AdminSurveyScheduleController::class, 'lock'])->name('jadwal-survey.lock');
+        Route::post('jadwal-survey/{id}/unlock', [AdminSurveyScheduleController::class, 'unlock'])->name('jadwal-survey.unlock');
+        Route::get('spr', [AdminSprController::class, 'index'])->name('spr.index');
+        Route::get('spr/create', [AdminSprController::class, 'create'])->name('spr.create');
+        Route::get('spr/{id}/edit', [AdminSprController::class, 'edit'])->name('spr.edit');
+        Route::post('spr', [AdminSprController::class, 'store'])->name('spr.store');
+        Route::put('spr/{id}', [AdminSprController::class, 'update'])->name('spr.update');
+        Route::put('spr/{id}/status', [AdminSprController::class, 'updateStatus'])->name('spr.status.update');
+        Route::post('spr/{id}/approve', [AdminSprController::class, 'approve'])->name('spr.approve');
+        Route::post('spr/{id}/reject', [AdminSprController::class, 'reject'])->name('spr.reject');
+        Route::post('spr/{id}/lock', [AdminSprController::class, 'lock'])->name('spr.lock');
+        Route::post('spr/{id}/unlock', [AdminSprController::class, 'unlock'])->name('spr.unlock');
+        Route::get('pembayaran-spr', [AdminSprPaymentController::class, 'index'])->name('pembayaran-spr.index');
+        Route::post('pembayaran-spr/{sprId}/booking-fee', [AdminSprPaymentController::class, 'storeBookingFee'])->name('pembayaran-spr.booking-fee.store');
+        Route::post('pembayaran-spr/{sprId}/uang-muka', [AdminSprPaymentController::class, 'storeDownPayment'])->name('pembayaran-spr.uang-muka.store');
+        Route::post('pembayaran-spr/{sprId}/cancel', [AdminSprPaymentController::class, 'cancelSpr'])->name('pembayaran-spr.cancel');
+        Route::get('{slug}', [AdminMarketingController::class, 'show'])->name('show');
+    });
+});

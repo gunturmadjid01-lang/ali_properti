@@ -1,0 +1,114 @@
+import { Head, useForm } from '@inertiajs/react';
+import { PlusCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Button } from '../../../../Components/UI';
+import AdminLayout from '../../../../Layouts/AdminLayout';
+
+function defaultValues(fields) {
+    return fields.reduce((values, field) => {
+        values[field.name] = field.type === 'checkboxes' ? [] : (field.defaultValue ?? '');
+        return values;
+    }, {});
+}
+
+function valuesFromRow(fields, row) {
+    return fields.reduce((values, field) => {
+        values[field.name] = row[field.name] ?? (field.type === 'checkboxes' ? [] : '');
+        return values;
+    }, {});
+}
+
+function ManagementPageContent({ title, description, baseUrl, columns, fields, rows, filters, options, TableComponent, FormComponent, requestService }) {
+    const defaults = useMemo(() => defaultValues(fields), [fields]);
+    const form = useForm(defaults);
+    const [selected, setSelected] = useState(null);
+    const [formOpen, setFormOpen] = useState(false);
+
+    const resetForm = () => {
+        setSelected(null);
+        form.clearErrors();
+        form.setData(defaults);
+    };
+
+    const openCreate = () => {
+        resetForm();
+        setFormOpen(true);
+    };
+
+    const closeForm = () => {
+        resetForm();
+        setFormOpen(false);
+    };
+
+    const editRow = (row) => {
+        setSelected(row);
+        form.clearErrors();
+        form.setData(valuesFromRow(fields, row));
+        setFormOpen(true);
+    };
+
+    const submit = (event) => {
+        event.preventDefault();
+        requestService.submit({
+            form,
+            baseUrl,
+            selected,
+            onSuccess: closeForm,
+            onError: () => setFormOpen(true),
+        });
+    };
+
+    return (
+        <>
+            <Head title={title} />
+            <div className="grid gap-6">
+                <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">Master Data</p>
+                            <h2 className="mt-1 text-xl font-extrabold">{title}</h2>
+                            <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-soft dark:text-white/60">{description}</p>
+                        </div>
+                        <Button type="button" onClick={openCreate}>
+                            <PlusCircle size={18} /> Tambah Baru
+                        </Button>
+                    </div>
+                </section>
+
+                <TableComponent
+                    baseUrl={baseUrl}
+                    title={title}
+                    columns={columns}
+                    rows={rows}
+                    filters={filters}
+                    options={options}
+                    onEdit={editRow}
+                    onDelete={(row) => requestService.destroy({ baseUrl, row })}
+                    onLock={(row) => requestService.lock?.({ baseUrl, row })}
+                    onUnlock={(row) => requestService.unlock?.({ baseUrl, row })}
+                    onSearch={(search) => requestService.search({ baseUrl, search })}
+                />
+
+                <FormComponent
+                    open={formOpen}
+                    title={title}
+                    fields={fields}
+                    options={options}
+                    form={form}
+                    selected={selected}
+                    onSubmit={submit}
+                    onClose={closeForm}
+                />
+            </div>
+        </>
+    );
+}
+
+export default function ManagementPage(props) {
+    const { TableComponent, FormComponent, requestService } = props;
+
+    return <ManagementPageContent {...props} TableComponent={TableComponent} FormComponent={FormComponent} requestService={requestService} />;
+}
+
+ManagementPage.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Admin'}>{page}</AdminLayout>;
+

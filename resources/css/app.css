@@ -1,0 +1,137 @@
+@import 'tailwindcss';
+
+@media print {
+    body {
+        background: #fff !important;
+    }
+
+    body * {
+        visibility: hidden;
+    }
+
+    .receipt-sheet,
+    .receipt-sheet * {
+        visibility: visible;
+    }
+
+    .receipt-sheet {
+        position: absolute;
+        inset: 0;
+        max-width: none !important;
+        width: 100% !important;
+        border: 0 !important;
+        box-shadow: none !important;
+    }
+
+    .print-hidden {
+        display: none !important;
+    }
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+@source '../**/*.jsx';
+
+@theme {
+    --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    --font-display: 'Playfair Display', Georgia, serif;
+
+    --color-ink: #20262d;
+    --color-ink-soft: #66717c;
+    --color-graphite: #11161b;
+    --color-silver: #eef1f4;
+    --color-silver-soft: #f7f8f8;
+    --color-silver-deep: #c8ced5;
+    --color-champagne: #fff1bf;
+    --color-gold: #d8ba72;
+    --color-gold-soft: #f7df9a;
+    --color-gold-deep: #9b762f;
+    --color-ivory: #fffdf6;
+
+    --shadow-soft: 0 18px 50px rgba(31, 37, 43, 0.08);
+    --shadow-gold: 0 24px 70px rgba(139, 116, 67, 0.14);
+
+    --animate-fade-up: fade-up 0.72s ease both;
+    --animate-fade-in: fade-in 0.7s ease both;
+    --animate-soft-zoom: soft-zoom 9s ease-in-out infinite alternate;
+    --animate-shimmer-gold: shimmer-gold 4.8s ease-in-out infinite;
+
+    --breakpoint-sm: 40rem;
+    --breakpoint-md: 48rem;
+    --breakpoint-lg: 64rem;
+    --breakpoint-xl: 80rem;
+    --breakpoint-2xl: 96rem;
+}
+
+@keyframes fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(24px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fade-in {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes soft-zoom {
+    from {
+        transform: scale(1);
+    }
+
+    to {
+        transform: scale(1.045);
+    }
+}
+
+@keyframes shimmer-gold {
+    0%,
+    100% {
+        box-shadow: 0 18px 50px rgba(31, 37, 43, 0.08);
+    }
+
+    50% {
+        box-shadow: 0 24px 70px rgba(139, 116, 67, 0.18);
+    }
+}
+
+@layer base {
+    * {
+        box-sizing: border-box;
+    }
+
+    html {
+        scroll-behavior: smooth;
+    }
+
+    body {
+        min-width: 320px;
+        color: theme(--color-ink);
+        background:
+            radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.96), transparent 25rem),
+            radial-gradient(circle at 82% 12%, rgba(255, 241, 191, 0.44), transparent 30rem),
+            radial-gradient(circle at 68% 76%, rgba(200, 206, 213, 0.28), transparent 30rem),
+            linear-gradient(135deg, #f8f9fa 0%, #e2e6ea 44%, #f7f8f8 100%);
+    }
+
+    img,
+    video {
+        display: block;
+        max-width: 100%;
+    }
+}
