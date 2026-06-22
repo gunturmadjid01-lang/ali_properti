@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\Costumer;
 use App\Models\DokumenCostumer;
 use App\Models\DetailRumah;
@@ -15,6 +16,8 @@ use Inertia\Response;
 
 class MarketingController extends Controller
 {
+    use ScopesActivePerumahan;
+
     public function index(Request $request): Response
     {
         return $this->render('marketing', $request);
@@ -45,7 +48,7 @@ class MarketingController extends Controller
                 ? $this->customerRows($request)
                 : [],
             'progressRows' => $slug === 'marketing' || $slug === 'operasional' || $slug === 'laporan'
-                ? $this->progressRows()
+                ? $this->progressRows($request)
                 : [],
             'quickActions' => $section['quickActions'] ?? [],
         ]);
@@ -54,15 +57,25 @@ class MarketingController extends Controller
     protected function summary(Request $request): array
     {
         $customerQuery = Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id));
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request));
 
         return [
             'total_customers' => (clone $customerQuery)->count(),
             'high_prospects' => 0,
             'documents' => DokumenCostumer::query()->count(),
-            'recent_progress' => ProgressPembangunan::query()->whereDate('tanggal', '>=', now()->subDays(30))->count(),
-            'active_projects' => Perumahan::query()->where('status', 'aktif')->count(),
-            'active_units' => DetailRumah::query()->where('status', 'aktif')->count(),
+            'recent_progress' => ProgressPembangunan::query()
+                ->whereDate('tanggal', '>=', now()->subDays(30))
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
+                ->count(),
+            'active_projects' => Perumahan::query()
+                ->where('status', 'aktif')
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereKey($this->activePerumahanId($request)))
+                ->count(),
+            'active_units' => DetailRumah::query()
+                ->where('status', 'aktif')
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+                ->count(),
         ];
     }
 
@@ -70,6 +83,7 @@ class MarketingController extends Controller
     {
         return Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->latest('id')
             ->limit(5)
             ->get()
@@ -83,10 +97,11 @@ class MarketingController extends Controller
             ]);
     }
 
-    protected function progressRows()
+    protected function progressRows(Request $request)
     {
         return ProgressPembangunan::query()
             ->with(['detailRumah.perumahan', 'user:id,name'])
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->latest('tanggal')
             ->limit(5)
             ->get()

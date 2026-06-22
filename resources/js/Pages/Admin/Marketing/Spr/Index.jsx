@@ -1,7 +1,8 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { CheckCircle2, Edit3, FilePlus2, Lock, Search, ShieldCheck, Unlock, XCircle } from 'lucide-react';
+import { CheckCircle2, Edit3, Eye, FilePlus2, Lock, Search, ShieldCheck, Unlock, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../../Components/UI';
+import DetailModal from '../../../../Components/UI/DetailModal';
 import AdminLayout from '../../../../Layouts/AdminLayout';
 
 function money(value) {
@@ -767,6 +768,7 @@ function EditSprModal({ open, onClose, baseUrl, row, customers, units, options, 
 
 export default function Index({ title, description, baseUrl, rows, filters = {}, customers = [], units = [], bankKreditOptions = [], dokumenOptions = [], options = {}, permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
+    const [detailRow, setDetailRow] = useState(null);
 
     const submitSearch = (event) => {
         event.preventDefault();
@@ -775,10 +777,6 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
 
     const approve = (row) => {
         router.post(`${baseUrl}/${row.id}/approve`, {}, { preserveScroll: true });
-    };
-
-    const updateStatus = (row, status) => {
-        router.put(`${baseUrl}/${row.id}/status`, { status }, { preserveScroll: true });
     };
 
     const reject = (row) => {
@@ -862,28 +860,22 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-4 py-3 font-semibold">{row.updated_at ?? '-'}</td>
                                         <td className="px-4 py-3 font-semibold">{row.record_status_label}</td>
                                         <td className="px-4 py-3 font-semibold">
-                                            <div className="grid gap-2 min-w-[180px]">
-                                                <Dropdown
-                                                    disabled={row.record_status === 'locked'}
-                                                    searchable={false}
-                                                    value={row.status}
-                                                    options={options.statusOptions}
-                                                    onChange={(value) => updateStatus(row, value)}
-                                                />
-                                                <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft dark:text-white/50">{row.status_label}</span>
-                                            </div>
+                                            <span className="rounded-full bg-silver-soft px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.08em] text-ink-soft dark:bg-white/10 dark:text-white/60">{row.status_label}</span>
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex justify-end gap-2">
+                                                <Button size="sm" type="button" variant="outline" onClick={() => setDetailRow(row)}>
+                                                    <Eye size={15} /> Detail
+                                                </Button>
                                         {row.record_status === 'locked' ? (
-                                            <Button size="sm" type="button" variant="outline" onClick={() => unlockRow(row)}>
+                                            row.can_unlock && <Button size="sm" type="button" variant="outline" onClick={() => unlockRow(row)}>
                                                 <Unlock size={15} /> Unlock
                                             </Button>
                                         ) : (
                                             <>
-                                                <Button size="sm" type="button" variant="outline" onClick={() => lockRow(row)}>
+                                                {row.can_lock && <Button size="sm" type="button" variant="outline" onClick={() => lockRow(row)}>
                                                     <Lock size={15} /> Lock
-                                                </Button>
+                                                </Button>}
                                                 {row.status === 'menunggu_manager' || row.status === 'menunggu_owner' ? (
                                                     <Button size="sm" type="button" variant="outline" onClick={() => editRowHandler(row)}>
                                                         <Edit3 size={15} /> Edit
@@ -928,6 +920,30 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                 </section>
             </div>
 
+            <DetailModal
+                open={Boolean(detailRow)}
+                onClose={() => setDetailRow(null)}
+                row={detailRow}
+                title={detailRow ? `Detail SPR ${detailRow.kode_spr}` : 'Detail SPR'}
+                columns={[
+                    { key: 'kode_spr', label: 'Kode SPR' },
+                    { key: 'customer', label: 'Customer' },
+                    { key: 'unit', label: 'Unit' },
+                    { key: 'perumahan', label: 'Perumahan' },
+                    { key: 'metode_pembayaran', label: 'Metode Pembayaran' },
+                    { key: 'bank_kredit', label: 'Bank KPR' },
+                    { key: 'harga_jual', label: 'Harga Jual', render: (row) => money(row.harga_jual) },
+                    { key: 'nilai_pengajuan_kpr', label: 'Pengajuan KPR', render: (row) => money(row.nilai_pengajuan_kpr) },
+                    { key: 'booking_fee', label: 'Booking Fee', render: (row) => money(row.booking_fee) },
+                    { key: 'uang_muka', label: 'Uang Muka', render: (row) => money(row.uang_muka) },
+                    { key: 'status_label', label: 'Status' },
+                    { key: 'created_by', label: 'Marketing' },
+                    { key: 'created_at', label: 'Dibuat' },
+                    { key: 'updated_at', label: 'Diupdate' },
+                    { key: 'record_status_label', label: 'Lock' },
+                    { key: 'catatan', label: 'Catatan', full: true },
+                ]}
+            />
         </>
     );
 }

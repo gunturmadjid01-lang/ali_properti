@@ -13,17 +13,13 @@ class PropertyAreaRoleSeeder extends Seeder
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $roles = [
+            'super_admin',
             'owner',
             'manajer_pimpro',
-            'admin_keuangan',
-            'admin_konsumen',
-            'user_area_gudang',
+            'admin',
+            'keuangan',
             'pengawas',
-            'bag_legal',
-            'supervisor_marketing',
-            'teknik',
-            'admin_kpr',
-            'area_marketing',
+            'marketing',
         ];
 
         foreach ($roles as $role) {

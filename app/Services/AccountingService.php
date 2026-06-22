@@ -20,6 +20,40 @@ class AccountingService
     public const MATERIAL_CASH_PURCHASE = 'material_cash_purchase';
     public const SUPPLIER_BILL = 'supplier_bill';
     public const SUPPLIER_PAYMENT = 'supplier_payment';
+    public const CASH_TRANSACTION = 'cash_transaction';
+
+    public function recordFinancialTransaction(TransaksiKeuangan $transaction): ?Journal
+    {
+        $transaction->loadMissing(['tipePost.debitAccount', 'tipePost.creditAccount', 'masterBank']);
+        $post = $transaction->tipePost;
+
+        if (! $post?->debitAccount || ! $post?->creditAccount || (float) $transaction->nominal <= 0) {
+            throw ValidationException::withMessages([
+                'accounting' => 'Tipe transaksi belum memiliki pasangan akun debit dan kredit.',
+            ]);
+        }
+
+        $perumahanId = $transaction->perumahan_id ?: $transaction->masterBank?->perumahan_id;
+        $journal = $this->postJournal(
+            source: $transaction,
+            type: self::CASH_TRANSACTION,
+            tanggal: $transaction->tanggal?->toDateString() ?? now()->toDateString(),
+            perumahanId: $perumahanId,
+            detailRumahId: null,
+            keterangan: $transaction->keterangan,
+            lines: [
+                ['account' => $post->debitAccount->kode_akun, 'debit' => $transaction->nominal, 'kredit' => 0],
+                ['account' => $post->creditAccount->kode_akun, 'debit' => 0, 'kredit' => $transaction->nominal],
+            ],
+        );
+
+        $transaction->forceFill([
+            'perumahan_id' => $perumahanId,
+            'journal_id' => $journal->id,
+        ])->save();
+
+        return $journal;
+    }
 
     public function recordContractorBill(SpkKontraktorPayment $payment): ?Journal
     {

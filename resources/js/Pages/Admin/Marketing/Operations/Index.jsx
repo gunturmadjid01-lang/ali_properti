@@ -179,11 +179,12 @@ function CampaignTable({ data, onEdit, onDelete, onLock }) {
             <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                     <thead className="bg-silver-soft text-left text-xs uppercase tracking-wider text-ink-soft dark:bg-white/5">
-                        <tr>{['Campaign', 'Periode', 'Kanal', 'Anggaran', 'Realisasi', 'Lead / Target', 'Status', 'Aksi'].map((x) => <th className="px-4 py-3" key={x}>{x}</th>)}</tr>
+                        <tr>{['Perumahan', 'Campaign', 'Periode', 'Kanal', 'Anggaran', 'Realisasi', 'Lead / Target', 'Status', 'Aksi'].map((x) => <th className="px-4 py-3" key={x}>{x}</th>)}</tr>
                     </thead>
                     <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
                         {(data.rows ?? []).map((row) => (
                             <tr key={row.id}>
+                                <td className="px-4 py-4 font-semibold">{row.perumahan}</td>
                                 <td className="px-4 py-4"><b>{row.nama_campaign}</b><br /><span className="text-xs text-ink-soft">{row.kode_campaign}</span></td>
                                 <td className="px-4 py-4">{row.tanggal_mulai}<br />{row.tanggal_selesai || '-'}</td>
                                 <td className="px-4 py-4">{row.kanal}</td>
@@ -309,18 +310,18 @@ function TargetCommission({ data, onEdit, onDelete, onLock, setCreateType }) {
             <Card className="overflow-hidden">
                 <h3 className="border-b border-silver-deep/60 px-5 py-4 text-lg font-extrabold dark:border-white/10">Target dan KPI</h3>
                 <div className="overflow-x-auto"><table className="min-w-full text-sm">
-                    <thead className="bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-white/5"><tr>{['Marketing', 'Periode', 'Lead', 'Survey', 'SPR', 'Closing', 'Nilai', 'Aksi'].map((x) => <th className="px-4 py-3" key={x}>{x}</th>)}</tr></thead>
+                    <thead className="bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-white/5"><tr>{['Perumahan', 'Marketing', 'Periode', 'Lead', 'Survey', 'SPR', 'Closing', 'Nilai', 'Aksi'].map((x) => <th className="px-4 py-3" key={x}>{x}</th>)}</tr></thead>
                     <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">{(data.targets ?? []).map((row) => <tr key={row.id}>
-                        <td className="px-4 py-4 font-bold">{row.user}</td><td className="px-4 py-4">{row.bulan}/{row.tahun}</td><td className="px-4 py-4">{row.target_lead}</td><td className="px-4 py-4">{row.target_survey}</td><td className="px-4 py-4">{row.target_spr}</td><td className="px-4 py-4">{row.target_closing}</td><td className="px-4 py-4">{money(row.target_nilai_penjualan)}</td><td className="px-4 py-4"><Actions row={row} type="target" onEdit={onEdit} onDelete={onDelete} onLock={onLock} /></td>
+                        <td className="px-4 py-4 font-semibold">{row.perumahan}</td><td className="px-4 py-4 font-bold">{row.user}</td><td className="px-4 py-4">{row.bulan}/{row.tahun}</td><td className="px-4 py-4">{row.target_lead}</td><td className="px-4 py-4">{row.target_survey}</td><td className="px-4 py-4">{row.target_spr}</td><td className="px-4 py-4">{row.target_closing}</td><td className="px-4 py-4">{money(row.target_nilai_penjualan)}</td><td className="px-4 py-4"><Actions row={row} type="target" onEdit={onEdit} onDelete={onDelete} onLock={onLock} /></td>
                     </tr>)}</tbody>
                 </table></div>
             </Card>
             <Card className="overflow-hidden">
                 <h3 className="border-b border-silver-deep/60 px-5 py-4 text-lg font-extrabold dark:border-white/10">Komisi Marketing</h3>
                 <div className="overflow-x-auto"><table className="min-w-full text-sm">
-                    <thead className="bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-white/5"><tr>{['SPR', 'Marketing', 'Dasar', 'Persen', 'Komisi', 'Status', 'Aksi'].map((x) => <th className="px-4 py-3" key={x}>{x}</th>)}</tr></thead>
+                    <thead className="bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-white/5"><tr>{['Perumahan', 'SPR', 'Marketing', 'Dasar', 'Persen', 'Komisi', 'Status', 'Aksi'].map((x) => <th className="px-4 py-3" key={x}>{x}</th>)}</tr></thead>
                     <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">{(data.commissions ?? []).map((row) => <tr key={row.id}>
-                        <td className="px-4 py-4 font-bold">{row.spr}</td><td className="px-4 py-4">{row.user}</td><td className="px-4 py-4">{money(row.dasar_perhitungan)}</td><td className="px-4 py-4">{row.persentase}%</td><td className="px-4 py-4 font-bold">{money(row.nominal)}</td><td className="px-4 py-4"><span className={badge(row.status)}>{row.status}</span></td><td className="px-4 py-4"><Actions row={row} type="commission" onEdit={onEdit} onDelete={onDelete} onLock={onLock} /></td>
+                        <td className="px-4 py-4 font-semibold">{row.perumahan}</td><td className="px-4 py-4 font-bold">{row.spr}</td><td className="px-4 py-4">{row.user}</td><td className="px-4 py-4">{money(row.dasar_perhitungan)}</td><td className="px-4 py-4">{row.persentase}%</td><td className="px-4 py-4 font-bold">{money(row.nominal)}</td><td className="px-4 py-4"><span className={badge(row.status)}>{row.status}</span></td><td className="px-4 py-4"><Actions row={row} type="commission" onEdit={onEdit} onDelete={onDelete} onLock={onLock} /></td>
                     </tr>)}</tbody>
                 </table></div>
             </Card>

@@ -15,6 +15,7 @@ class ProgressPembangunan extends Model
     protected $fillable = [
         'detail_rumah_id',
         'tahapan_pembangunan_id',
+        'site_schedule_id',
         'nama_progress',
         'tanggal',
         'tahapan',
@@ -51,6 +52,11 @@ class ProgressPembangunan extends Model
     public function tahapanPembangunan(): BelongsTo
     {
         return $this->belongsTo(TahapanPembangunan::class);
+    }
+
+    public function siteSchedule(): BelongsTo
+    {
+        return $this->belongsTo(SiteSchedule::class);
     }
 
     public function user(): BelongsTo

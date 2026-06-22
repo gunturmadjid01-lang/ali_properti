@@ -41,58 +41,16 @@ class UserSeeder extends Seeder
                 'role' => 'marketing',
             ],
             [
-                'email' => 'teknik@ptali.com',
-                'name' => 'Tim Teknik',
-                'phone' => '081100000005',
-                'role' => 'teknik',
-            ],
-            [
                 'email' => 'manager@ptali.com',
                 'name' => 'Manager Proyek',
                 'phone' => '081100000006',
                 'role' => 'manajer_pimpro',
             ],
             [
-                'email' => 'gudang@ptali.com',
-                'name' => 'Gudang',
-                'phone' => '081100000007',
-                'role' => 'user_area_gudang',
-            ],
-            [
-                'email' => 'legal@ptali.com',
-                'name' => 'Legal',
-                'phone' => '081100000008',
-                'role' => 'bag_legal',
-            ],
-            [
-                'email' => 'kpr@ptali.com',
-                'name' => 'Admin KPR',
-                'phone' => '081100000009',
-                'role' => 'admin_kpr',
-            ],
-            [
-                'email' => 'konsumen@ptali.com',
-                'name' => 'Admin Konsumen',
-                'phone' => '081100000010',
-                'role' => 'admin_konsumen',
-            ],
-            [
                 'email' => 'pengawas@ptali.com',
                 'name' => 'Pengawas',
                 'phone' => '081100000011',
                 'role' => 'pengawas',
-            ],
-            [
-                'email' => 'supervisor@ptali.com',
-                'name' => 'Supervisor Marketing',
-                'phone' => '081100000012',
-                'role' => 'supervisor_marketing',
-            ],
-            [
-                'email' => 'area-marketing@ptali.com',
-                'name' => 'Area Marketing',
-                'phone' => '081100000013',
-                'role' => 'area_marketing',
             ],
         ];
 

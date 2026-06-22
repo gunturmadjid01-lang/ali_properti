@@ -16,6 +16,7 @@ class Costumer extends Model
         'kode_costumer',
         'created_by',
         'updated_by',
+        'perumahan_id',
         'marketing_lead_source_id',
         'marketing_campaign_id',
         'status_lead',
@@ -65,6 +66,11 @@ class Costumer extends Model
     public function campaign(): BelongsTo
     {
         return $this->belongsTo(MarketingCampaign::class, 'marketing_campaign_id');
+    }
+
+    public function perumahan(): BelongsTo
+    {
+        return $this->belongsTo(Perumahan::class);
     }
 
     public function surveySchedules(): HasMany

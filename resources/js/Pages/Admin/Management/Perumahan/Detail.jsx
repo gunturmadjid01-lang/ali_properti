@@ -1,7 +1,8 @@
-import { Head, Link, useForm, usePage } from '@inertiajs/react';
+import { Head, Link, useForm } from '@inertiajs/react';
 import { ArrowLeft, Calculator, LoaderCircle, PlusCircle, Eye } from 'lucide-react';
 import { Button, CurrencyInput, Dropdown, Form, Input, Textarea, Accordion } from '../../../../Components/UI';
 import AdminLayout from '../../../../Layouts/AdminLayout';
+import { useResourcePermissions } from '../../../../Utils/permissions';
 
 function money(value) {
     return new Intl.NumberFormat('id-ID', {
@@ -41,9 +42,10 @@ function FormErrorSummary({ errors }) {
 }
 
 function Detail({ title = 'Detail Perumahan', perumahan = {}, rows = { data: [], links: [] }, options, baseUrl }) {
-    const { auth } = usePage().props;
-    const roles = auth?.user?.roles ?? [];
-    const canManageUnitAndHpp = !auth?.user || roles.some((role) => ['owner', 'super_admin', 'manajer_pimpro'].includes(role));
+    const unitPermissions = useResourcePermissions('detail-rumah', baseUrl);
+    const hppPermissions = useResourcePermissions('hpp', baseUrl);
+    const canCreateUnit = unitPermissions.canCreate;
+    const canManageHpp = unitPermissions.canUpdate || hppPermissions.canUpdate;
     const pageTitle = `${title} ${perumahan.nama_perusahaan ?? ''}`.trim();
     const overviewAccordion = {
         title: 'Detail Perumahan',
@@ -94,6 +96,10 @@ function Detail({ title = 'Detail Perumahan', perumahan = {}, rows = { data: [],
     });
     const submitUnit = (event) => {
         event.preventDefault();
+        if (!canCreateUnit) {
+            return;
+        }
+
         unitForm.post(`${baseUrl}/${perumahan.id}/rumah`, {
             preserveScroll: true,
             onSuccess: () => unitForm.reset(),
@@ -130,7 +136,7 @@ function Detail({ title = 'Detail Perumahan', perumahan = {}, rows = { data: [],
 
                 <Accordion items={[overviewAccordion]} defaultOpen={0} />
 
-                {canManageUnitAndHpp && (
+                {canCreateUnit && (
                     <Form
                         collapsible
                         title="Tambah Kapling / Unit Rumah"
@@ -222,7 +228,7 @@ function Detail({ title = 'Detail Perumahan', perumahan = {}, rows = { data: [],
                                                 <Button as={Link} href={row.detail_url} variant="outline" size="sm">
                                                     <Eye size={15} /> Detail Unit
                                                 </Button>
-                                                {canManageUnitAndHpp && (
+                                                {canManageHpp && (
                                                     <Button as={Link} href={`${baseUrl}/${perumahan.id}/rumah/${row.id}/hpp`} variant="outline" size="sm">
                                                         <Calculator size={15} /> HPP Unit
                                                     </Button>

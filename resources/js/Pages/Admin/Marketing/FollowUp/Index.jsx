@@ -1,7 +1,8 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { CalendarDays, Edit3, Lock, MessageSquarePlus, Search, Trash2, Unlock, UserRoundCheck, XCircle } from 'lucide-react';
+import { CalendarDays, Edit3, Eye, Lock, MessageSquarePlus, Search, Trash2, Unlock, UserRoundCheck, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, Dropdown, Form, Input, Modal, Textarea } from '../../../../Components/UI';
+import DetailModal from '../../../../Components/UI/DetailModal';
 import AdminLayout from '../../../../Layouts/AdminLayout';
 
 function Pagination({ links = [] }) {
@@ -385,6 +386,7 @@ function EditFollowUpModal({ open, onClose, baseUrl, customers, options, row }) 
 export default function Index({ title, description, baseUrl, rows, filters = {}, customers = [], options = {} }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [editRow, setEditRow] = useState(null);
+    const [detailRow, setDetailRow] = useState(null);
     const [repeatCustomerId, setRepeatCustomerId] = useState('');
     const [search, setSearch] = useState(filters.search ?? '');
 
@@ -501,22 +503,25 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-4 py-3 font-semibold text-ink/80 dark:text-white/72">{row.rencana_follow_up_at || '-'}</td>
                                         <td className="px-4 py-3 text-right">
                                             <div className="flex justify-end gap-2">
+                                                <Button type="button" size="sm" variant="outline" onClick={() => setDetailRow(row)}><Eye size={15} /> Detail</Button>
                                                 <Button type="button" size="sm" variant="outline" onClick={() => openCreateModal(row.costumer_id)}><MessageSquarePlus size={15} /> Lagi</Button>
                                                 {row.record_status === 'locked' ? (
-                                                    <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>
+                                                    row.can_unlock && <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>
                                                 ) : (
                                                     <>
-                                                        <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}><Lock size={15} /> Lock</Button>
-                                                        <Button type="button" size="sm" variant="outline" onClick={() => editRowHandler(row)}><Edit3 size={15} /> Edit</Button>
-                                                        <Button
-                                                            className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-300 dark:hover:bg-red-500/10"
-                                                            size="sm"
-                                                            type="button"
-                                                            variant="ghost"
-                                                            onClick={() => destroy(row)}
-                                                        >
-                                                            <Trash2 size={15} />
-                                                        </Button>
+                                                        {row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}><Lock size={15} /> Lock</Button>}
+                                                        {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRowHandler(row)}><Edit3 size={15} /> Edit</Button>}
+                                                        {row.can_delete && (
+                                                            <Button
+                                                                className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-300 dark:hover:bg-red-500/10"
+                                                                size="sm"
+                                                                type="button"
+                                                                variant="ghost"
+                                                                onClick={() => destroy(row)}
+                                                            >
+                                                                <Trash2 size={15} />
+                                                            </Button>
+                                                        )}
                                                     </>
                                                 )}
                                             </div>
@@ -553,6 +558,27 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                 customers={customers}
                 options={options}
                 row={editRow}
+            />
+            <DetailModal
+                open={Boolean(detailRow)}
+                onClose={() => setDetailRow(null)}
+                row={detailRow}
+                title={detailRow ? `Detail Follow Up ${detailRow.customer}` : 'Detail Follow Up'}
+                columns={[
+                    { key: 'tanggal_follow_up', label: 'Tanggal' },
+                    { key: 'customer', label: 'Customer' },
+                    { key: 'kode_costumer', label: 'Kode Customer' },
+                    { key: 'no_identitas', label: 'No Identitas' },
+                    { key: 'telepon', label: 'Telepon' },
+                    { key: 'metode_follow_up', label: 'Metode' },
+                    { key: 'status_serius', label: 'Status Serius' },
+                    { key: 'progress_kemampuan', label: 'Progress' },
+                    { key: 'status_label', label: 'Status Follow Up' },
+                    { key: 'rencana_follow_up_at', label: 'Rencana Berikutnya' },
+                    { key: 'input_oleh', label: 'Input Oleh' },
+                    { key: 'record_status_label', label: 'Lock' },
+                    { key: 'catatan', label: 'Catatan', full: true },
+                ]}
             />
         </>
     );

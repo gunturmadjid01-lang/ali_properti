@@ -47,7 +47,7 @@ function activeItemKey(items, currentUrl) {
     return items.find((item) => isActiveItem(item, currentUrl))?.title ?? null;
 }
 
-function SidebarList({ items, collapsed, currentUrl, level = 0 }) {
+function SidebarList({ items, collapsed, currentUrl, badges = {}, level = 0 }) {
     const [openKey, setOpenKey] = useState(() => activeItemKey(items, currentUrl));
 
     useEffect(() => {
@@ -73,6 +73,7 @@ function SidebarList({ items, collapsed, currentUrl, level = 0 }) {
                     item={item}
                     collapsed={collapsed}
                     currentUrl={currentUrl}
+                    badges={badges}
                     level={level}
                     open={openKey === item.title}
                     onToggle={() => setOpenKey(openKey === item.title ? null : item.title)}
@@ -83,13 +84,19 @@ function SidebarList({ items, collapsed, currentUrl, level = 0 }) {
     );
 }
 
-function SidebarItem({ item, collapsed, currentUrl, level, open, onToggle }) {
+function SidebarItem({ item, collapsed, currentUrl, badges, level, open, onToggle }) {
     const hasChildren = Array.isArray(item.items) && item.items.length > 0;
     const active = isActiveItem(item, currentUrl);
+    const badge = item.badgeKey ? Number(badges[item.badgeKey] ?? 0) : 0;
     const content = (
         <>
             <SidebarIcon icon={item.icon} />
             {!collapsed && <span className="truncate">{item.title}</span>}
+            {!collapsed && badge > 0 && (
+                <span className="ml-auto rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-black text-white">
+                    {badge > 99 ? '99+' : badge}
+                </span>
+            )}
         </>
     );
 
@@ -113,7 +120,7 @@ function SidebarItem({ item, collapsed, currentUrl, level, open, onToggle }) {
                     {!collapsed && <ChevronDown className={`shrink-0 transition ${open ? 'rotate-180' : ''}`} size={14} />}
                 </button>
                 {(open || collapsed) && (
-                    <SidebarList items={item.items} collapsed={collapsed} currentUrl={currentUrl} level={level + 1} />
+                    <SidebarList items={item.items} collapsed={collapsed} currentUrl={currentUrl} badges={badges} level={level + 1} />
                 )}
             </div>
         );
@@ -136,10 +143,12 @@ function SidebarItem({ item, collapsed, currentUrl, level, open, onToggle }) {
 export default function AdminLayout({ children, title = 'Dashboard' }) {
     const { auth } = usePage().props;
     const { notifications } = usePage().props;
+    const { sidebar_badges: sidebarBadges = {} } = usePage().props;
     const currentUrl = usePage().url;
     const user = auth?.user;
     const assignedPerumahans = auth?.assigned_perumahans ?? user?.assigned_perumahans ?? [];
     const activePerumahan = auth?.active_perumahan ?? user?.active_perumahan ?? null;
+    const needsActivePerumahanSelection = Boolean(auth?.needs_active_perumahan_selection ?? user?.needs_active_perumahan_selection);
     const roles = user?.roles?.length ? user.roles : [];
     const displayUser = user ?? {
         name: 'Guest Admin',
@@ -263,7 +272,7 @@ export default function AdminLayout({ children, title = 'Dashboard' }) {
                                         {section.title}
                                     </p>
                                 )}
-                                <SidebarList items={section.items} collapsed={collapsed} currentUrl={currentUrl} />
+                                <SidebarList items={section.items} collapsed={collapsed} currentUrl={currentUrl} badges={sidebarBadges} />
                             </div>
                         ))
                     ) : (
@@ -361,6 +370,30 @@ export default function AdminLayout({ children, title = 'Dashboard' }) {
 
                 <main className="min-w-0 overflow-x-hidden p-4 lg:p-6">{children}</main>
             </div>
+            {needsActivePerumahanSelection && assignedPerumahans.length > 1 && (
+                <div className="fixed inset-0 z-50 grid place-items-center bg-graphite/55 px-4 backdrop-blur-sm">
+                    <section className="w-full max-w-lg rounded-2xl border border-white/80 bg-white p-5 shadow-soft dark:border-white/10 dark:bg-[#151a21]">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">Properti Aktif</p>
+                        <h2 className="mt-1 text-xl font-extrabold">Pilih perumahan yang mau dikelola</h2>
+                        <p className="mt-2 text-sm font-semibold text-ink-soft dark:text-white/55">
+                            Data marketing akan mengikuti perumahan yang dipilih.
+                        </p>
+                        <div className="mt-4 grid gap-2">
+                            {assignedPerumahans.map((perumahan) => (
+                                <button
+                                    className="flex min-h-12 items-center justify-between rounded-lg border border-silver-deep/70 px-4 text-left text-sm font-extrabold transition hover:bg-silver-soft dark:border-white/10 dark:hover:bg-white/8"
+                                    key={perumahan.id}
+                                    type="button"
+                                    onClick={() => changeActivePerumahan(perumahan.value ?? String(perumahan.id))}
+                                >
+                                    <span>{perumahan.label ?? perumahan.nama_perusahaan}</span>
+                                    <ChevronDown className="-rotate-90 text-ink-soft" size={16} />
+                                </button>
+                            ))}
+                        </div>
+                    </section>
+                </div>
+            )}
             <RequestResponseModal />
         </div>
     );

@@ -3,6 +3,7 @@ import { ArrowLeft, Edit3 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../../../../Components/UI';
 import AdminLayout from '../../../../Layouts/AdminLayout';
+import { useResourcePermissions } from '../../../../Utils/permissions';
 import HppFormModal from './HppFormModal';
 
 function money(value) {
@@ -26,6 +27,9 @@ function Hpp({
     const [editing, setEditing] = useState(null);
     const [search, setSearch] = useState('');
     const [pageSize, setPageSize] = useState('10');
+    const hppPermissions = useResourcePermissions('hpp', hppUrl);
+    const unitPermissions = useResourcePermissions('detail-rumah', baseUrl);
+    const canEditHpp = hppPermissions.canUpdate || unitPermissions.canUpdate;
     const pageTitle = `${title} ${perumahan.nama_perusahaan ?? ''}`.trim();
 
     const filteredRows = useMemo(() => {
@@ -119,7 +123,7 @@ function Hpp({
                         <table className="min-w-full divide-y divide-silver-deep/60 text-xs dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
                                 <tr>
-                                    {['Tanggal', 'Kelompok', 'Volume', 'Satuan', 'Harga Satuan', 'Jumlah RAB', 'Jumlah Realisasi', 'Sisa Anggaran', 'Aksi'].map((column) => (
+                                    {['Tanggal', 'Kelompok', 'Volume', 'Satuan', 'Harga Satuan', 'Jumlah RAB', 'Jumlah Realisasi', 'Sisa Anggaran', ...(canEditHpp ? ['Aksi'] : [])].map((column) => (
                                         <th className="px-4 py-3 font-extrabold" key={column}>{column}</th>
                                     ))}
                                 </tr>
@@ -135,16 +139,18 @@ function Hpp({
                                         <td className="px-4 py-3 font-extrabold">{money(row.jumlah_rab)}</td>
                                         <td className="px-4 py-3 font-extrabold">{money(row.jumlah_realisasi)}</td>
                                         <td className="px-4 py-3 font-extrabold">{money(row.sisa_anggaran)}</td>
-                                        <td className="px-4 py-3">
-                                            <Button variant="outline" size="sm" type="button" onClick={() => setEditing({ mode: 'edit', row })}>
-                                                <Edit3 size={15} /> Edit
-                                            </Button>
-                                        </td>
+                                        {canEditHpp && (
+                                            <td className="px-4 py-3">
+                                                <Button variant="outline" size="sm" type="button" onClick={() => setEditing({ mode: 'edit', row })}>
+                                                    <Edit3 size={15} /> Edit
+                                                </Button>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                                 {visibleRows.length === 0 && (
                                     <tr>
-                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={9}>
+                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={canEditHpp ? 9 : 8}>
                                             Data HPP tidak ditemukan.
                                         </td>
                                     </tr>
@@ -155,7 +161,7 @@ function Hpp({
                 </section>
             </div>
 
-            {editing && (
+            {editing && canEditHpp && (
                 <HppFormModal
                     open={Boolean(editing)}
                     title={`Edit HPP ${editing.row.kelompok_hpp_nama}`}

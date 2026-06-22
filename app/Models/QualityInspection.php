@@ -13,7 +13,7 @@ class QualityInspection extends Model
 
     protected $fillable = [
         'kode_inspeksi', 'tanggal', 'perumahan_id', 'detail_rumah_id',
-        'tahapan_pembangunan_id', 'hasil', 'item_pemeriksaan', 'temuan',
+        'tahapan_pembangunan_id', 'site_schedule_id', 'progress_pembangunan_id', 'hasil', 'item_pemeriksaan', 'temuan',
         'tindakan_perbaikan', 'target_selesai', 'foto', 'status', 'approval_status',
         'approved_by', 'approved_at', 'record_status', 'locked_at', 'locked_by',
         'created_by', 'updated_by',
@@ -39,6 +39,16 @@ class QualityInspection extends Model
     public function tahapanPembangunan(): BelongsTo
     {
         return $this->belongsTo(TahapanPembangunan::class);
+    }
+
+    public function siteSchedule(): BelongsTo
+    {
+        return $this->belongsTo(SiteSchedule::class);
+    }
+
+    public function progressPembangunan(): BelongsTo
+    {
+        return $this->belongsTo(ProgressPembangunan::class);
     }
 
     public function approvedBy(): BelongsTo

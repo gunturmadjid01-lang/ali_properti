@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\MarketingLeadActivity;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Carbon\Carbon;
@@ -13,6 +14,8 @@ use Inertia\Response;
 
 class PipelineReportController extends Controller
 {
+    use ScopesActivePerumahan;
+
     public function index(Request $request): Response
     {
         $dateFrom = $request->query('date_from') ?: now()->startOfMonth()->toDateString();
@@ -26,6 +29,7 @@ class PipelineReportController extends Controller
             ->with(['costumer:id,kode_costumer,nama,telepon', 'user:id,name'])
             ->whereBetween('activity_at', [$from, $to])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->orderBy('activity_at')
             ->get();
 

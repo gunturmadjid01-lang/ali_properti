@@ -1,5 +1,5 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { Ban, CreditCard, FileText, LoaderCircle, Save, Search, ShieldCheck, Wallet } from 'lucide-react';
+import { Ban, Eye, FileText, LoaderCircle, Save, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, CurrencyInput, Dropdown, Input, Modal, Textarea } from '../../../../Components/UI';
 import AdminLayout from '../../../../Layouts/AdminLayout';
@@ -203,9 +203,6 @@ function CancelModal({ open, onClose, row, baseUrl, bankOptions = [] }) {
     const form = useForm({
         alasan_batal: 'Tidak ada dana',
         catatan: '',
-        refund_amount: '0',
-        refund_master_bank_id: '',
-        refund_at: new Date().toISOString().slice(0, 10),
     });
 
     useEffect(() => {
@@ -215,9 +212,6 @@ function CancelModal({ open, onClose, row, baseUrl, bankOptions = [] }) {
 
         form.setData('alasan_batal', 'Tidak ada dana');
         form.setData('catatan', '');
-        form.setData('refund_amount', '0');
-        form.setData('refund_master_bank_id', '');
-        form.setData('refund_at', new Date().toISOString().slice(0, 10));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [open, row?.id]);
 
@@ -251,17 +245,6 @@ function CancelModal({ open, onClose, row, baseUrl, bankOptions = [] }) {
                     <Dropdown value={form.data.alasan_batal} options={reasons} onChange={(value) => form.setData('alasan_batal', value)} />
                     {form.errors.alasan_batal && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.alasan_batal}</span>}
                 </div>
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
-                    Total pembayaran dikonfirmasi yang bisa dikembalikan: {money(row.refundable_paid ?? 0)}
-                </div>
-                <CurrencyInput label="Jumlah Pengembalian" value={form.data.refund_amount} error={form.errors.refund_amount} onChange={(value) => form.setData('refund_amount', value)} />
-                {Number(form.data.refund_amount || 0) > 0 && (
-                    <>
-                        <Dropdown label="Bank/Kas Pengembalian" value={form.data.refund_master_bank_id} options={bankOptions} onChange={(value) => form.setData('refund_master_bank_id', value)} />
-                        {form.errors.refund_master_bank_id && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.refund_master_bank_id}</span>}
-                        <Input label="Tanggal Pengembalian" type="date" value={form.data.refund_at} error={form.errors.refund_at} onChange={(event) => form.setData('refund_at', event.target.value)} />
-                    </>
-                )}
                 <Textarea label="Catatan Tambahan" value={form.data.catatan} error={form.errors.catatan} onChange={(event) => form.setData('catatan', event.target.value)} />
                 <div className="flex justify-end gap-3">
                     <Button type="button" variant="outline" onClick={onClose}>Batal</Button>
@@ -386,8 +369,8 @@ export default function Index({ title, description, baseUrl, filters = {}, booki
                                                     setPaymentRow(row);
                                                     setPaymentType(activeTab === 'booking' ? 'booking' : activeTab === 'dp' ? 'dp' : 'other');
                                                 }}>
-                                                    {canInputPayments ? <CreditCard size={15} /> : <FileText size={15} />}
-                                                    {canInputPayments ? 'Bayar' : 'Detail'}
+                                                    {canInputPayments ? <Eye size={15} /> : <FileText size={15} />}
+                                                    {canInputPayments ? 'Detail / Bayar' : 'Detail'}
                                                 </Button>
                                                 {canInputPayments && (
                                                     activeTab === 'booking' ? (

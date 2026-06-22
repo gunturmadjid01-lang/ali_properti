@@ -1,6 +1,9 @@
 import {
+    Activity,
     BadgeCheck,
     Banknote,
+    BarChart3,
+    BellRing,
     Boxes,
     Building2,
     CalendarClock,
@@ -9,13 +12,20 @@ import {
     FileText,
     Home,
     Landmark,
+    Library,
     LayoutDashboard,
+    KanbanSquare,
+    Megaphone,
     ReceiptText,
     RotateCcw,
     Settings,
+    Share2,
     ShieldCheck,
+    Scale,
+    Target,
     UserCog,
     Users,
+    WalletCards,
 } from "lucide-react";
 
 const ownerSidebar = [
@@ -52,6 +62,11 @@ const ownerSidebar = [
                         link: "/admin/marketing/spr",
                     },
                     {
+                        title: "Approval Refund SPR",
+                        icon: RotateCcw,
+                        link: "/admin/refund-spr/approval",
+                    },
+                    {
                         title: "Setting Approval",
                         icon: BadgeCheck,
                         link: "/admin/approval/settings",
@@ -60,6 +75,118 @@ const ownerSidebar = [
                         title: "Approval Material",
                         icon: Boxes,
                         link: "/admin/permintaan-barang",
+                    },
+                ],
+            },
+            {
+                title: "Manajemen Marketing",
+                icon: BarChart3,
+                items: [
+                    {
+                        title: "Sumber Lead",
+                        icon: Share2,
+                        link: "/admin/marketing/sumber-lead",
+                    },
+                    {
+                        title: "Laporan Lead",
+                        icon: BarChart3,
+                        link: "/admin/marketing/laporan-lead",
+                    },
+                    {
+                        title: "Pipeline Semua Marketing",
+                        icon: KanbanSquare,
+                        link: "/admin/marketing/operasional/pipeline",
+                    },
+                    {
+                        title: "Campaign & Promosi",
+                        icon: Megaphone,
+                        link: "/admin/marketing/operasional/campaign",
+                    },
+                    {
+                        title: "Validasi Berkas",
+                        icon: FileCheck2,
+                        link: "/admin/marketing/operasional/dokumen",
+                    },
+                    {
+                        title: "Distribusi Lead",
+                        icon: Share2,
+                        link: "/admin/marketing/tools/distribusi-lead",
+                    },
+                    {
+                        title: "Monitoring Aktivitas",
+                        icon: BellRing,
+                        link: "/admin/marketing/tools/monitoring-aktivitas",
+                    },
+                    {
+                        title: "Target KPI & Komisi",
+                        icon: Target,
+                        link: "/admin/marketing/operasional/target-komisi",
+                    },
+                    {
+                        title: "Leaderboard Sales",
+                        icon: BarChart3,
+                        link: "/admin/marketing/tools/leaderboard-sales",
+                    },
+                    {
+                        title: "Tagihan & Kwitansi",
+                        icon: WalletCards,
+                        link: "/admin/marketing/operasional/piutang",
+                    },
+                ],
+            },
+            {
+                title: "Keuangan & Akuntansi",
+                icon: Banknote,
+                items: [
+                    {
+                        title: "Dashboard Keuangan",
+                        icon: WalletCards,
+                        link: "/admin/keuangan/dashboard",
+                    },
+                    {
+                        title: "Input Kas Masuk / Keluar",
+                        icon: ReceiptText,
+                        link: "/admin/keuangan/transaksi-kas-bank",
+                    },
+                    {
+                        title: "Jurnal Umum",
+                        icon: FileText,
+                        link: "/admin/keuangan/jurnal-umum",
+                    },
+                    {
+                        title: "Buku Besar",
+                        icon: Library,
+                        link: "/admin/keuangan/buku-besar",
+                    },
+                    {
+                        title: "Neraca Saldo",
+                        icon: Scale,
+                        link: "/admin/keuangan/neraca-saldo",
+                    },
+                    {
+                        title: "Laba Rugi",
+                        icon: BarChart3,
+                        link: "/admin/keuangan/laba-rugi",
+                    },
+                    {
+                        title: "Neraca",
+                        icon: Scale,
+                        link: "/admin/keuangan/neraca",
+                    },
+                    {
+                        title: "Arus Kas",
+                        icon: Activity,
+                        link: "/admin/keuangan/arus-kas",
+                    },
+                    {
+                        title: "Piutang Customer",
+                        icon: ReceiptText,
+                        link: "/admin/keuangan/piutang",
+                    },
+                    {
+                        title: "Hutang Supplier & Kontraktor",
+                        icon: Banknote,
+                        link: "/admin/keuangan/hutang",
                     },
                 ],
             },

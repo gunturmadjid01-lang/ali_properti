@@ -5,7 +5,10 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\Approval\ApprovalRequestController;
 use App\Http\Controllers\Admin\Approval\ApprovalSettingController;
 use App\Http\Controllers\Admin\AreaController;
+use App\Http\Controllers\Admin\AssetInventoryController;
 use App\Http\Controllers\Admin\ActivePerumahanController;
+use App\Http\Controllers\Admin\FieldSupervisionController;
+use App\Http\Controllers\Admin\FinanceController;
 use App\Http\Controllers\Admin\GudangController;
 use App\Http\Controllers\Admin\KontraktorController;
 use App\Http\Controllers\Admin\MaterialPurchaseController;
@@ -105,6 +108,15 @@ Route::prefix('admin')->group(function () {
     Route::post('/active-perumahan', [ActivePerumahanController::class, 'update'])->name('admin.active-perumahan.update');
     Route::get('/notifications', [NotificationController::class, 'index'])->name('admin.notifications.index');
     Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead'])->name('admin.notifications.read');
+    Route::get('/inventaris-aset', [AssetInventoryController::class, 'index'])->name('admin.asset-inventory.index');
+    Route::post('/inventaris-aset/assets', [AssetInventoryController::class, 'storeAsset'])->name('admin.asset-inventory.assets.store');
+    Route::put('/inventaris-aset/assets/{id}', [AssetInventoryController::class, 'updateAsset'])->name('admin.asset-inventory.assets.update');
+    Route::post('/inventaris-aset/requests', [AssetInventoryController::class, 'requestAsset'])->name('admin.asset-inventory.requests.store');
+    Route::post('/inventaris-aset/requests/{id}/approve', [AssetInventoryController::class, 'approveRequest'])->name('admin.asset-inventory.requests.approve');
+    Route::post('/inventaris-aset/requests/{id}/issue', [AssetInventoryController::class, 'issueRequest'])->name('admin.asset-inventory.requests.issue');
+    Route::post('/inventaris-aset/requests/{id}/return', [AssetInventoryController::class, 'returnRequest'])->name('admin.asset-inventory.requests.return');
+    Route::post('/inventaris-aset/usage', [AssetInventoryController::class, 'storeUsage'])->name('admin.asset-inventory.usage.store');
+    Route::post('/inventaris-aset/maintenance', [AssetInventoryController::class, 'storeMaintenance'])->name('admin.asset-inventory.maintenance.store');
 
     Route::get('/gudang', [GudangController::class, 'index'])->name('admin.gudang.index');
     Route::post('/gudang', [GudangController::class, 'store'])->name('admin.gudang.store');
@@ -196,6 +208,13 @@ Route::prefix('admin')->group(function () {
     Route::delete('/jadwal-lapangan/{id}', [SiteScheduleController::class, 'destroy'])->name('admin.site-schedule.destroy');
     Route::post('/jadwal-lapangan/{id}/lock', [SiteScheduleController::class, 'lock'])->name('admin.site-schedule.lock');
     Route::post('/jadwal-lapangan/{id}/unlock', [SiteScheduleController::class, 'unlock'])->name('admin.site-schedule.unlock');
+    Route::get('/pengawasan/{section}', [FieldSupervisionController::class, 'show'])->name('admin.field-supervision.show');
+    Route::post('/pengawasan/{section}', [FieldSupervisionController::class, 'store'])->name('admin.field-supervision.store');
+    Route::put('/pengawasan/{section}/{id}', [FieldSupervisionController::class, 'update'])->name('admin.field-supervision.update');
+    Route::delete('/pengawasan/{section}/{id}', [FieldSupervisionController::class, 'destroy'])->name('admin.field-supervision.destroy');
+    Route::post('/pengawasan/{section}/{id}/approve', [FieldSupervisionController::class, 'approve'])->name('admin.field-supervision.approve');
+    Route::post('/pengawasan/{section}/{id}/lock', [FieldSupervisionController::class, 'lock'])->name('admin.field-supervision.lock');
+    Route::post('/pengawasan/{section}/{id}/unlock', [FieldSupervisionController::class, 'unlock'])->name('admin.field-supervision.unlock');
     Route::get('/pembelian-material', [MaterialPurchaseController::class, 'index'])->name('admin.material-purchase.index');
     Route::post('/pembelian-material', [MaterialPurchaseController::class, 'store'])->name('admin.material-purchase.store');
     Route::post('/pembelian-material/from-request/{id}', [MaterialPurchaseController::class, 'fromRequest'])->name('admin.material-purchase.from-request');
@@ -218,6 +237,17 @@ Route::prefix('admin')->group(function () {
     Route::get('/keuangan/pembayaran-spr', [AdminSprPaymentController::class, 'financeIndex'])->name('admin.keuangan.pembayaran-spr.index');
     Route::post('/keuangan/pembayaran-spr/payment/{paymentId}/confirm', [AdminSprPaymentController::class, 'confirmPayment'])->name('admin.keuangan.pembayaran-spr.payment.confirm');
     Route::post('/keuangan/pembayaran-spr/payment/{paymentId}/reject', [AdminSprPaymentController::class, 'rejectPayment'])->name('admin.keuangan.pembayaran-spr.payment.reject');
+    Route::get('/keuangan/refund-spr', [AdminSprPaymentController::class, 'refundIndex'])->name('admin.keuangan.refund-spr.index');
+    Route::post('/keuangan/refund-spr/{sprId}', [AdminSprPaymentController::class, 'storeRefundRequest'])->name('admin.keuangan.refund-spr.store');
+    Route::get('/keuangan/{section}', [FinanceController::class, 'show'])->name('admin.finance.show');
+    Route::post('/keuangan/jurnal-umum', [FinanceController::class, 'storeJournal'])->name('admin.finance.journal.store');
+    Route::post('/keuangan/transaksi-kas-bank', [FinanceController::class, 'storeTransaction'])->name('admin.finance.transaction.store');
+    Route::post('/keuangan/daftar-akun', [FinanceController::class, 'storeAccount'])->name('admin.finance.account.store');
+    Route::put('/keuangan/daftar-akun/{id}', [FinanceController::class, 'updateAccount'])->name('admin.finance.account.update');
+    Route::get('/refund-spr/approval', [AdminSprPaymentController::class, 'refundIndex'])->name('admin.refund-spr.approval.index');
+    Route::post('/refund-spr/{sprId}/approve-manager', [AdminSprPaymentController::class, 'approveRefundManager'])->name('admin.refund-spr.approve-manager');
+    Route::post('/refund-spr/{sprId}/approve-owner', [AdminSprPaymentController::class, 'approveRefundOwner'])->name('admin.refund-spr.approve-owner');
+    Route::post('/refund-spr/{sprId}/reject', [AdminSprPaymentController::class, 'rejectRefund'])->name('admin.refund-spr.reject');
 
     Route::get('/kpr', [AdminKprSubmissionController::class, 'index'])->name('admin.kpr.index');
     Route::get('/kpr/proses/{type}', [AdminKprMilestoneController::class, 'index'])->name('admin.kpr.milestone.index');
@@ -275,8 +305,6 @@ Route::prefix('admin')->group(function () {
         Route::post('dokumen-legalitas-rumah/{id}/unlock', [AdminDokumenLegalitasRumahController::class, 'unlock'])->name('dokumen-legalitas-rumah.unlock');
         Route::post('master-dokumen-customer/{id}/lock', [AdminDokumenCostumerController::class, 'lock'])->name('master-dokumen-customer.lock');
         Route::post('master-dokumen-customer/{id}/unlock', [AdminDokumenCostumerController::class, 'unlock'])->name('master-dokumen-customer.unlock');
-        Route::post('kelompok-hpp/{id}/lock', [AdminKelompokHppController::class, 'lock'])->name('kelompok-hpp.lock');
-        Route::post('kelompok-hpp/{id}/unlock', [AdminKelompokHppController::class, 'unlock'])->name('kelompok-hpp.unlock');
         Route::post('tipe-post/{id}/lock', [AdminTipePostController::class, 'lock'])->name('tipe-post.lock');
         Route::post('tipe-post/{id}/unlock', [AdminTipePostController::class, 'unlock'])->name('tipe-post.unlock');
         Route::post('user/{id}/lock', [AdminUserController::class, 'lock'])->name('user.lock');
@@ -290,7 +318,7 @@ Route::prefix('admin')->group(function () {
         Route::resource('dokumen-legalitas', AdminDokumenLegalitasController::class)->parameters(['dokumen-legalitas' => 'id'])->except(['create', 'show', 'edit']);
         Route::resource('dokumen-legalitas-rumah', AdminDokumenLegalitasRumahController::class)->parameters(['dokumen-legalitas-rumah' => 'id'])->except(['create', 'show', 'edit']);
         Route::resource('master-dokumen-customer', AdminDokumenCostumerController::class)->parameters(['master-dokumen-customer' => 'id'])->except(['create', 'show', 'edit']);
-        Route::resource('kelompok-hpp', AdminKelompokHppController::class)->parameters(['kelompok-hpp' => 'id'])->except(['create', 'show', 'edit']);
+        Route::get('kelompok-hpp', [AdminKelompokHppController::class, 'index'])->name('kelompok-hpp.index');
         Route::resource('tipe-post', AdminTipePostController::class)->parameters(['tipe-post' => 'id'])->except(['create', 'show', 'edit']);
         Route::resource('user', AdminUserController::class)->parameters(['user' => 'id'])->except(['create', 'show', 'edit']);
         Route::resource('role-permission', AdminRolePermissionController::class)->parameters(['role-permission' => 'id'])->except(['create', 'show', 'edit']);

@@ -42,7 +42,7 @@ class SpkKontraktorController extends Controller
         $search = trim((string) $request->query('search', ''));
 
         $rows = SpkKontraktor::query()
-            ->with(['kontraktor:id,nama_kontraktor', 'perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah', 'payments', 'additions'])
+            ->with(['kontraktor:id,nama_kontraktor', 'perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah', 'payments.contractorOpname:id,kode_opname', 'additions'])
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('nomor_spk', 'like', "%{$search}%")
@@ -85,6 +85,7 @@ class SpkKontraktorController extends Controller
                     'tanggal_pembayaran' => optional($payment->tanggal_pembayaran)->format('Y-m-d'),
                     'nominal' => $payment->nominal,
                     'keterangan' => $payment->keterangan,
+                    'opname' => $payment->contractorOpname?->kode_opname,
                     'status' => $payment->status,
                     'status_label' => $this->paymentStatusLabel($payment->status),
                 ])->values(),

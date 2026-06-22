@@ -16,9 +16,11 @@ class BankAccountLedgerController extends Controller
     {
         $bankId = $request->integer('bank_id') ?: null;
         $search = trim((string) $request->query('search', ''));
+        $allowedPerumahanIds = $this->allowedPerumahanIds($request);
         $banks = MasterBank::query()
             ->with('perumahan:id,nama_perusahaan')
             ->where('status', 'aktif')
+            ->when($allowedPerumahanIds !== null, fn (Builder $query) => $query->whereIn('perumahan_id', $allowedPerumahanIds))
             ->orderBy('nama_bank')
             ->get();
 
@@ -86,5 +88,16 @@ class BankAccountLedgerController extends Controller
             'transactions' => $transactions,
             'filters' => ['search' => $search],
         ]);
+    }
+
+    protected function allowedPerumahanIds(Request $request): ?array
+    {
+        if ($request->user()?->hasAnyRole(['owner', 'super_admin'])) {
+            return null;
+        }
+
+        $ids = $request->user()?->perumahans()->pluck('perumahans.id')->map(fn ($id) => (int) $id)->all() ?? [];
+
+        return empty($ids) ? null : $ids;
     }
 }

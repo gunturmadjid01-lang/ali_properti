@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\Costumer;
 use App\Models\CostumerFollowUp;
 use App\Services\Marketing\MarketingLeadStatusService;
@@ -16,15 +17,16 @@ use Inertia\Response;
 
 class FollowUpController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, ScopesActivePerumahan;
 
     public function index(Request $request): Response
     {
         $search = trim((string) $request->query('search', ''));
 
         $followUps = CostumerFollowUp::query()
-            ->with(['costumer:id,kode_costumer,nama,no_identitas,telepon,email,alamat,pekerjaan', 'user:id,name'])
+            ->with(['costumer:id,perumahan_id,kode_costumer,nama,no_identitas,telepon,email,alamat,pekerjaan', 'user:id,name'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('metode_follow_up', 'like', "%{$search}%")
@@ -62,6 +64,10 @@ class FollowUpController extends Controller
                 'input_oleh' => $followUp->user?->name ?? '-',
                 'record_status' => $followUp->record_status ?? 'draft',
                 'record_status_label' => ($followUp->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
+                'can_edit' => ($followUp->record_status ?? 'draft') !== 'locked',
+                'can_delete' => ($followUp->record_status ?? 'draft') !== 'locked',
+                'can_lock' => ($followUp->record_status ?? 'draft') !== 'locked',
+                'can_unlock' => (bool) $request->user()?->hasAnyRole(['owner', 'super_admin']) && ($followUp->record_status ?? 'draft') === 'locked',
             ]);
 
         return Inertia::render('Admin/Marketing/FollowUp/Index', [
@@ -123,6 +129,7 @@ class FollowUpController extends Controller
 
         $row = CostumerFollowUp::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->findOrFail($id);
         $this->abortIfLocked($row);
         $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
@@ -141,6 +148,7 @@ class FollowUpController extends Controller
     {
         $row = CostumerFollowUp::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->findOrFail($id);
         $this->abortIfLocked($row);
         $row->delete();
@@ -152,6 +160,7 @@ class FollowUpController extends Controller
     {
         return Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->select(['id', 'kode_costumer', 'nama', 'no_identitas', 'telepon', 'email', 'alamat', 'pekerjaan'])
             ->latest('id')
             ->limit(200)
@@ -239,6 +248,7 @@ class FollowUpController extends Controller
             Costumer::query()
                 ->whereKey($customerId)
                 ->where('created_by', $request->user()?->id)
+                ->where('perumahan_id', $this->ensureActivePerumahan($request))
                 ->exists(),
             403,
         );

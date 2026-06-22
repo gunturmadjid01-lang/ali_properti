@@ -1,7 +1,8 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { BadgePercent, BarChart3, Calculator, Home, Search, Send, Trophy, Users } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { Button, CurrencyInput, Dropdown, Input, Textarea } from '../../../../Components/UI';
+import { BarChart3, Calculator, Eye, Home, Search, Send, Trophy, Users } from 'lucide-react';
+import { useState } from 'react';
+import { Button, CurrencyInput, Dropdown, Input } from '../../../../Components/UI';
+import DetailModal from '../../../../Components/UI/DetailModal';
 import AdminLayout from '../../../../Layouts/AdminLayout';
 
 const money = (value) => new Intl.NumberFormat('id-ID', {
@@ -88,35 +89,61 @@ function UnitStock({ data, baseUrl, filters }) {
 }
 
 function UnitTable({ rows = [], showPrice = false, showPricelist = false }) {
+    const [detail, setDetail] = useState(null);
+    const columns = [
+        { key: 'perumahan', label: 'Perumahan' },
+        { key: 'unit', label: 'Unit' },
+        { key: 'tipe', label: 'Tipe' },
+        { key: 'model', label: 'Model' },
+        { key: 'luas_bangunan', label: 'Luas Bangunan' },
+        { key: 'luas_tanah', label: 'Luas Tanah' },
+        { key: 'harga_jual', label: 'Harga Jual', format: 'money' },
+        { key: 'booking_fee_saran', label: 'Booking Fee', format: 'money' },
+        { key: 'dp_10', label: 'DP 10%', format: 'money' },
+        { key: 'dp_20', label: 'DP 20%', format: 'money' },
+        { key: 'status_pembangunan', label: 'Status Pembangunan' },
+        { key: 'progress', label: 'Progress' },
+        { key: 'status_penjualan', label: 'Status Penjualan' },
+        { key: 'pembeli', label: 'Pembeli' },
+        { key: 'pekerjaan_pembeli', label: 'Pekerjaan Pembeli' },
+    ];
+
     return (
-        <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
-                    <thead className="bg-silver-soft/80 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
-                        <tr>
-                            {['Perumahan', 'Unit', 'Tipe', 'Luas', showPrice ? 'Harga' : null, showPricelist ? 'Booking' : null, showPricelist ? 'DP 10%' : null, showPricelist ? 'DP 20%' : null, 'Pembangunan', 'Status'].filter(Boolean).map((col) => <th className="px-4 py-3" key={col}>{col}</th>)}
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
-                        {rows.map((row) => (
-                            <tr key={row.id}>
-                                <td className="px-4 py-3 font-semibold">{row.perumahan}</td>
-                                <td className="px-4 py-3 font-bold">{row.unit}</td>
-                                <td className="px-4 py-3">{row.tipe}<br /><span className="text-ink-soft">{row.model}</span></td>
-                                <td className="px-4 py-3">LB {row.luas_bangunan}<br />LT {row.luas_tanah}</td>
-                                {showPrice && <td className="px-4 py-3 font-bold">{money(row.harga_jual)}</td>}
-                                {showPricelist && <td className="px-4 py-3">{money(row.booking_fee_saran)}</td>}
-                                {showPricelist && <td className="px-4 py-3">{money(row.dp_10)}</td>}
-                                {showPricelist && <td className="px-4 py-3">{money(row.dp_20)}</td>}
-                                <td className="px-4 py-3">{row.status_pembangunan}<br /><span className="text-ink-soft">{row.progress}%</span></td>
-                                <td className="px-4 py-3"><Badge tone={row.status_penjualan === 'tersedia' ? 'good' : row.status_penjualan === 'terjual' ? 'bad' : 'neutral'}>{row.status_penjualan}</Badge></td>
+        <>
+            <Card className="overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs">
+                        <thead className="bg-silver-soft/80 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
+                            <tr>
+                                {['Perumahan', 'Unit', 'Tipe', 'Luas', showPrice ? 'Harga' : null, showPricelist ? 'Booking' : null, showPricelist ? 'DP 10%' : null, showPricelist ? 'DP 20%' : null, 'Pembangunan', 'Status', 'Pembeli', 'Aksi'].filter(Boolean).map((col) => <th className="px-4 py-3" key={col}>{col}</th>)}
                             </tr>
-                        ))}
-                        {rows.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={10}>Belum ada data.</td></tr>}
-                    </tbody>
-                </table>
-            </div>
-        </Card>
+                        </thead>
+                        <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
+                            {rows.map((row) => (
+                                <tr key={row.id}>
+                                    <td className="px-4 py-3 font-semibold">{row.perumahan}</td>
+                                    <td className="px-4 py-3 font-bold">{row.unit}</td>
+                                    <td className="px-4 py-3">{row.tipe}<br /><span className="text-ink-soft">{row.model}</span></td>
+                                    <td className="px-4 py-3">LB {row.luas_bangunan}<br />LT {row.luas_tanah}</td>
+                                    {showPrice && <td className="px-4 py-3 font-bold">{money(row.harga_jual)}</td>}
+                                    {showPricelist && <td className="px-4 py-3">{money(row.booking_fee_saran)}</td>}
+                                    {showPricelist && <td className="px-4 py-3">{money(row.dp_10)}</td>}
+                                    {showPricelist && <td className="px-4 py-3">{money(row.dp_20)}</td>}
+                                    <td className="px-4 py-3">{row.status_pembangunan}<br /><span className="text-ink-soft">{row.progress}%</span></td>
+                                    <td className="px-4 py-3"><Badge tone={row.status_penjualan === 'tersedia' ? 'good' : row.status_penjualan === 'terjual' ? 'bad' : 'neutral'}>{row.status_penjualan}</Badge></td>
+                                    <td className="px-4 py-3 font-semibold">{row.pembeli ?? '-'}<br /><span className="text-ink-soft">{row.pekerjaan_pembeli ?? '-'}</span></td>
+                                    <td className="px-4 py-3">
+                                        <Button size="sm" variant="outline" type="button" onClick={() => setDetail(row)}><Eye size={14} /> Detail</Button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {rows.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={12}>Belum ada data.</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+            <DetailModal open={Boolean(detail)} onClose={() => setDetail(null)} row={detail} title="Detail Unit" columns={columns} />
+        </>
     );
 }
 
@@ -212,20 +239,35 @@ function Communication({ rows = [] }) {
 }
 
 function SimpleTable({ rows = [], columns = [] }) {
+    const [detail, setDetail] = useState(null);
+
     return (
-        <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
-                    <thead className="bg-silver-soft/80 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
-                        <tr>{columns.map((col) => <th className="px-4 py-3" key={col.key}>{col.label}</th>)}</tr>
-                    </thead>
-                    <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
-                        {rows.map((row, index) => <tr key={row.id ?? index}>{columns.map((col) => <td className="px-4 py-3 font-semibold" key={col.key}>{col.render ? col.render(row) : row[col.key]}</td>)}</tr>)}
-                        {rows.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={columns.length}>Belum ada data.</td></tr>}
-                    </tbody>
-                </table>
-            </div>
-        </Card>
+        <>
+            <Card className="overflow-hidden">
+                <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs">
+                        <thead className="bg-silver-soft/80 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
+                            <tr>
+                                {columns.map((col) => <th className="px-4 py-3" key={col.key}>{col.label}</th>)}
+                                <th className="px-4 py-3 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
+                            {rows.map((row, index) => (
+                                <tr key={row.id ?? index}>
+                                    {columns.map((col) => <td className="px-4 py-3 font-semibold" key={col.key}>{col.render ? col.render(row) : row[col.key]}</td>)}
+                                    <td className="px-4 py-3 text-right">
+                                        <Button size="sm" variant="outline" type="button" onClick={() => setDetail(row)}><Eye size={14} /> Detail</Button>
+                                    </td>
+                                </tr>
+                            ))}
+                            {rows.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={columns.length + 1}>Belum ada data.</td></tr>}
+                        </tbody>
+                    </table>
+                </div>
+            </Card>
+            <DetailModal open={Boolean(detail)} onClose={() => setDetail(null)} row={detail} title="Detail Data" columns={columns} />
+        </>
     );
 }
 
@@ -256,24 +298,61 @@ function Distribution({ data, baseUrl }) {
     );
 }
 
-function DiscountApproval({ rows = [] }) {
+function Leaderboard({ data, baseUrl, filters }) {
+    const [period, setPeriod] = useState(filters.period ?? data.period ?? 'week');
+    const [referenceDate, setReferenceDate] = useState(filters.reference_date ?? data.reference_date ?? '');
+    const submit = (event) => {
+        event.preventDefault();
+        router.get(baseUrl, { period, reference_date: referenceDate }, { preserveScroll: true, preserveState: true, replace: true });
+    };
+    const stats = [
+        ['Top Marketing', data.summary?.top_marketing ?? '-'],
+        ['Marketing Aktif', data.summary?.marketing ?? 0],
+        ['Lead', data.summary?.lead ?? 0],
+        ['Survey', data.summary?.survey ?? 0],
+        ['SPR', data.summary?.spr ?? 0],
+        ['Closing', data.summary?.closing ?? 0],
+        ['Nilai Penjualan', money(data.summary?.nilai ?? 0)],
+    ];
+
     return (
         <div className="grid gap-4">
-            <Card className="p-5">
-                <div className="grid gap-4 md:grid-cols-4">
-                    <CurrencyInput label="Harga Normal" value="" onChange={() => {}} />
-                    <CurrencyInput label="Harga Request" value="" onChange={() => {}} />
-                    <Input label="Diskon %" readOnly value="-" />
-                    <Textarea className="md:col-span-4" label="Catatan Approval" placeholder="Catatan analisa diskon/promo khusus" />
-                </div>
+            <Card className="p-4">
+                <form className="grid gap-3 md:grid-cols-[220px_220px_auto_1fr] md:items-end" onSubmit={submit}>
+                    <Dropdown
+                        label="Periode"
+                        value={period}
+                        options={[
+                            { value: 'week', label: 'Mingguan' },
+                            { value: 'month', label: 'Bulanan' },
+                            { value: 'year', label: 'Tahunan' },
+                        ]}
+                        onChange={setPeriod}
+                    />
+                    <Input label="Tanggal Acuan" type="date" value={referenceDate} onChange={(event) => setReferenceDate(event.target.value)} />
+                    <Button type="submit"><Search size={16} /> Terapkan</Button>
+                    <p className="text-sm font-semibold text-ink-soft dark:text-white/55">
+                        Periode aktif: {data.date_from ?? '-'} sampai {data.date_to ?? '-'}.
+                    </p>
+                </form>
             </Card>
-            <SimpleTable rows={rows} columns={[
-                { key: 'kode_spr', label: 'SPR' },
-                { key: 'customer', label: 'Customer' },
-                { key: 'marketing', label: 'Marketing' },
-                { key: 'harga_jual', label: 'Harga', render: (row) => money(row.harga_jual) },
-                { key: 'nilai_akhir', label: 'Nilai Akhir', render: (row) => money(row.nilai_akhir) },
-                { key: 'status', label: 'Status' },
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
+                {stats.map(([label, value]) => (
+                    <Card className="p-4" key={label}>
+                        <p className="text-xs font-bold text-ink-soft">{label}</p>
+                        <strong className="mt-1 block break-words text-lg">{value}</strong>
+                    </Card>
+                ))}
+            </div>
+            <SimpleTable rows={data.rows ?? []} columns={[
+                { key: 'rank', label: 'Rank' },
+                { key: 'name', label: 'Marketing' },
+                { key: 'lead', label: 'Lead' },
+                { key: 'survey', label: 'Survey' },
+                { key: 'spr', label: 'SPR' },
+                { key: 'closing', label: 'Closing' },
+                { key: 'conversion', label: 'Konversi', render: (row) => `${row.conversion}%` },
+                { key: 'nilai', label: 'Nilai Penjualan', render: (row) => money(row.nilai) },
             ]} />
         </div>
     );
@@ -308,7 +387,6 @@ export default function Index({ title, section, baseUrl, filters = {}, data = {}
                 ]} />
             </div>
         ),
-        'approval-diskon': <DiscountApproval rows={data.rows ?? []} />,
         'aging-lead': <SimpleTable rows={data.rows} columns={[
             { key: 'customer', label: 'Customer' },
             { key: 'telepon', label: 'Telepon' },
@@ -317,13 +395,7 @@ export default function Index({ title, section, baseUrl, filters = {}, data = {}
             { key: 'last_activity', label: 'Aktivitas Terakhir' },
             { key: 'age_days', label: 'Umur Hari' },
         ]} />,
-        'leaderboard-sales': <SimpleTable rows={data.rows} columns={[
-            { key: 'rank', label: 'Rank' },
-            { key: 'name', label: 'Marketing' },
-            { key: 'lead', label: 'Lead' },
-            { key: 'spr', label: 'SPR' },
-            { key: 'nilai', label: 'Nilai Penjualan', render: (row) => money(row.nilai) },
-        ]} />,
+        'leaderboard-sales': <Leaderboard data={data} baseUrl={baseUrl} filters={filters} />,
     }[section];
 
     return (
@@ -333,7 +405,7 @@ export default function Index({ title, section, baseUrl, filters = {}, data = {}
                 <Card className="p-6">
                     <div className="flex items-center gap-3">
                         <span className="grid h-11 w-11 place-items-center rounded-lg bg-ink text-white dark:bg-white dark:text-ink">
-                            {section === 'simulasi-pembayaran' ? <Calculator size={20} /> : section === 'leaderboard-sales' ? <Trophy size={20} /> : section === 'approval-diskon' ? <BadgePercent size={20} /> : section === 'unit-stock' ? <Home size={20} /> : section.includes('lead') ? <Users size={20} /> : <BarChart3 size={20} />}
+                            {section === 'simulasi-pembayaran' ? <Calculator size={20} /> : section === 'leaderboard-sales' ? <Trophy size={20} /> : section === 'unit-stock' ? <Home size={20} /> : section.includes('lead') ? <Users size={20} /> : <BarChart3 size={20} />}
                         </span>
                         <div>
                             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Marketing Tools</p>

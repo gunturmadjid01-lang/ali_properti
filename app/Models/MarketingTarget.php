@@ -12,7 +12,7 @@ class MarketingTarget extends Model
     use HasUserAudit, SoftDeletes;
 
     protected $fillable = [
-        'user_id', 'tahun', 'bulan', 'target_lead', 'target_survey', 'target_spr',
+        'perumahan_id', 'user_id', 'tahun', 'bulan', 'target_lead', 'target_survey', 'target_spr',
         'target_closing', 'target_nilai_penjualan', 'catatan', 'record_status',
         'locked_at', 'locked_by', 'created_by', 'updated_by',
     ];
@@ -25,5 +25,10 @@ class MarketingTarget extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function perumahan(): BelongsTo
+    {
+        return $this->belongsTo(Perumahan::class);
     }
 }

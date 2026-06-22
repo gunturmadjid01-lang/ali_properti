@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Kpr;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\BankKredit;
 use App\Models\BerkasCostumer;
 use App\Models\DokumenCostumer;
@@ -21,7 +22,7 @@ use Inertia\Response;
 
 class KprSubmissionController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, ScopesActivePerumahan;
 
     public function index(Request $request): Response
     {
@@ -31,6 +32,7 @@ class KprSubmissionController extends Controller
             ->with(['spr.costumer:id,nama,no_identitas,telepon', 'spr.detailRumah.perumahan:id,nama_perusahaan', 'bank:id,nama_bank', 'handler:id,name'])
             ->withCount(['followUps', 'berkasCostumers'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('kode_kpr', 'like', "%{$search}%")
@@ -79,6 +81,7 @@ class KprSubmissionController extends Controller
             ])
             ->withCount(['followUps', 'berkasCostumers'])
             ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', request()->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, request())))
             ->findOrFail($id);
 
         if ($submission->stageHistories->isEmpty()) {
@@ -501,7 +504,8 @@ class KprSubmissionController extends Controller
     protected function submissionQueryFor(Request $request): Builder
     {
         return KprSubmission::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)));
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)));
     }
 
     protected function syncUnitSaleState(KprSubmission $submission, ?string $status): void

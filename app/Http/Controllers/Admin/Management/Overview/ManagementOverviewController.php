@@ -71,6 +71,7 @@ class ManagementOverviewController extends Controller
             'searchKey' => $searchKey,
             'pageKey' => $pageKey,
             'defaultOpen' => $section['defaultOpen'] ?? false,
+            'readOnly' => (bool) ($section['readOnly'] ?? false),
             'filters' => ['search' => $search],
             'columns' => $section['columns'],
             'fields' => $section['fields'],
@@ -341,9 +342,10 @@ class ManagementOverviewController extends Controller
             ],
             'kelompok-hpp' => [
                 'title' => 'Management HPP',
-                'description' => 'Master kelompok HPP standar untuk perumahan, rumah, logistik, dan realisasi biaya.',
+                'description' => 'Master kelompok HPP standar sistem untuk perumahan, rumah, logistik, dan realisasi biaya.',
                 'routeName' => 'admin.management.kelompok-hpp',
                 'model' => KelompokHpp::class,
+                'readOnly' => true,
                 'columns' => [
                     ['key' => 'nama_hpp', 'label' => 'Nama HPP'],
                     ['key' => 'kategori_label', 'label' => 'Kategori'],

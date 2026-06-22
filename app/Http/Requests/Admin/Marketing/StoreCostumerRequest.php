@@ -16,6 +16,7 @@ class StoreCostumerRequest extends FormRequest
         return [
             'marketing_lead_source_id' => ['nullable', 'exists:marketing_lead_sources,id'],
             'marketing_campaign_id' => ['nullable', 'exists:marketing_campaigns,id'],
+            'perumahan_id' => ['nullable', 'exists:perumahans,id'],
             'nama' => ['required', 'string', 'max:255'],
             'jenis_kelamin' => ['required', 'string', 'max:255'],
             'jenis_identitas' => ['required', 'string', 'max:255'],

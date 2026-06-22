@@ -359,6 +359,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                                     <div className="rounded-lg border border-silver-deep/60 p-2 dark:border-white/10" key={`${row.id}-${payment.termin_ke}`}>
                                                         <p className="font-extrabold">Termin {payment.termin_ke}: {money(payment.nominal)}</p>
                                                         <p className="text-xs font-bold text-ink-soft">Jatuh tempo: {payment.tanggal_jatuh_tempo ?? '-'} | Bayar: {payment.tanggal_pembayaran ?? '-'} | {payment.status_label}</p>
+                                                        {payment.opname && <p className="text-xs font-bold text-ink-soft">Opname: {payment.opname}</p>}
                                                         <div className="mt-2 flex flex-wrap gap-2">
                                                             {payment.status === 'menunggu_approval_manager' && <Button type="button" size="sm" variant="outline" onClick={() => postPaymentAction(row, payment, 'approve')}>Approve Manager</Button>}
                                                             {payment.status === 'menunggu_pencairan_owner' && <Button type="button" size="sm" onClick={() => postPaymentAction(row, payment, 'release')}>Cairkan Owner</Button>}

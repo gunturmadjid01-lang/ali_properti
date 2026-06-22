@@ -13,6 +13,7 @@ class SpkKontraktorPayment extends Model
 
     protected $fillable = [
         'spk_kontraktor_id',
+        'contractor_opname_id',
         'termin_ke',
         'tanggal_jatuh_tempo',
         'tanggal_pembayaran',
@@ -41,5 +42,10 @@ class SpkKontraktorPayment extends Model
     public function spkKontraktor(): BelongsTo
     {
         return $this->belongsTo(SpkKontraktor::class);
+    }
+
+    public function contractorOpname(): BelongsTo
+    {
+        return $this->belongsTo(ContractorOpname::class);
     }
 }

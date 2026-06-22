@@ -246,7 +246,12 @@ export default function Index({ title, description, type, baseUrl, rows, filters
                                                 <Button size="sm" variant="outline" onClick={() => setFormRow(row)}><PencilLine size={14} /></Button>
                                                 <Button size="sm" variant="outline" onClick={() => window.confirm('Hapus data ini?') && router.delete(`${baseUrl}/${row.milestone.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>
                                             </>}
-                                            <Button size="sm" variant="outline" onClick={() => toggleLock(row)}>{row.milestone.record_status === 'locked' ? <Unlock size={14} /> : <Lock size={14} />}</Button>
+                                            {row.milestone.can_lock && (
+                                                <Button size="sm" variant="outline" title="Lock Data" onClick={() => toggleLock(row)}><Lock size={14} /></Button>
+                                            )}
+                                            {row.milestone.can_unlock && (
+                                                <Button size="sm" variant="outline" title="Buka Lock" onClick={() => toggleLock(row)}><Unlock size={14} /></Button>
+                                            )}
                                         </>}
                                     </div></td>
                                 </tr>

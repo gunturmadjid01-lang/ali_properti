@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Http\Requests\Admin\Marketing\StoreCostumerRequest;
 use App\Http\Requests\Admin\Marketing\UpdateCostumerRequest;
 use App\Models\Costumer;
@@ -18,15 +19,16 @@ use Inertia\Response;
 
 class CostumerController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, ScopesActivePerumahan;
 
     public function index(Request $request): Response
     {
         $search = trim((string) $request->query('search', ''));
 
         $rows = Costumer::query()
-            ->with(['leadSource:id,nama_sumber', 'campaign:id,nama_campaign'])
+            ->with(['leadSource:id,nama_sumber', 'campaign:id,nama_campaign', 'perumahan:id,nama_perusahaan'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->orWhere('nama', 'like', "%{$search}%")
@@ -48,6 +50,8 @@ class CostumerController extends Controller
                 'kode_costumer' => $customer->kode_costumer,
                 'marketing_lead_source_id' => $customer->marketing_lead_source_id,
                 'marketing_campaign_id' => $customer->marketing_campaign_id,
+                'perumahan_id' => (string) ($customer->perumahan_id ?? ''),
+                'perumahan' => $customer->perumahan?->nama_perusahaan ?? '-',
                 'sumber_lead' => $customer->leadSource?->nama_sumber ?? '-',
                 'campaign' => $customer->campaign?->nama_campaign ?? '-',
                 'status_lead' => $customer->status_lead ?? 'lead_baru',
@@ -90,6 +94,7 @@ class CostumerController extends Controller
             'baseUrl' => route('admin.marketing.calon-konsumen.index', absolute: false),
             'columns' => [
                 ['key' => 'kode_costumer', 'label' => 'Kode'],
+                ['key' => 'perumahan', 'label' => 'Perumahan'],
                 ['key' => 'sumber_lead', 'label' => 'Sumber Lead'],
                 ['key' => 'campaign', 'label' => 'Campaign'],
                 ['key' => 'status_lead_label', 'label' => 'Status Lead'],
@@ -120,8 +125,11 @@ class CostumerController extends Controller
 
     public function store(StoreCostumerRequest $request, MarketingLeadStatusService $leadStatus): RedirectResponse
     {
+        $this->ensureCampaignAllowed($request, $request->validated('marketing_campaign_id'));
+
         $customer = Costumer::create([
             ...$request->validated(),
+            'perumahan_id' => $this->propertyIdForWrite($request, $request->validated('perumahan_id')),
             'kode_costumer' => $this->nextCustomerCode(),
             'status_lead' => 'lead_baru',
             'created_by' => $this->shouldAutoAssignNewCustomer($request) ? $request->user()?->id : null,
@@ -144,10 +152,16 @@ class CostumerController extends Controller
     {
         $row = Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
         $this->abortIfLocked($row);
+        if ($this->shouldScopeToActivePerumahan($request)) {
+            $this->ensurePerumahanAllowed($request, (int) $row->perumahan_id);
+        }
+        $this->ensureCampaignAllowed($request, $request->validated('marketing_campaign_id'), (int) $row->perumahan_id);
         $row->update([
             ...$request->validated(),
+            'perumahan_id' => $this->shouldScopeToActivePerumahan($request) ? $row->perumahan_id : ($request->validated('perumahan_id') ?: $row->perumahan_id),
             'updated_by' => $request->user()?->id,
         ]);
 
@@ -158,6 +172,7 @@ class CostumerController extends Controller
     {
         $row = Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
         $this->abortIfLocked($row);
         $row->delete();
@@ -249,16 +264,46 @@ class CostumerController extends Controller
     protected function campaignOptions(): array
     {
         return MarketingCampaign::query()
+            ->with('perumahan:id,nama_perusahaan')
             ->whereIn('status', ['draft', 'aktif'])
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->orderBy('nama_campaign')
-            ->get(['id', 'nama_campaign'])
+            ->get(['id', 'perumahan_id', 'nama_campaign'])
             ->map(fn (MarketingCampaign $campaign) => [
                 'value' => (string) $campaign->id,
-                'label' => $campaign->nama_campaign,
+                'label' => $this->shouldScopeToActivePerumahan(request())
+                    ? $campaign->nama_campaign
+                    : $campaign->nama_campaign.' - '.($campaign->perumahan?->nama_perusahaan ?? 'Tanpa Perumahan'),
             ])
             ->prepend(['value' => '', 'label' => 'Tanpa Campaign'])
             ->values()
             ->all();
+    }
+
+    protected function ensureCampaignAllowed(Request $request, mixed $campaignId, ?int $fallbackPerumahanId = null): void
+    {
+        if (! $campaignId) {
+            return;
+        }
+
+        $perumahanId = $this->propertyIdForWrite($request, $request->validated('perumahan_id') ?: $fallbackPerumahanId);
+
+        abort_unless(
+            MarketingCampaign::query()
+                ->whereKey($campaignId)
+                ->where('perumahan_id', $perumahanId)
+                ->exists(),
+            403,
+        );
+    }
+
+    protected function propertyIdForWrite(Request $request, mixed $requestedId = null): int
+    {
+        if ($this->shouldScopeToActivePerumahan($request)) {
+            return $this->ensureActivePerumahan($request);
+        }
+
+        return (int) ($requestedId ?: $this->activePerumahanId($request) ?: $this->ensureActivePerumahan($request));
     }
 
     protected function labelFromOptions(?string $value, array $options): string

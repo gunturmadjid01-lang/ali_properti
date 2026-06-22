@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\BuildsFieldOptions;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Controller;
+use App\Models\ProgressPembangunan;
 use App\Models\SiteSchedule;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -87,14 +89,14 @@ class SiteScheduleController extends Controller
             'tanggal_mulai' => ['required', 'date'],
             'tanggal_target' => ['required', 'date', 'after_or_equal:tanggal_mulai'],
             'target_progress' => ['required', 'numeric', 'min:0', 'max:100'],
-            'realisasi_progress' => ['required', 'numeric', 'min:0', 'max:100'],
+            'realisasi_progress' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'status' => ['required', 'in:direncanakan,berjalan,terlambat,selesai,tertahan'],
             'kendala' => ['nullable', 'string'],
             'catatan' => ['nullable', 'string'],
         ]);
 
         SiteSchedule::query()->create([
-            ...$validated,
+            ...$this->schedulePayload($validated),
             'kode_jadwal' => 'JDL-'.now()->format('Ymd-His').'-'.random_int(10, 99),
             'created_by' => auth()->id(),
             'updated_by' => auth()->id(),
@@ -133,7 +135,7 @@ class SiteScheduleController extends Controller
         $row = SiteSchedule::query()->findOrFail($id);
         $this->abortIfLocked($row);
         $row->update([
-            ...$this->validatedPayload($request),
+            ...$this->schedulePayload($this->validatedPayload($request)),
             'updated_by' => auth()->id(),
         ]);
 
@@ -155,10 +157,57 @@ class SiteScheduleController extends Controller
             'tanggal_mulai' => ['required', 'date'],
             'tanggal_target' => ['required', 'date', 'after_or_equal:tanggal_mulai'],
             'target_progress' => ['required', 'numeric', 'min:0', 'max:100'],
-            'realisasi_progress' => ['required', 'numeric', 'min:0', 'max:100'],
+            'realisasi_progress' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'status' => ['required', 'in:direncanakan,berjalan,terlambat,selesai,tertahan'],
             'kendala' => ['nullable', 'string'],
             'catatan' => ['nullable', 'string'],
         ]);
+    }
+
+    private function schedulePayload(array $validated): array
+    {
+        $realisasi = $this->approvedProgressForSchedule(
+            $validated['detail_rumah_id'] ?? null,
+            $validated['tahapan_pembangunan_id'] ?? null,
+        );
+        $target = (float) ($validated['target_progress'] ?? 100);
+
+        return [
+            ...$validated,
+            'detail_rumah_id' => filled($validated['detail_rumah_id'] ?? null) ? $validated['detail_rumah_id'] : null,
+            'tahapan_pembangunan_id' => filled($validated['tahapan_pembangunan_id'] ?? null) ? $validated['tahapan_pembangunan_id'] : null,
+            'realisasi_progress' => $realisasi,
+            'status' => $this->scheduleStatus($validated, $realisasi, $target),
+        ];
+    }
+
+    private function approvedProgressForSchedule(mixed $detailRumahId, mixed $tahapanPembangunanId): float
+    {
+        if (blank($detailRumahId) || blank($tahapanPembangunanId)) {
+            return 0;
+        }
+
+        return min(100, (float) ProgressPembangunan::query()
+            ->where('detail_rumah_id', $detailRumahId)
+            ->where('tahapan_pembangunan_id', $tahapanPembangunanId)
+            ->where('approval_status', 'approved')
+            ->sum('persentase'));
+    }
+
+    private function scheduleStatus(array $payload, float $realisasi, float $target): string
+    {
+        if ($realisasi >= $target) {
+            return 'selesai';
+        }
+
+        if (($payload['status'] ?? null) === 'tertahan') {
+            return 'tertahan';
+        }
+
+        if (! empty($payload['tanggal_target']) && Carbon::parse($payload['tanggal_target'])->isPast()) {
+            return 'terlambat';
+        }
+
+        return $realisasi > 0 ? 'berjalan' : ($payload['status'] ?? 'direncanakan');
     }
 }

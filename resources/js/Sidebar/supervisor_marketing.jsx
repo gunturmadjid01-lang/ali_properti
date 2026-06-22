@@ -186,11 +186,6 @@ const supervisorMarketingSidebar = [
                         link: "/admin/marketing/tools/monitoring-aktivitas",
                     },
                     {
-                        title: "Approval Diskon / Promo",
-                        icon: ReceiptText,
-                        link: "/admin/marketing/tools/approval-diskon",
-                    },
-                    {
                         title: "Dashboard Performa",
                         icon: BarChart3,
                         link: "/admin/marketing/operasional/dashboard",

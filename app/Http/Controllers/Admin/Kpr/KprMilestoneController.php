@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Kpr;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\KprFollowUp;
 use App\Models\KprMilestone;
 use App\Models\KprMilestoneDocument;
@@ -20,6 +21,8 @@ use Inertia\Response;
 
 class KprMilestoneController extends Controller
 {
+    use ScopesActivePerumahan;
+
     public function index(Request $request, string $type): Response
     {
         $type = $this->validatedType($type);
@@ -34,6 +37,7 @@ class KprMilestoneController extends Controller
             ])
             ->whereNotIn('status', ['ditolak'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->when($type === KprMilestone::AKAD, fn (Builder $query) => $query->whereIn('status', ['sp3k_keluar', 'akad', 'menunggu_serah_terima', 'serah_terima_selesai']))
             ->when($type === KprMilestone::SERAH_TERIMA, fn (Builder $query) => $query->whereHas('milestones', fn (Builder $query) => $query->where('jenis', KprMilestone::AKAD)))
             ->when($search !== '', function (Builder $query) use ($search): void {
@@ -271,6 +275,8 @@ class KprMilestoneController extends Controller
                 'pihak_terkait' => $milestone->pihak_terkait,
                 'catatan' => $milestone->catatan,
                 'record_status' => $milestone->record_status,
+                'can_lock' => $milestone->record_status !== 'locked',
+                'can_unlock' => (bool) request()->user()?->hasAnyRole(['owner', 'super_admin']) && $milestone->record_status === 'locked',
                 'created_by' => $milestone->creator?->name ?? '-',
                 'updated_by' => $milestone->updater?->name ?? '-',
                 'locked_by' => $milestone->locker?->name ?? '-',
@@ -291,6 +297,7 @@ class KprMilestoneController extends Controller
             ->with(['spr.costumer:id,nama,no_identitas,telepon', 'spr.detailRumah.perumahan:id,nama_perusahaan', 'bank:id,nama_bank'])
             ->whereNotIn('status', ['ditolak'])
             ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', request()->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, request())))
             ->whereDoesntHave('milestones', fn (Builder $query) => $query->where('jenis', $type))
             ->when(
                 $type === KprMilestone::AKAD,
@@ -346,13 +353,15 @@ class KprMilestoneController extends Controller
     protected function submissionQueryFor(Request $request): Builder
     {
         return KprSubmission::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)));
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)));
     }
 
     protected function milestoneQueryFor(Request $request, string $type): Builder
     {
         return KprMilestone::query()
             ->where('jenis', $type)
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('submission.spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)));
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('submission.spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('submission.spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)));
     }
 }

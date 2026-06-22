@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Http\Controllers\Controller;
 use App\Models\ChartOfAccount;
 use App\Models\DetailRumah;
@@ -11,6 +12,7 @@ use App\Models\Spr;
 use App\Models\SprPayment;
 use App\Models\TipePost;
 use App\Models\TransaksiKeuangan;
+use App\Services\AccountingService;
 use App\Services\Marketing\MarketingLeadStatusService;
 use App\Services\Marketing\MarketingOperationsService;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,7 +26,7 @@ use Inertia\Response;
 
 class SprPaymentController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, ScopesActivePerumahan;
 
     public function index(Request $request): Response
     {
@@ -43,6 +45,7 @@ class SprPaymentController extends Controller
             ])
             ->where('status', Spr::STATUS_DISETUJUI)
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('kode_spr', 'like', "%{$search}%")
@@ -141,6 +144,182 @@ class SprPaymentController extends Controller
         ]);
     }
 
+    public function refundIndex(Request $request): Response
+    {
+        abort_unless($this->canAccessRefundPage($request), 403, 'Hanya keuangan, manager, atau owner yang dapat mengakses refund SPR.');
+
+        $search = trim((string) $request->query('search', ''));
+        $mode = $request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']) ? 'approval' : 'finance';
+
+        $sprs = Spr::query()
+            ->with([
+                'costumer:id,nama,no_identitas,telepon',
+                'detailRumah.perumahan:id,nama_perusahaan,cabang_id',
+                'payments.masterBank:id,kode_bank,nama_bank,nomor_rekening,nama_rekening',
+            ])
+            ->when($mode === 'approval', fn (Builder $query) => $query->whereNotNull('refund_status'))
+            ->whereHas('payments', fn (Builder $query) => $query
+                ->whereIn('jenis_pembayaran', ['booking_fee', 'uang_muka'])
+                ->where('status', 'dikonfirmasi'))
+            ->when($search !== '', function (Builder $query) use ($search): void {
+                $query->where(function (Builder $query) use ($search): void {
+                    $query->where('kode_spr', 'like', "%{$search}%")
+                        ->orWhereHas('costumer', fn (Builder $query) => $query
+                            ->where('nama', 'like', "%{$search}%")
+                            ->orWhere('no_identitas', 'like', "%{$search}%"));
+                });
+            })
+            ->latest('id')
+            ->get()
+            ->map(fn (Spr $spr) => $this->refundRow($spr, $request))
+            ->values();
+
+        return Inertia::render('Admin/Marketing/SprPayment/Refund', [
+            'title' => $mode === 'approval' ? 'Approval Refund SPR' : 'Refund Booking Fee & Uang Muka',
+            'description' => $mode === 'approval'
+                ? 'Review pengajuan pengembalian dana booking fee dan uang muka sebelum dicairkan.'
+                : 'Ajukan pengembalian dana customer untuk SPR yang batal atau tidak lanjut.',
+            'baseUrl' => $mode === 'approval'
+                ? route('admin.refund-spr.approval.index', absolute: false)
+                : route('admin.keuangan.refund-spr.index', absolute: false),
+            'filters' => ['search' => $search],
+            'rows' => $sprs,
+            'bankOptions' => $this->bankOptions(),
+            'mode' => $mode,
+        ]);
+    }
+
+    public function storeRefundRequest(Request $request, string $sprId): RedirectResponse
+    {
+        abort_unless($this->canRequestRefund($request), 403, 'Hanya admin keuangan yang dapat mengajukan refund.');
+
+        $spr = Spr::query()
+            ->with(['detailRumah.perumahan.cabang', 'payments'])
+            ->findOrFail($sprId);
+
+        $validated = $request->validate([
+            'alasan_batal' => ['required', 'string', 'max:255'],
+            'refund_amount' => ['required', 'numeric', 'min:1'],
+            'refund_master_bank_id' => ['required', 'exists:master_banks,id'],
+            'refund_at' => ['nullable', 'date'],
+            'catatan' => ['nullable', 'string'],
+        ]);
+
+        $paidTotal = $this->bookingPaid($spr) + $this->dpPaid($spr) + $this->otherPaid($spr);
+        $refundAmount = (float) $validated['refund_amount'];
+
+        abort_if($refundAmount > $paidTotal, 422, 'Jumlah refund tidak boleh lebih besar dari total pembayaran yang sudah dikonfirmasi.');
+        abort_if(! $spr->detailRumah?->perumahan?->cabang_id, 422, 'Perumahan harus memiliki cabang untuk mencatat refund.');
+        abort_if(in_array($spr->refund_status, ['menunggu_manager', 'menunggu_owner'], true), 422, 'SPR ini sudah memiliki pengajuan refund yang sedang berjalan.');
+
+        DB::transaction(function () use ($request, $spr, $validated, $refundAmount): void {
+            $spr->update([
+                'status' => Spr::STATUS_DITOLAK,
+                'alasan_batal' => $validated['alasan_batal'],
+                'refund_master_bank_id' => $validated['refund_master_bank_id'],
+                'refund_amount' => $refundAmount,
+                'refund_at' => $validated['refund_at'] ?? now()->toDateString(),
+                'refund_status' => 'menunggu_manager',
+                'refund_requested_by' => $request->user()?->id,
+                'refund_requested_at' => now(),
+                'refund_manager_approved_by' => null,
+                'refund_manager_approved_at' => null,
+                'refund_owner_approved_by' => null,
+                'refund_owner_approved_at' => null,
+                'refund_rejected_by' => null,
+                'refund_rejected_at' => null,
+                'refund_approval_note' => $validated['catatan'] ?? null,
+                'catatan' => trim(($spr->catatan ? $spr->catatan."\n" : '').($validated['catatan'] ?? '')),
+            ]);
+
+            $spr->detailRumah?->update([
+                'status_penjualan' => 'tersedia',
+                'booking_spr_id' => null,
+                'booking_at' => null,
+            ]);
+        });
+
+        return back()->with('success', 'Pengajuan refund berhasil dikirim ke manager.');
+    }
+
+    public function approveRefundManager(Request $request, string $sprId): RedirectResponse
+    {
+        abort_unless($request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']), 403, 'Hanya manager/owner yang dapat approve refund tahap manager.');
+
+        $spr = Spr::query()->findOrFail($sprId);
+        abort_unless($spr->refund_status === 'menunggu_manager', 422, 'Refund tidak sedang menunggu approval manager.');
+
+        $validated = $request->validate(['note' => ['nullable', 'string']]);
+
+        $spr->update([
+            'refund_status' => 'menunggu_owner',
+            'refund_manager_approved_by' => $request->user()?->id,
+            'refund_manager_approved_at' => now(),
+            'refund_approval_note' => $this->appendApprovalNote($spr->refund_approval_note, 'Manager', $validated['note'] ?? null),
+        ]);
+
+        return back()->with('success', 'Refund disetujui manager dan menunggu owner.');
+    }
+
+    public function approveRefundOwner(Request $request, string $sprId): RedirectResponse
+    {
+        abort_unless($request->user()?->hasAnyRole(['owner', 'super_admin']), 403, 'Hanya owner yang dapat approve final refund.');
+
+        $spr = Spr::query()
+            ->with(['detailRumah.perumahan.cabang'])
+            ->findOrFail($sprId);
+        abort_unless($spr->refund_status === 'menunggu_owner', 422, 'Refund belum siap approval owner.');
+        abort_unless(! $spr->refund_transaksi_keuangan_id, 422, 'Refund ini sudah dicairkan.');
+
+        $validated = $request->validate(['note' => ['nullable', 'string']]);
+
+        DB::transaction(function () use ($request, $spr, $validated): void {
+            $tipePost = $this->resolveTipePost('Pengembalian Dana SPR', 'pengeluaran');
+            $transaksiKeuangan = TransaksiKeuangan::create([
+                'cabang_id' => $spr->detailRumah?->perumahan?->cabang_id,
+                'perumahan_id' => $spr->detailRumah?->perumahan_id,
+                'master_bank_id' => $spr->refund_master_bank_id,
+                'tipe_post_id' => $tipePost->id,
+                'source_type' => Spr::class,
+                'source_id' => $spr->id,
+                'nomor_referensi' => $spr->kode_spr,
+                'tanggal' => $spr->refund_at ?? now()->toDateString(),
+                'nominal' => (float) $spr->refund_amount,
+                'keterangan' => 'Pengembalian dana SPR '.$spr->kode_spr.' - '.($spr->alasan_batal ?? 'Refund customer'),
+                'user_id' => $request->user()?->id,
+            ]);
+            app(AccountingService::class)->recordFinancialTransaction($transaksiKeuangan);
+
+            $spr->update([
+                'refund_status' => 'disetujui',
+                'refund_owner_approved_by' => $request->user()?->id,
+                'refund_owner_approved_at' => now(),
+                'refund_transaksi_keuangan_id' => $transaksiKeuangan->id,
+                'refund_approval_note' => $this->appendApprovalNote($spr->refund_approval_note, 'Owner', $validated['note'] ?? null),
+            ]);
+        });
+
+        return back()->with('success', 'Refund disetujui owner dan transaksi pengeluaran sudah dibuat.');
+    }
+
+    public function rejectRefund(Request $request, string $sprId): RedirectResponse
+    {
+        abort_unless($request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']), 403, 'Hanya manager/owner yang dapat menolak refund.');
+
+        $validated = $request->validate(['note' => ['required', 'string']]);
+        $spr = Spr::query()->findOrFail($sprId);
+        abort_unless(in_array($spr->refund_status, ['menunggu_manager', 'menunggu_owner'], true), 422, 'Refund sudah diproses.');
+
+        $spr->update([
+            'refund_status' => 'ditolak',
+            'refund_rejected_by' => $request->user()?->id,
+            'refund_rejected_at' => now(),
+            'refund_approval_note' => $this->appendApprovalNote($spr->refund_approval_note, 'Reject', $validated['note']),
+        ]);
+
+        return back()->with('success', 'Refund ditolak.');
+    }
+
     public function storeBookingFee(Request $request, string $sprId): RedirectResponse
     {
         $leadStatus = app(MarketingLeadStatusService::class);
@@ -148,6 +327,7 @@ class SprPaymentController extends Controller
             ->with(['detailRumah.perumahan.cabang', 'payments'])
             ->findOrFail($sprId);
         $this->abortIfCurrentMarketingCannotAccessSpr($request, $spr);
+        $this->abortIfCurrentMarketingCannotAccessSprPerumahan($request, $spr);
 
         abort_unless($spr->status === Spr::STATUS_DISETUJUI, 422, 'SPR harus sudah disetujui.');
 
@@ -187,6 +367,7 @@ class SprPaymentController extends Controller
             ->with(['detailRumah.perumahan.cabang', 'payments'])
             ->findOrFail($sprId);
         $this->abortIfCurrentMarketingCannotAccessSpr($request, $spr);
+        $this->abortIfCurrentMarketingCannotAccessSprPerumahan($request, $spr);
 
         abort_unless($spr->status === Spr::STATUS_DISETUJUI, 422, 'SPR harus sudah disetujui.');
 
@@ -227,6 +408,7 @@ class SprPaymentController extends Controller
             ->with(['detailRumah.perumahan.cabang', 'payments'])
             ->findOrFail($sprId);
         $this->abortIfCurrentMarketingCannotAccessSpr($request, $spr);
+        $this->abortIfCurrentMarketingCannotAccessSprPerumahan($request, $spr);
 
         abort_unless($spr->status === Spr::STATUS_DISETUJUI, 422, 'SPR harus sudah disetujui.');
 
@@ -283,13 +465,18 @@ class SprPaymentController extends Controller
 
             $transaksiKeuangan = TransaksiKeuangan::create([
                 'cabang_id' => $spr->detailRumah?->perumahan?->cabang_id,
+                'perumahan_id' => $spr->detailRumah?->perumahan_id,
                 'master_bank_id' => $payment->master_bank_id,
                 'tipe_post_id' => $tipePost->id,
+                'source_type' => SprPayment::class,
+                'source_id' => $payment->id,
+                'nomor_referensi' => $spr->kode_spr,
                 'tanggal' => $payment->tanggal_pembayaran,
                 'nominal' => (float) $payment->nominal,
                 'keterangan' => trim(ucwords(str_replace('_', ' ', $payment->jenis_pembayaran)).' SPR '.$spr->kode_spr.' - '.($payment->keterangan ?? '')),
                 'user_id' => $request->user()?->id,
             ]);
+            app(AccountingService::class)->recordFinancialTransaction($transaksiKeuangan);
 
             $payment->update([
                 'status' => 'dikonfirmasi',
@@ -340,46 +527,18 @@ class SprPaymentController extends Controller
             ->with(['detailRumah.perumahan.cabang', 'payments'])
             ->findOrFail($sprId);
         $this->abortIfCurrentMarketingCannotAccessSpr($request, $spr);
+        $this->abortIfCurrentMarketingCannotAccessSprPerumahan($request, $spr);
         abort_unless($spr->status === Spr::STATUS_DISETUJUI, 422, 'SPR yang belum disetujui tidak perlu di-cancel dari pembayaran.');
 
         $validated = $request->validate([
             'alasan_batal' => ['required', 'string', 'max:255'],
             'catatan' => ['nullable', 'string'],
-            'refund_amount' => ['nullable', 'numeric', 'min:0'],
-            'refund_master_bank_id' => ['nullable', 'exists:master_banks,id'],
-            'refund_at' => ['nullable', 'date'],
         ]);
 
-        $refundAmount = (float) ($validated['refund_amount'] ?? 0);
-        $paidTotal = $this->bookingPaid($spr) + $this->dpPaid($spr) + $this->otherPaid($spr);
-
-        abort_if($refundAmount > $paidTotal, 422, 'Jumlah pengembalian tidak boleh lebih besar dari total pembayaran yang sudah dikonfirmasi.');
-        abort_if($refundAmount > 0 && empty($validated['refund_master_bank_id']), 422, 'Pilih bank/kas untuk mencatat pengembalian dana.');
-        abort_if($refundAmount > 0 && ! $spr->detailRumah?->perumahan?->cabang_id, 422, 'Perumahan harus memiliki cabang untuk mencatat pengembalian dana.');
-
-        DB::transaction(function () use ($request, $spr, $validated, $leadStatus, $refundAmount) {
-            $refundTransaction = null;
-
-            if ($refundAmount > 0) {
-                $tipePost = $this->resolveTipePost('Pengembalian Dana SPR', 'pengeluaran');
-                $refundTransaction = TransaksiKeuangan::create([
-                    'cabang_id' => $spr->detailRumah?->perumahan?->cabang_id,
-                    'master_bank_id' => $validated['refund_master_bank_id'],
-                    'tipe_post_id' => $tipePost->id,
-                    'tanggal' => $validated['refund_at'] ?? now()->toDateString(),
-                    'nominal' => $refundAmount,
-                    'keterangan' => 'Pengembalian dana SPR '.$spr->kode_spr.' - '.$validated['alasan_batal'],
-                    'user_id' => $request->user()?->id,
-                ]);
-            }
-
+        DB::transaction(function () use ($spr, $validated, $leadStatus) {
             $spr->update([
                 'status' => Spr::STATUS_DITOLAK,
                 'alasan_batal' => $validated['alasan_batal'],
-                'refund_master_bank_id' => $refundAmount > 0 ? $validated['refund_master_bank_id'] : null,
-                'refund_transaksi_keuangan_id' => $refundTransaction?->id,
-                'refund_amount' => $refundAmount,
-                'refund_at' => $refundAmount > 0 ? ($validated['refund_at'] ?? now()->toDateString()) : null,
                 'catatan' => trim(($spr->catatan ? $spr->catatan."\n" : '').($validated['catatan'] ?? '')),
             ]);
 
@@ -525,6 +684,7 @@ class SprPaymentController extends Controller
         return MasterBank::query()
             ->where('status', 'aktif')
             ->with('perumahan:id,nama_perusahaan')
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->orderBy('nama_bank')
             ->get(['id', 'perumahan_id', 'kode_bank', 'nama_bank', 'nomor_rekening', 'nama_rekening'])
             ->map(fn (MasterBank $bank) => [
@@ -535,6 +695,55 @@ class SprPaymentController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    protected function refundRow(Spr $spr, Request $request): array
+    {
+        $bookingPaid = $this->bookingPaid($spr);
+        $dpPaid = $this->dpPaid($spr);
+        $otherPaid = $this->otherPaid($spr);
+        $refundable = $bookingPaid + $dpPaid + $otherPaid;
+        $status = $spr->refund_status ?: 'belum_diajukan';
+
+        return [
+            'id' => $spr->id,
+            'kode_spr' => $spr->kode_spr,
+            'customer' => $spr->costumer?->nama ?? '-',
+            'no_identitas' => $spr->costumer?->no_identitas ?? '-',
+            'unit' => $spr->detailRumah ? trim(($spr->detailRumah->kode_nlok ?? '').' '.($spr->detailRumah->nomor_rumah ?? '')) : '-',
+            'perumahan' => $spr->detailRumah?->perumahan?->nama_perusahaan ?? '-',
+            'booking_paid' => $bookingPaid,
+            'dp_paid' => $dpPaid,
+            'refundable_paid' => $refundable,
+            'refund_amount' => (float) ($spr->refund_amount ?? 0),
+            'refund_at' => optional($spr->refund_at)->format('Y-m-d'),
+            'refund_status' => $status,
+            'refund_status_label' => $this->refundStatusLabel($status),
+            'alasan_batal' => $spr->alasan_batal,
+            'refund_approval_note' => $spr->refund_approval_note,
+            'can_request' => $this->canRequestRefund($request) && $refundable > 0 && ! in_array($status, ['menunggu_manager', 'menunggu_owner', 'disetujui'], true),
+            'can_approve_manager' => (bool) $request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']) && $status === 'menunggu_manager',
+            'can_approve_owner' => (bool) $request->user()?->hasAnyRole(['owner', 'super_admin']) && $status === 'menunggu_owner',
+            'can_reject' => (bool) $request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']) && in_array($status, ['menunggu_manager', 'menunggu_owner'], true),
+        ];
+    }
+
+    protected function refundStatusLabel(string $status): string
+    {
+        return [
+            'belum_diajukan' => 'Belum Diajukan',
+            'menunggu_manager' => 'Menunggu Manager',
+            'menunggu_owner' => 'Menunggu Owner',
+            'disetujui' => 'Disetujui Owner',
+            'ditolak' => 'Ditolak',
+        ][$status] ?? $status;
+    }
+
+    protected function appendApprovalNote(?string $oldNote, string $actor, ?string $note): string
+    {
+        $line = now()->format('d/m/Y H:i').' '.$actor.': '.($note ?: '-');
+
+        return trim(($oldNote ? $oldNote."\n" : '').$line);
     }
 
     protected function resolveTipePost(string $nama, string $jenis = 'pemasukan'): TipePost
@@ -575,6 +784,16 @@ class SprPaymentController extends Controller
 
     protected function canConfirmPayments(Request $request): bool
     {
+        return (bool) $request->user()?->hasAnyRole(['admin', 'admin_keuangan', 'keuangan', 'super_admin']);
+    }
+
+    protected function canAccessRefundPage(Request $request): bool
+    {
+        return (bool) $request->user()?->hasAnyRole(['admin', 'admin_keuangan', 'keuangan', 'manajer_pimpro', 'owner', 'super_admin']);
+    }
+
+    protected function canRequestRefund(Request $request): bool
+    {
         return (bool) $request->user()?->hasAnyRole(['admin', 'admin_keuangan', 'keuangan', 'owner', 'super_admin']);
     }
 
@@ -593,6 +812,15 @@ class SprPaymentController extends Controller
             && (int) $spr->created_by !== (int) $request->user()?->id,
             403,
         );
+    }
+
+    protected function abortIfCurrentMarketingCannotAccessSprPerumahan(Request $request, Spr $spr): void
+    {
+        if (! $this->shouldScopeToActivePerumahan($request)) {
+            return;
+        }
+
+        abort_unless((int) $spr->detailRumah?->perumahan_id === $this->ensureActivePerumahan($request), 403);
     }
 
     protected function paymentStatusLabel(string $status): string

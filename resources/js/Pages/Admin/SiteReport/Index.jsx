@@ -15,13 +15,15 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
     const canManageLock = roles.some((role) => ['owner', 'super_admin'].includes(role));
     const form = useForm({
         jenis_laporan: 'harian', tanggal: new Date().toISOString().slice(0, 10), periode_mulai: '', periode_selesai: '',
-        perumahan_id: '', detail_rumah_id: '', tahapan_pembangunan_id: '', cuaca: '', jumlah_pekerja: 0,
+        perumahan_id: '', detail_rumah_id: '', tahapan_pembangunan_id: '', site_schedule_id: '', progress_pembangunan_id: '', cuaca: '', jumlah_pekerja: 0,
         kontraktor: '', pekerjaan_selesai: '', pekerjaan_tertahan: '', kendala: '', koordinasi: '', rencana_berikutnya: '', lampiran: null,
     });
     const perumahans = options.perumahans ?? [];
     const detailRumahs = options.detailRumahs ?? [];
     const tahapanPembangunans = options.tahapanPembangunans ?? [];
     const unitOptions = useMemo(() => detailRumahs.filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, detailRumahs]);
+    const scheduleOptions = useMemo(() => (options.siteSchedules ?? []).filter((row) => !form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id)), [form.data.detail_rumah_id, options.siteSchedules]);
+    const progressOptions = useMemo(() => (options.progressPembangunans ?? []).filter((row) => !form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id)), [form.data.detail_rumah_id, options.progressPembangunans]);
     const submit = (event) => {
         event.preventDefault();
         const requestOptions = { forceFormData: true, preserveScroll: true, onSuccess: resetForm };
@@ -41,7 +43,7 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
         setEditing(row);
         form.setData({
             jenis_laporan: row.jenis_laporan ?? 'harian', tanggal: row.tanggal ?? '', periode_mulai: row.periode_mulai ?? '', periode_selesai: row.periode_selesai ?? '',
-            perumahan_id: row.perumahan_id ?? '', detail_rumah_id: row.detail_rumah_id ?? '', tahapan_pembangunan_id: row.tahapan_pembangunan_id ?? '',
+            perumahan_id: row.perumahan_id ?? '', detail_rumah_id: row.detail_rumah_id ?? '', tahapan_pembangunan_id: row.tahapan_pembangunan_id ?? '', site_schedule_id: row.site_schedule_id ?? '', progress_pembangunan_id: row.progress_pembangunan_id ?? '',
             cuaca: row.cuaca ?? '', jumlah_pekerja: row.jumlah_pekerja ?? 0, kontraktor: row.kontraktor ?? '',
             pekerjaan_selesai: row.pekerjaan_selesai ?? '', pekerjaan_tertahan: row.pekerjaan_tertahan ?? '', kendala: row.kendala ?? '',
             koordinasi: row.koordinasi ?? '', rencana_berikutnya: row.rencana_berikutnya ?? '', lampiran: null,
@@ -62,9 +64,13 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                         {form.data.jenis_laporan === 'mingguan' && <Input label="Periode Selesai" type="date" value={form.data.periode_selesai} onChange={(event) => form.setData('periode_selesai', event.target.value)} />}
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown label="Pilih Perumahan" value={form.data.perumahan_id} options={perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Unit (Opsional)</span><Dropdown label="Kawasan / Pilih Unit" value={form.data.detail_rumah_id} options={unitOptions} onChange={(value) => form.setData('detail_rumah_id', value)} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown label="Pilih Perumahan" value={form.data.perumahan_id} options={perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '', site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Unit (Opsional)</span><Dropdown label="Kawasan / Pilih Unit" value={form.data.detail_rumah_id} options={unitOptions} onChange={(value) => form.setData({ ...form.data, detail_rumah_id: value, site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown label="Pilih Tahapan" value={form.data.tahapan_pembangunan_id} options={tahapanPembangunans} onChange={(value) => form.setData('tahapan_pembangunan_id', value)} /></div>
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Jadwal Lapangan Terkait</span><Dropdown label="Pilih Jadwal" value={form.data.site_schedule_id} options={scheduleOptions} onChange={(value, selected) => form.setData({ ...form.data, site_schedule_id: value, perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id, detail_rumah_id: selected?.detail_rumah_id ?? form.data.detail_rumah_id, tahapan_pembangunan_id: selected?.tahapan_pembangunan_id ?? form.data.tahapan_pembangunan_id, pekerjaan_selesai: form.data.pekerjaan_selesai || selected?.nama_pekerjaan || '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Progress Terkait</span><Dropdown label="Pilih Progress Approved" value={form.data.progress_pembangunan_id} options={progressOptions} onChange={(value, selected) => form.setData({ ...form.data, progress_pembangunan_id: value, site_schedule_id: selected?.site_schedule_id || form.data.site_schedule_id, perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id, detail_rumah_id: selected?.detail_rumah_id ?? form.data.detail_rumah_id, tahapan_pembangunan_id: selected?.tahapan_pembangunan_id ?? form.data.tahapan_pembangunan_id, pekerjaan_selesai: form.data.pekerjaan_selesai || selected?.nama_progress || '' })} /></div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
                         <Input label="Cuaca" value={form.data.cuaca} onChange={(event) => form.setData('cuaca', event.target.value)} />
@@ -89,7 +95,7 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                         <tbody className="divide-y divide-silver-deep/50">{rows.data.map((row) => <tr key={row.id}>
                             <td className="px-5 py-4 font-bold">{row.tanggal}<br /><span className="text-xs uppercase text-ink-soft">{row.jenis_laporan}</span></td>
                             <td className="px-5 py-4">{row.perumahan}<br /><span className="text-xs text-ink-soft">{row.unit} · {row.tahapan}</span></td>
-                            <td className="max-w-md px-5 py-4">{row.pekerjaan_selesai}<br /><span className="text-xs text-ink-soft">{row.jumlah_pekerja} pekerja · {row.cuaca || '-'}</span></td>
+                            <td className="max-w-md px-5 py-4">{row.pekerjaan_selesai}<br /><span className="text-xs text-ink-soft">{row.jumlah_pekerja} pekerja - {row.cuaca || '-'} {row.progress !== '-' ? `- ${row.progress}` : row.jadwal !== '-' ? `- ${row.jadwal}` : ''}</span></td>
                             <td className="max-w-sm px-5 py-4">{row.kendala || '-'}<br /><span className="text-xs text-ink-soft">Berikutnya: {row.rencana_berikutnya || '-'}</span></td>
                             <td className="px-5 py-4 font-bold">{row.approval_status}</td>
                             <td className="min-w-44 px-5 py-4 text-xs"><span className="font-bold">Dibuat:</span> {row.created_by_name}<br /><span className="font-bold">Diubah:</span> {row.updated_by_name}<br /><span className="font-bold">Approve:</span> {row.approved_by_name}</td>

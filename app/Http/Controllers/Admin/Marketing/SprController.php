@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\BankKredit;
 use App\Models\CashSale;
 use App\Models\Costumer;
@@ -27,7 +28,7 @@ use Inertia\Response;
 
 class SprController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, ScopesActivePerumahan;
 
     protected array $activeSprStatuses = [
         Spr::STATUS_MENUNGGU_MANAGER,
@@ -48,6 +49,7 @@ class SprController extends Controller
                 'berkasCostumers.dokumen:id,kode_dokumen,nama_dokumen',
             ])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where('kode_spr', 'like', "%{$search}%")
                     ->orWhere('status', 'like', "%{$search}%")
@@ -104,6 +106,7 @@ class SprController extends Controller
                 'berkasCostumers.dokumen:id,kode_dokumen,nama_dokumen',
             ])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->findOrFail($id);
 
         return Inertia::render('Admin/Marketing/Spr/Form', [
@@ -152,6 +155,7 @@ class SprController extends Controller
 
         DB::transaction(function () use ($request, $validated, $leadStatus) {
             $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
+            $this->ensureUnitBelongsToActivePerumahan($request, (int) $validated['detail_rumah_id']);
             $this->ensureUnitIsAvailable((int) $validated['detail_rumah_id']);
             $payload = $this->normalizeSprPayload($validated);
 
@@ -213,6 +217,7 @@ class SprController extends Controller
         }
         $this->ensureUnitIsAvailable((int) $validated['detail_rumah_id'], $spr->id);
         $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
+        $this->ensureUnitBelongsToActivePerumahan($request, (int) $validated['detail_rumah_id']);
 
         DB::transaction(function () use ($request, $spr, $validated) {
             $payload = $this->normalizeSprPayload($validated);
@@ -482,6 +487,8 @@ class SprController extends Controller
             'updated_at' => optional($spr->updated_at)->format('d/m/Y H:i'),
             'record_status' => $spr->record_status ?? 'draft',
             'record_status_label' => ($spr->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
+            'can_lock' => ($spr->record_status ?? 'draft') !== 'locked',
+            'can_unlock' => (bool) request()->user()?->hasAnyRole(['owner', 'super_admin']) && ($spr->record_status ?? 'draft') === 'locked',
             'berkas_count' => $spr->berkasCostumers()->count(),
             'berkas' => $spr->berkasCostumers->map(fn (SprBerkasCostumer $berkas) => [
                 'id' => $berkas->id,
@@ -589,6 +596,7 @@ class SprController extends Controller
     {
         return Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->whereDoesntHave('sprs', function (Builder $query) use ($currentSpr): void {
                 $query->where(function (Builder $query): void {
                     $query->whereIn('status', $this->activeSprStatuses)
@@ -599,7 +607,7 @@ class SprController extends Controller
                 })
                     ->when($currentSpr, fn (Builder $query) => $query->where('id', '!=', $currentSpr->id));
             })
-            ->select(['id', 'nama', 'no_identitas', 'telepon'])
+            ->select(['id', 'perumahan_id', 'nama', 'no_identitas', 'telepon'])
             ->latest('id')
             ->limit(200)
             ->get()
@@ -618,6 +626,7 @@ class SprController extends Controller
     {
         return DetailRumah::query()
             ->with(['perumahan:id,nama_perusahaan'])
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->whereDoesntHave('sprs', function (Builder $query) use ($currentSpr): void {
                 $query->where(function (Builder $query): void {
                     $query->whereIn('status', $this->activeSprStatuses)
@@ -908,6 +917,22 @@ class SprController extends Controller
             Costumer::query()
                 ->whereKey($customerId)
                 ->where('created_by', $request->user()?->id)
+                ->where('perumahan_id', $this->ensureActivePerumahan($request))
+                ->exists(),
+            403,
+        );
+    }
+
+    protected function ensureUnitBelongsToActivePerumahan(Request $request, int $detailRumahId): void
+    {
+        if (! $this->shouldScopeToActivePerumahan($request)) {
+            return;
+        }
+
+        abort_unless(
+            DetailRumah::query()
+                ->whereKey($detailRumahId)
+                ->where('perumahan_id', $this->ensureActivePerumahan($request))
                 ->exists(),
             403,
         );
@@ -920,6 +945,16 @@ class SprController extends Controller
             && (int) $spr->created_by !== (int) $request->user()?->id,
             403,
         );
+
+        if ($this->shouldScopeToActivePerumahan($request)) {
+            abort_unless(
+                DetailRumah::query()
+                    ->whereKey($spr->detail_rumah_id)
+                    ->where('perumahan_id', $this->ensureActivePerumahan($request))
+                    ->exists(),
+                403,
+            );
+        }
     }
 
     protected function shouldScopeToCurrentMarketing(Request $request): bool

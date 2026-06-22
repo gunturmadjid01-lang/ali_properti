@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -57,9 +58,11 @@ class UserController extends Controller
     public function store(StoreUserRequest $request): RedirectResponse
     {
         $payload = $this->payload($request);
-        $user = User::create(collect($payload)->except(['role_ids', 'perumahan_ids'])->toArray());
-        $user->syncRoles($payload['role_ids'] ?? []);
-        $user->perumahans()->sync($payload['perumahan_ids'] ?? []);
+
+        DB::transaction(function () use ($payload): void {
+            $user = User::create(collect($payload)->except(['role_ids', 'perumahan_ids'])->toArray());
+            $this->syncUserAssignments($user, $payload);
+        });
 
         return back()->with('success', $this->title().' berhasil ditambahkan.');
     }
@@ -69,11 +72,24 @@ class UserController extends Controller
         $payload = $this->payload($request);
         $user = User::query()->findOrFail($id);
         $this->abortIfLocked($user);
-        $user->update(collect($payload)->except(['role_ids', 'perumahan_ids'])->toArray());
-        $user->syncRoles($payload['role_ids'] ?? []);
-        $user->perumahans()->sync($payload['perumahan_ids'] ?? []);
+
+        DB::transaction(function () use ($user, $payload): void {
+            $user->update(collect($payload)->except(['role_ids', 'perumahan_ids'])->toArray());
+            $this->syncUserAssignments($user, $payload);
+        });
 
         return back()->with('success', $this->title().' berhasil diperbarui.');
+    }
+
+    protected function syncUserAssignments(User $user, array $payload): void
+    {
+        $roleIds = collect($payload['role_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->values();
+        $roles = Role::query()->whereIn('id', $roleIds)->get();
+
+        $user->syncRoles($roles);
+        $user->perumahans()->sync(
+            collect($payload['perumahan_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->values()->all(),
+        );
     }
 
     public function destroy(string $id): RedirectResponse

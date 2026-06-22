@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Http\Controllers\Controller;
 use App\Models\CashSale;
 use App\Models\CashSalePayment;
@@ -11,6 +12,7 @@ use App\Models\DetailRumah;
 use App\Models\Spr;
 use App\Models\TipePost;
 use App\Models\TransaksiKeuangan;
+use App\Services\AccountingService;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -23,7 +25,7 @@ use Inertia\Response;
 
 class CashSaleController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, ScopesActivePerumahan;
 
     public function index(Request $request): Response
     {
@@ -37,6 +39,7 @@ class CashSaleController extends Controller
                 'payments.creator:id,name',
             ])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('kode_cash', 'like', "%{$search}%")
@@ -79,6 +82,7 @@ class CashSaleController extends Controller
             ->with(['costumer', 'detailRumah.perumahan'])
             ->findOrFail($validated['spr_id']);
         $this->abortIfCurrentMarketingCannotAccessSpr($request, $spr);
+        $this->abortIfCurrentMarketingCannotAccessSprPerumahan($request, $spr);
 
         abort_unless($spr->metode_pembayaran === 'cash', 422, 'SPR ini bukan transaksi cash.');
         abort_unless($spr->status === Spr::STATUS_DISETUJUI, 422, 'SPR harus sudah disetujui sebelum dibuat transaksi cash.');
@@ -117,6 +121,7 @@ class CashSaleController extends Controller
         $sale = CashSale::query()
             ->with(['spr.detailRumah.perumahan'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->findOrFail($id);
         $this->abortIfLocked($sale);
 
@@ -144,12 +149,17 @@ class CashSaleController extends Controller
             $tipePost = $this->resolveTipePost($sale, (float) $validated['nominal']);
             $transaksiKeuangan = TransaksiKeuangan::create([
                 'cabang_id' => $sale->spr?->detailRumah?->perumahan?->cabang_id,
+                'perumahan_id' => $sale->spr?->detailRumah?->perumahan_id,
                 'tipe_post_id' => $tipePost?->id,
+                'source_type' => CashSalePayment::class,
+                'source_id' => $payment->id,
+                'nomor_referensi' => $sale->kode_cash,
                 'tanggal' => $validated['tanggal_pembayaran'],
                 'nominal' => $validated['nominal'],
                 'keterangan' => trim('Pembayaran cash '.$sale->kode_cash.' - '.($validated['keterangan'] ?? '')),
                 'user_id' => $request->user()?->id,
             ]);
+            app(AccountingService::class)->recordFinancialTransaction($transaksiKeuangan);
 
             $payment->update(['transaksi_keuangan_id' => $transaksiKeuangan->id]);
 
@@ -165,6 +175,7 @@ class CashSaleController extends Controller
         $leadStatus = app(MarketingLeadStatusService::class);
         $sale = CashSale::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->findOrFail($id);
         $this->abortIfLocked($sale);
 
@@ -212,6 +223,8 @@ class CashSaleController extends Controller
             'created_by' => $sale->handler?->name ?? '-',
             'record_status' => $sale->record_status ?? 'draft',
             'record_status_label' => ($sale->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
+            'can_lock' => ($sale->record_status ?? 'draft') !== 'locked',
+            'can_unlock' => (bool) request()->user()?->hasAnyRole(['owner', 'super_admin']) && ($sale->record_status ?? 'draft') === 'locked',
             'can_handover' => $sale->status_pembayaran === CashSale::STATUS_LUNAS,
             'payments' => $sale->payments->sortByDesc('tanggal_pembayaran')->values()->map(fn (CashSalePayment $payment) => [
                 'id' => $payment->id,
@@ -232,6 +245,7 @@ class CashSaleController extends Controller
             ->where('metode_pembayaran', 'cash')
             ->where('status', Spr::STATUS_DISETUJUI)
             ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, request())))
             ->whereDoesntHave('cashSale')
             ->orderByDesc('id')
             ->limit(300)
@@ -361,5 +375,14 @@ class CashSaleController extends Controller
             && (int) $spr->created_by !== (int) $request->user()?->id,
             403,
         );
+    }
+
+    protected function abortIfCurrentMarketingCannotAccessSprPerumahan(Request $request, Spr $spr): void
+    {
+        if (! $this->shouldScopeToActivePerumahan($request)) {
+            return;
+        }
+
+        abort_unless((int) $spr->detailRumah?->perumahan_id === $this->ensureActivePerumahan($request), 403);
     }
 }

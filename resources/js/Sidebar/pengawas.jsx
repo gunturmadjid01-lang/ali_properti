@@ -2,14 +2,20 @@ import {
     Bell,
     Boxes,
     CalendarClock,
+    ClipboardCheck,
+    ClipboardList,
     FileText,
     Home,
     LayoutDashboard,
     PackagePlus,
     RotateCcw,
     ShieldCheck,
+    Siren,
+    UserCheck,
+    UsersRound,
     TrendingUp,
     Warehouse,
+    Wrench,
 } from "lucide-react";
 
 const pengawasSidebar = [
@@ -31,6 +37,11 @@ const pengawasSidebar = [
                         link: "/admin/unit-rumah",
                     },
                     {
+                        title: "Jadwal Lapangan",
+                        icon: CalendarClock,
+                        link: "/admin/jadwal-lapangan",
+                    },
+                    {
                         title: "Progress Pembangunan",
                         icon: TrendingUp,
                         link: "/admin/progress-pembangunan",
@@ -41,14 +52,39 @@ const pengawasSidebar = [
                         link: "/admin/laporan-lapangan",
                     },
                     {
+                        title: "Tenaga Kerja & Alat",
+                        icon: UsersRound,
+                        link: "/admin/pengawasan/tenaga-kerja-alat",
+                    },
+                    {
                         title: "Kontrol Kualitas",
                         icon: ShieldCheck,
                         link: "/admin/kontrol-kualitas",
                     },
                     {
-                        title: "Jadwal Lapangan",
-                        icon: CalendarClock,
-                        link: "/admin/jadwal-lapangan",
+                        title: "Defect / Punch List",
+                        icon: ClipboardList,
+                        link: "/admin/pengawasan/defect",
+                    },
+                    {
+                        title: "Opname Kontraktor",
+                        icon: ClipboardCheck,
+                        link: "/admin/pengawasan/opname-kontraktor",
+                    },
+                    {
+                        title: "Perubahan Pekerjaan",
+                        icon: Wrench,
+                        link: "/admin/pengawasan/perubahan-pekerjaan",
+                    },
+                    {
+                        title: "K3 / Safety",
+                        icon: Siren,
+                        link: "/admin/pengawasan/k3",
+                    },
+                    {
+                        title: "Serah Terima Internal",
+                        icon: UserCheck,
+                        link: "/admin/pengawasan/serah-terima-internal",
                     },
                 ],
             },
@@ -70,6 +106,11 @@ const pengawasSidebar = [
                         title: "Pemakaian Material",
                         icon: Boxes,
                         link: "/admin/pemakaian-material",
+                    },
+                    {
+                        title: "Inventaris Aset",
+                        icon: Wrench,
+                        link: "/admin/inventaris-aset",
                     },
                     {
                         title: "Pengembalian Stok",

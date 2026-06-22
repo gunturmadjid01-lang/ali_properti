@@ -148,12 +148,126 @@ class RolePermissionController extends Controller
 
     protected function options(): array
     {
+        $matrix = $this->permissionMatrix();
+        $roleOrder = [
+            'super_admin' => 1,
+            'owner' => 2,
+            'manajer_pimpro' => 3,
+            'admin' => 4,
+            'keuangan' => 5,
+            'pengawas' => 6,
+            'marketing' => 7,
+        ];
+        $roleLabels = [
+            'super_admin' => 'Super Admin',
+            'owner' => 'Owner',
+            'manajer_pimpro' => 'Pimpro',
+            'admin' => 'Admin',
+            'keuangan' => 'Keuangan',
+            'pengawas' => 'Pengawas',
+            'marketing' => 'Marketing',
+        ];
+        collect($matrix)
+            ->flatMap(fn (array $group) => $group['modules'])
+            ->flatMap(fn (array $module) => $module['permissions'])
+            ->each(fn (array $permission) => Permission::findOrCreate($permission['name'], 'web'));
+
         return [
+            'roles' => Role::query()
+                ->with('permissions:id,name')
+                ->get()
+                ->sortBy(fn (Role $role) => sprintf('%03d-%s', $roleOrder[$role->name] ?? 999, $role->name))
+                ->map(fn (Role $role) => [
+                    'value' => (string) $role->id,
+                    'label' => $roleLabels[$role->name] ?? $role->name,
+                    'id' => $role->id,
+                    'name' => $role->name,
+                    'record_status' => $role->record_status ?? 'draft',
+                    'permission_ids' => $role->permissions->pluck('id')->map(fn ($id) => (string) $id)->values()->all(),
+                ])
+                ->values(),
             'permissions' => Permission::query()
                 ->orderBy('name')
                 ->get(['id', 'name'])
                 ->map(fn (Permission $permission) => ['value' => (string) $permission->id, 'label' => $permission->name])
                 ->values(),
+            'permissionMatrix' => $this->permissionMatrixWithIds($matrix),
+        ];
+    }
+
+    protected function permissionMatrixWithIds(array $matrix): array
+    {
+        $permissionIds = Permission::query()
+            ->whereIn(
+                'name',
+                collect($matrix)
+                    ->flatMap(fn (array $group) => $group['modules'])
+                    ->flatMap(fn (array $module) => $module['permissions'])
+                    ->pluck('name')
+                    ->all(),
+            )
+            ->pluck('id', 'name');
+
+        return collect($matrix)->map(function (array $group) use ($permissionIds) {
+            $group['modules'] = collect($group['modules'])->map(function (array $module) use ($permissionIds) {
+                $module['permissions'] = collect($module['permissions'])->map(fn (array $permission) => [
+                    ...$permission,
+                    'id' => (string) $permissionIds[$permission['name']],
+                ])->values()->all();
+
+                return $module;
+            })->values()->all();
+
+            return $group;
+        })->values()->all();
+    }
+
+    protected function permissionMatrix(): array
+    {
+        $actions = [
+            ['key' => 'view', 'label' => 'Buka'],
+            ['key' => 'create', 'label' => 'Tambah'],
+            ['key' => 'update', 'label' => 'Edit'],
+            ['key' => 'delete', 'label' => 'Hapus'],
+            ['key' => 'unlock', 'label' => 'Unlock'],
+            ['key' => 'approve_manager', 'label' => 'Approve Manager'],
+            ['key' => 'approve_owner', 'label' => 'Approve Owner'],
+            ['key' => 'approve_finance', 'label' => 'Approve Admin Keuangan'],
+            ['key' => 'approve_admin', 'label' => 'Approve Admin'],
+        ];
+
+        $module = fn (string $key, string $label, array $allowed = []) => [
+            'key' => $key,
+            'label' => $label,
+            'permissions' => collect($actions)
+                ->filter(fn (array $action) => empty($allowed) || in_array($action['key'], $allowed, true))
+                ->map(fn (array $action) => [
+                    'action' => $action['key'],
+                    'label' => $action['label'],
+                    'name' => $key.'.'.$action['key'],
+                ])
+                ->values()
+                ->all(),
+        ];
+
+        return [
+            [
+                'key' => 'master',
+                'label' => 'Master Data',
+                'modules' => [
+                    $module('dashboard', 'Dashboard', ['view']),
+                    $module('users', 'Users'),
+                    $module('roles', 'Role Permission', ['view', 'create', 'update', 'delete', 'unlock']),
+                    $module('cabang', 'Cabang Perusahaan'),
+                    $module('perumahan', 'Perumahan'),
+                    $module('detail-rumah', 'Kapling / Unit'),
+                    $module('dokumen-legalitas', 'Dokumen Legalitas'),
+                    $module('dokumen-customer', 'Dokumen Customer'),
+                    $module('master-bank', 'Master Bank', ['view', 'create', 'update', 'delete', 'unlock']),
+                    $module('tipe-post', 'Tipe Post', ['view', 'create', 'update', 'delete', 'unlock']),
+                    $module('kelompok-hpp', 'Kelompok HPP', ['view', 'create', 'update', 'delete', 'unlock']),
+                ],
+            ],
         ];
     }
 

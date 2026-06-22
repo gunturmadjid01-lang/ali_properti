@@ -3,6 +3,7 @@ import { Edit3, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
+import { useResourcePermissions } from '../../../Utils/permissions';
 
 function emptyForm(fields) {
     return fields.reduce((values, field) => {
@@ -37,13 +38,19 @@ function Field({ field, value, error, onChange }) {
     return <Input {...common} type={field.type ?? 'text'} />;
 }
 
-function CrudIndex({ title, description, baseUrl, columns, fields, rows }) {
+function CrudIndex({ title, description, baseUrl, permissionKey, columns, fields, rows }) {
     const [modalMode, setModalMode] = useState(null);
     const [selected, setSelected] = useState(null);
     const formDefaults = useMemo(() => emptyForm(fields), [fields]);
     const form = useForm(formDefaults);
+    const permissions = useResourcePermissions(permissionKey, baseUrl);
+    const canShowActions = permissions.canUpdate || permissions.canDelete;
 
     const openCreate = () => {
+        if (!permissions.canCreate) {
+            return;
+        }
+
         setSelected(null);
         form.clearErrors();
         form.setData(formDefaults);
@@ -51,6 +58,10 @@ function CrudIndex({ title, description, baseUrl, columns, fields, rows }) {
     };
 
     const openEdit = (row) => {
+        if (!permissions.canUpdate) {
+            return;
+        }
+
         setSelected(row);
         form.clearErrors();
         form.setData(
@@ -66,10 +77,18 @@ function CrudIndex({ title, description, baseUrl, columns, fields, rows }) {
         event.preventDefault();
 
         if (modalMode === 'create') {
+            if (!permissions.canCreate) {
+                return;
+            }
+
             form.post(baseUrl, {
                 preserveScroll: true,
                 onSuccess: () => setModalMode(null),
             });
+            return;
+        }
+
+        if (!permissions.canUpdate) {
             return;
         }
 
@@ -80,6 +99,10 @@ function CrudIndex({ title, description, baseUrl, columns, fields, rows }) {
     };
 
     const destroy = (row) => {
+        if (!permissions.canDelete) {
+            return;
+        }
+
         if (!window.confirm(`Hapus data ${row.name ?? row.nama ?? row.nama_perusahaan ?? row.nama_hpp ?? 'ini'}?`)) {
             return;
         }
@@ -100,9 +123,11 @@ function CrudIndex({ title, description, baseUrl, columns, fields, rows }) {
                             <h2 className="mt-1 text-xl font-extrabold">{title}</h2>
                             {description && <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-soft dark:text-white/60">{description}</p>}
                         </div>
-                        <Button type="button" onClick={openCreate}>
-                            <Plus size={18} /> Tambah Data
-                        </Button>
+                        {permissions.canCreate && (
+                            <Button type="button" onClick={openCreate}>
+                                <Plus size={18} /> Tambah Data
+                            </Button>
+                        )}
                     </div>
                 </section>
 
@@ -114,7 +139,7 @@ function CrudIndex({ title, description, baseUrl, columns, fields, rows }) {
                                     {columns.map((column) => (
                                         <th className="px-4 py-3 font-extrabold" key={column.key}>{column.label}</th>
                                     ))}
-                                    <th className="w-28 px-4 py-3 text-right font-extrabold">Aksi</th>
+                                    {canShowActions && <th className="w-28 px-4 py-3 text-right font-extrabold">Aksi</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
@@ -125,21 +150,27 @@ function CrudIndex({ title, description, baseUrl, columns, fields, rows }) {
                                                 {row[column.key] ?? '-'}
                                             </td>
                                         ))}
-                                        <td className="px-4 py-3">
-                                            <div className="flex justify-end gap-2">
-                                                <Button variant="outline" size="sm" type="button" onClick={() => openEdit(row)}>
-                                                    <Edit3 size={15} />
-                                                </Button>
-                                                <Button variant="ghost" size="sm" type="button" className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-300 dark:hover:bg-red-500/10" onClick={() => destroy(row)}>
-                                                    <Trash2 size={15} />
-                                                </Button>
-                                            </div>
-                                        </td>
+                                        {canShowActions && (
+                                            <td className="px-4 py-3">
+                                                <div className="flex justify-end gap-2">
+                                                    {permissions.canUpdate && (
+                                                        <Button variant="outline" size="sm" type="button" onClick={() => openEdit(row)}>
+                                                            <Edit3 size={15} />
+                                                        </Button>
+                                                    )}
+                                                    {permissions.canDelete && (
+                                                        <Button variant="ghost" size="sm" type="button" className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:text-red-300 dark:hover:bg-red-500/10" onClick={() => destroy(row)}>
+                                                            <Trash2 size={15} />
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                                 {rows.data.length === 0 && (
                                     <tr>
-                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={columns.length + 1}>
+                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={columns.length + (canShowActions ? 1 : 0)}>
                                             Belum ada data.
                                         </td>
                                     </tr>
@@ -151,7 +182,7 @@ function CrudIndex({ title, description, baseUrl, columns, fields, rows }) {
             </div>
 
             <Modal
-                open={Boolean(modalMode)}
+                open={Boolean(modalMode) && (permissions.canCreate || permissions.canUpdate)}
                 onClose={() => setModalMode(null)}
                 title={modalMode === 'create' ? `Tambah ${title}` : `Edit ${title}`}
                 size="lg"
@@ -182,4 +213,3 @@ function CrudIndex({ title, description, baseUrl, columns, fields, rows }) {
 CrudIndex.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Admin'}>{page}</AdminLayout>;
 
 export default CrudIndex;
-

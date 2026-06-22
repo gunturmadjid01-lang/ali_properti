@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Http\Controllers\Controller;
 use App\Models\Costumer;
 use App\Models\DetailRumah;
@@ -19,7 +20,7 @@ use Inertia\Response;
 
 class SurveyScheduleController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, ScopesActivePerumahan;
 
     public function index(Request $request): Response
     {
@@ -40,6 +41,7 @@ class SurveyScheduleController extends Controller
                 'updater:id,name',
             ])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->when($search !== '', fn (Builder $query) => $query->where(function (Builder $query) use ($search): void {
                 $query->where('kode_survey', 'like', "%{$search}%")
                     ->orWhere('status', 'like', "%{$search}%")
@@ -116,6 +118,10 @@ class SurveyScheduleController extends Controller
     public function store(Request $request, MarketingLeadStatusService $leadStatus): RedirectResponse
     {
         $validated = $this->validatePayload($request);
+        if ($this->shouldScopeToActivePerumahan($request)) {
+            $validated['perumahan_id'] = $this->ensureActivePerumahan($request);
+            $this->ensureDetailRumahAllowed($request, $validated['detail_rumah_id'] ?? null);
+        }
         $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
 
         $schedule = MarketingSurveySchedule::query()->create([
@@ -140,9 +146,14 @@ class SurveyScheduleController extends Controller
         $leadStatus = app(MarketingLeadStatusService::class);
         $schedule = MarketingSurveySchedule::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
         $this->abortIfLocked($schedule);
         $validated = $this->validatePayload($request);
+        if ($this->shouldScopeToActivePerumahan($request)) {
+            $validated['perumahan_id'] = $this->ensureActivePerumahan($request);
+            $this->ensureDetailRumahAllowed($request, $validated['detail_rumah_id'] ?? null);
+        }
         $this->ensureCustomerCanBeUsed($request, (int) $validated['costumer_id']);
         $schedule->update([
             ...$validated,
@@ -164,6 +175,7 @@ class SurveyScheduleController extends Controller
         $leadStatus = app(MarketingLeadStatusService::class);
         $schedule = MarketingSurveySchedule::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
 
         $validated = $request->validate([
@@ -199,6 +211,7 @@ class SurveyScheduleController extends Controller
     {
         $schedule = MarketingSurveySchedule::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
         $this->abortIfLocked($schedule);
         $schedule->delete();
@@ -248,6 +261,7 @@ class SurveyScheduleController extends Controller
             Costumer::query()
                 ->whereKey($customerId)
                 ->where('created_by', $request->user()?->id)
+                ->where('perumahan_id', $this->ensureActivePerumahan($request))
                 ->exists(),
             403,
         );
@@ -257,6 +271,7 @@ class SurveyScheduleController extends Controller
     {
         return Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->latest('id')
             ->limit(300)
             ->get(['id', 'kode_costumer', 'nama', 'no_identitas', 'telepon'])
@@ -270,6 +285,7 @@ class SurveyScheduleController extends Controller
     private function perumahanOptions(): array
     {
         return Perumahan::query()
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $query->whereIn('id', $this->assignedPerumahanIds(request())))
             ->orderBy('nama_perusahaan')
             ->get(['id', 'nama_perusahaan'])
             ->map(fn (Perumahan $perumahan) => [
@@ -283,6 +299,7 @@ class SurveyScheduleController extends Controller
     {
         return DetailRumah::query()
             ->with('perumahan:id,nama_perusahaan')
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->orderBy('kode_nlok')
             ->orderBy('nomor_rumah')
             ->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])
@@ -292,6 +309,21 @@ class SurveyScheduleController extends Controller
                 'perumahan_id' => (string) $unit->perumahan_id,
             ])
             ->all();
+    }
+
+    private function ensureDetailRumahAllowed(Request $request, mixed $detailRumahId): void
+    {
+        if (! $detailRumahId) {
+            return;
+        }
+
+        abort_unless(
+            DetailRumah::query()
+                ->whereKey($detailRumahId)
+                ->where('perumahan_id', $this->ensureActivePerumahan($request))
+                ->exists(),
+            403,
+        );
     }
 
     private function methodOptions(): array

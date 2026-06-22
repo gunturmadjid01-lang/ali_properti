@@ -4,6 +4,7 @@ import {
     FileText,
     Home,
     LayoutDashboard,
+    Wrench,
     Users,
 } from "lucide-react";
 
@@ -24,6 +25,11 @@ const adminSidebar = [
                         title: "Kapling / Unit",
                         icon: Home,
                         link: "/admin/unit-rumah",
+                    },
+                    {
+                        title: "Inventaris Aset",
+                        icon: Wrench,
+                        link: "/admin/inventaris-aset",
                     },
                 ],
             },

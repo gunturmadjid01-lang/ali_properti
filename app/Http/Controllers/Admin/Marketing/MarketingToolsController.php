@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\BankKredit;
 use App\Models\Costumer;
 use App\Models\CostumerFollowUp;
@@ -14,6 +15,7 @@ use App\Models\Perumahan;
 use App\Models\Spr;
 use App\Models\User;
 use App\Services\Marketing\MarketingLeadStatusService;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,6 +24,8 @@ use Inertia\Response;
 
 class MarketingToolsController extends Controller
 {
+    use ScopesActivePerumahan;
+
     protected array $sections = [
         'unit-stock' => 'Unit Available / Stock Unit',
         'pricelist' => 'Pricelist Aktif',
@@ -30,7 +34,6 @@ class MarketingToolsController extends Controller
         'hot-lead' => 'Hot Lead / Prioritas Lead',
         'distribusi-lead' => 'Distribusi Lead',
         'monitoring-aktivitas' => 'Monitoring Aktivitas Marketing',
-        'approval-diskon' => 'Approval Diskon / Promo',
         'aging-lead' => 'Aging Lead',
         'leaderboard-sales' => 'Leaderboard Sales',
     ];
@@ -43,7 +46,7 @@ class MarketingToolsController extends Controller
             'title' => $this->sections[$section],
             'section' => $section,
             'baseUrl' => route('admin.marketing.tools.show', $section, absolute: false),
-            'filters' => $request->only(['search', 'status', 'perumahan_id', 'date_from', 'date_to']),
+            'filters' => $request->only(['search', 'status', 'perumahan_id', 'date_from', 'date_to', 'period', 'reference_date']),
             'data' => $this->data($request, $section),
         ]);
     }
@@ -56,14 +59,20 @@ class MarketingToolsController extends Controller
             'costumer_id' => ['required', 'exists:costumers,id'],
             'user_id' => ['required', 'exists:users,id'],
         ]);
+        $activePerumahanId = $this->shouldScopeToActivePerumahan($request)
+            ? $this->ensureActivePerumahan($request)
+            : null;
 
         $marketing = User::query()
             ->whereKey($validated['user_id'])
             ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['marketing', 'area_marketing']))
+            ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('perumahans', fn (Builder $query) => $query->whereKey($id)))
             ->firstOrFail();
 
         Costumer::query()
             ->whereKey($validated['costumer_id'])
+            ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))
+            ->firstOrFail()
             ->update([
                 'created_by' => $marketing->id,
                 'updated_by' => $request->user()?->id,
@@ -82,7 +91,6 @@ class MarketingToolsController extends Controller
             'hot-lead' => $this->hotLeadData($request),
             'distribusi-lead' => $this->distributionData($request),
             'monitoring-aktivitas' => $this->activityData($request),
-            'approval-diskon' => $this->discountData($request),
             'aging-lead' => $this->agingLeadData($request),
             'leaderboard-sales' => $this->leaderboardData($request),
         };
@@ -231,7 +239,7 @@ class MarketingToolsController extends Controller
         abort_unless($this->canManageTeam($request), 403);
 
         return [
-            'rows' => Costumer::query()
+            'rows' => $this->customerQuery($request)
                 ->with(['leadSource:id,nama_sumber', 'creator:id,name'])
                 ->orderByRaw('CASE WHEN created_by IS NULL THEN 0 ELSE 1 END')
                 ->latest('id')
@@ -257,22 +265,35 @@ class MarketingToolsController extends Controller
         abort_unless($this->canManageTeam($request), 403);
         $dateFrom = $request->query('date_from') ?: now()->startOfMonth()->toDateString();
         $dateTo = $request->query('date_to') ?: now()->toDateString();
+        $activePerumahanId = $this->shouldScopeToActivePerumahan($request)
+            ? $this->activePerumahanId($request)
+            : null;
 
         return [
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
             'rows' => User::query()
                 ->withCount([
-                    'costumers as lead_count',
-                    'costumerFollowUps as follow_up_count' => fn (Builder $query) => $query->whereBetween('tanggal_follow_up', [$dateFrom, $dateTo]),
-                    'surveySchedules as survey_count' => fn (Builder $query) => $query->whereBetween('tanggal_survey', [$dateFrom, $dateTo]),
-                    'sprs as spr_count' => fn (Builder $query) => $query->whereBetween('tanggal_spr', [$dateFrom, $dateTo]),
+                    'costumers as lead_count' => fn (Builder $query) => $query
+                        ->whereBetween('created_at', [$dateFrom.' 00:00:00', $dateTo.' 23:59:59'])
+                        ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
+                    'costumerFollowUps as follow_up_count' => fn (Builder $query) => $query
+                        ->whereBetween('tanggal_follow_up', [$dateFrom, $dateTo])
+                        ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('costumer', fn (Builder $query) => $query->where('perumahan_id', $id))),
+                    'surveySchedules as survey_count' => fn (Builder $query) => $query
+                        ->whereBetween('tanggal_survey', [$dateFrom, $dateTo])
+                        ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
+                    'sprs as spr_count' => fn (Builder $query) => $query
+                        ->whereBetween('tanggal_spr', [$dateFrom, $dateTo])
+                        ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('detailRumah', fn (Builder $query) => $query->where('perumahan_id', $id))),
                     'marketingReminders as overdue_reminder_count' => fn (Builder $query) => $query
                         ->where('status', 'menunggu')
                         ->whereBetween('remind_at', [$dateFrom.' 00:00:00', $dateTo.' 23:59:59'])
-                        ->where('remind_at', '<', now()),
+                        ->where('remind_at', '<', now())
+                        ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('costumer', fn (Builder $query) => $query->where('perumahan_id', $id))),
                 ])
                 ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['marketing', 'area_marketing']))
+                ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('perumahans', fn (Builder $query) => $query->whereKey($id)))
                 ->orderBy('name')
                 ->get(['id', 'name'])
                 ->map(fn (User $user) => [
@@ -283,32 +304,6 @@ class MarketingToolsController extends Controller
                     'survey' => $user->survey_count,
                     'spr' => $user->spr_count,
                     'overdue' => $user->overdue_reminder_count,
-                ])
-                ->values(),
-        ];
-    }
-
-    protected function discountData(Request $request): array
-    {
-        abort_unless($this->canManageTeam($request), 403);
-
-        return [
-            'rows' => Spr::query()
-                ->with(['costumer:id,nama', 'creator:id,name', 'detailRumah:id,harga_jual,kode_nlok,nomor_rumah'])
-                ->whereColumn('harga_jual', '<', 'nilai_pengajuan_akhir')
-                ->orWhereNotNull('penambahan_lain_lain')
-                ->latest('id')
-                ->limit(120)
-                ->get()
-                ->map(fn (Spr $spr) => [
-                    'id' => $spr->id,
-                    'kode_spr' => $spr->kode_spr,
-                    'customer' => $spr->costumer?->nama ?? '-',
-                    'marketing' => $spr->creator?->name ?? '-',
-                    'harga_jual' => (float) $spr->harga_jual,
-                    'nilai_akhir' => (float) $spr->nilai_pengajuan_akhir,
-                    'catatan' => $spr->catatan ?: $spr->penambahan_lain_lain ?: '-',
-                    'status' => $spr->status,
                 ])
                 ->values(),
         ];
@@ -347,21 +342,73 @@ class MarketingToolsController extends Controller
     {
         abort_unless($this->canManageTeam($request), 403);
 
+        $period = in_array($request->query('period'), ['week', 'month', 'year'], true)
+            ? $request->query('period')
+            : 'week';
+        $referenceDate = Carbon::parse($request->query('reference_date') ?: now()->toDateString());
+        [$from, $to] = match ($period) {
+            'month' => [$referenceDate->copy()->startOfMonth(), $referenceDate->copy()->endOfMonth()],
+            'year' => [$referenceDate->copy()->startOfYear(), $referenceDate->copy()->endOfYear()],
+            default => [$referenceDate->copy()->startOfWeek(Carbon::MONDAY), $referenceDate->copy()->endOfWeek(Carbon::SUNDAY)],
+        };
+        $activePerumahanId = $this->shouldScopeToActivePerumahan($request)
+            ? $this->activePerumahanId($request)
+            : null;
+
+        $rows = User::query()
+            ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['marketing', 'area_marketing']))
+            ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('perumahans', fn (Builder $query) => $query->whereKey($id)))
+            ->withCount([
+                'costumers as lead_count' => fn (Builder $query) => $query
+                    ->whereBetween('created_at', [$from, $to])
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
+                'surveySchedules as survey_count' => fn (Builder $query) => $query
+                    ->whereBetween('tanggal_survey', [$from, $to])
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
+                'sprs as spr_count' => fn (Builder $query) => $query
+                    ->whereBetween('tanggal_spr', [$from, $to])
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('detailRumah', fn (Builder $query) => $query->where('perumahan_id', $id))),
+                'sprs as closing_count' => fn (Builder $query) => $query
+                    ->where('status', Spr::STATUS_DISETUJUI)
+                    ->whereBetween('tanggal_spr', [$from, $to])
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('detailRumah', fn (Builder $query) => $query->where('perumahan_id', $id))),
+            ])
+            ->withSum([
+                'sprs as nilai_penjualan' => fn (Builder $query) => $query
+                    ->where('status', Spr::STATUS_DISETUJUI)
+                    ->whereBetween('tanggal_spr', [$from, $to])
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('detailRumah', fn (Builder $query) => $query->where('perumahan_id', $id))),
+            ], 'nilai_pengajuan_akhir')
+            ->get(['id', 'name'])
+            ->sortByDesc(fn (User $user) => (float) ($user->nilai_penjualan ?? 0))
+            ->values()
+            ->map(fn (User $user, int $index) => [
+                'id' => $user->id,
+                'rank' => $index + 1,
+                'name' => $user->name,
+                'lead' => (int) $user->lead_count,
+                'survey' => (int) $user->survey_count,
+                'spr' => (int) $user->spr_count,
+                'closing' => (int) $user->closing_count,
+                'conversion' => $user->lead_count > 0 ? round(($user->closing_count / $user->lead_count) * 100, 1) : 0,
+                'nilai' => (float) ($user->nilai_penjualan ?? 0),
+            ]);
+
         return [
-            'rows' => User::query()
-                ->withCount(['costumers as lead_count', 'sprs as spr_count'])
-                ->withSum(['sprs as nilai_penjualan' => fn (Builder $query) => $query->where('status', Spr::STATUS_DISETUJUI)], 'harga_jual')
-                ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['marketing', 'area_marketing']))
-                ->orderByDesc('nilai_penjualan')
-                ->get(['id', 'name'])
-                ->map(fn (User $user, int $index) => [
-                    'rank' => $index + 1,
-                    'name' => $user->name,
-                    'lead' => $user->lead_count,
-                    'spr' => $user->spr_count,
-                    'nilai' => (float) ($user->nilai_penjualan ?? 0),
-                ])
-                ->values(),
+            'period' => $period,
+            'reference_date' => $referenceDate->toDateString(),
+            'date_from' => $from->toDateString(),
+            'date_to' => $to->toDateString(),
+            'rows' => $rows,
+            'summary' => [
+                'marketing' => $rows->count(),
+                'lead' => $rows->sum('lead'),
+                'survey' => $rows->sum('survey'),
+                'spr' => $rows->sum('spr'),
+                'closing' => $rows->sum('closing'),
+                'nilai' => $rows->sum('nilai'),
+                'top_marketing' => $rows->first()['name'] ?? '-',
+            ],
         ];
     }
 
@@ -370,8 +417,9 @@ class MarketingToolsController extends Controller
         $search = trim((string) $request->query('search', ''));
 
         return DetailRumah::query()
-            ->with('perumahan:id,nama_perusahaan')
+            ->with(['perumahan:id,nama_perusahaan', 'bookingSpr.costumer:id,nama,pekerjaan'])
             ->when($request->query('perumahan_id'), fn (Builder $query, string $id) => $query->where('perumahan_id', $id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->when($search !== '', fn (Builder $query) => $query->where(function (Builder $query) use ($search): void {
                 $query->where('kode_nlok', 'like', "%{$search}%")
                     ->orWhere('nomor_rumah', 'like', "%{$search}%")
@@ -386,6 +434,7 @@ class MarketingToolsController extends Controller
 
         return Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->when($search !== '', fn (Builder $query) => $query->where(function (Builder $query) use ($search): void {
                 $query->where('nama', 'like', "%{$search}%")
                     ->orWhere('kode_costumer', 'like', "%{$search}%")
@@ -409,6 +458,8 @@ class MarketingToolsController extends Controller
             'status_penjualan' => $unit->status_penjualan ?: '-',
             'status_pembangunan' => $unit->status_pembangunan ?: '-',
             'progress' => (float) ($unit->progress_terakhir ?? 0),
+            'pembeli' => $unit->bookingSpr?->costumer?->nama ?? '-',
+            'pekerjaan_pembeli' => $unit->bookingSpr?->costumer?->pekerjaan ?? '-',
             'spesifikasi' => $unit->spesifikasi,
             'catatan' => $unit->catatan,
         ];
@@ -417,6 +468,7 @@ class MarketingToolsController extends Controller
     protected function perumahanOptions(): array
     {
         return Perumahan::query()
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $query->whereIn('id', $this->assignedPerumahanIds(request())))
             ->orderBy('nama_perusahaan')
             ->get(['id', 'nama_perusahaan'])
             ->map(fn (Perumahan $row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])
@@ -427,8 +479,13 @@ class MarketingToolsController extends Controller
 
     protected function marketingOptions(): array
     {
+        $activePerumahanId = $this->shouldScopeToActivePerumahan(request())
+            ? $this->activePerumahanId(request())
+            : null;
+
         return User::query()
             ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['marketing', 'area_marketing']))
+            ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('perumahans', fn (Builder $query) => $query->whereKey($id)))
             ->orderBy('name')
             ->get(['id', 'name'])
             ->map(fn (User $row) => ['value' => (string) $row->id, 'label' => $row->name])
@@ -466,6 +523,12 @@ class MarketingToolsController extends Controller
 
     protected function canManageTeam(Request $request): bool
     {
-        return (bool) $request->user()?->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
+        return (bool) $request->user()?->hasAnyRole([
+            'supervisor_marketing',
+            'manager',
+            'manajer_pimpro',
+            'owner',
+            'super_admin',
+        ]);
     }
 }

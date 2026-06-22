@@ -112,10 +112,12 @@ function ManagementSection({ section, overviewUrl }) {
                         </p>
                     )}
                 </div>
-                <Button type="button" variant="outline" onClick={openCreate}>
-                    <PlusCircle size={18} />
-                    Data Baru
-                </Button>
+                {!section.readOnly && (
+                    <Button type="button" variant="outline" onClick={openCreate}>
+                        <PlusCircle size={18} />
+                        Data Baru
+                    </Button>
+                )}
             </div>
 
             <div className="grid gap-6 p-5">
@@ -125,6 +127,7 @@ function ManagementSection({ section, overviewUrl }) {
                     rows={section.rows}
                     filters={section.filters}
                     defaultOpen={section.defaultOpen}
+                    permissions={section.readOnly ? { canUpdate: false, canDelete: false, canUnlock: false } : { canUpdate: true, canDelete: true }}
                     onEdit={editRow}
                     onDelete={(row) => requestService.destroy({ baseUrl: section.baseUrl, row, label: section.title })}
                     onSearch={(search) => requestService.search({
@@ -134,16 +137,18 @@ function ManagementSection({ section, overviewUrl }) {
                     })}
                 />
 
-                <FormComponent
-                    open={formOpen}
-                    title={section.title}
-                    fields={section.fields}
-                    options={section.options}
-                    form={form}
-                    selected={selected}
-                    onSubmit={submit}
-                    onClose={closeForm}
-                />
+                {!section.readOnly && (
+                    <FormComponent
+                        open={formOpen}
+                        title={section.title}
+                        fields={section.fields}
+                        options={section.options}
+                        form={form}
+                        selected={selected}
+                        onSubmit={submit}
+                        onClose={closeForm}
+                    />
+                )}
             </div>
         </section>
     );
@@ -181,4 +186,3 @@ export default function Index({ title, description, overviewUrl, sections }) {
 }
 
 Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Admin'}>{page}</AdminLayout>;
-

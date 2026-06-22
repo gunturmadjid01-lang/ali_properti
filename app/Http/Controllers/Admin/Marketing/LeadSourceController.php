@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Http\Controllers\Controller;
 use App\Models\MarketingLeadSource;
 use App\Support\CodeGenerator;
@@ -15,14 +16,15 @@ use Inertia\Response;
 
 class LeadSourceController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, ScopesActivePerumahan;
 
     public function index(Request $request): Response
     {
         $search = trim((string) $request->query('search', ''));
 
         $rows = MarketingLeadSource::query()
-            ->withCount('costumers')
+            ->withCount(['costumers' => fn (Builder $query) => $query
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))])
             ->with(['creator:id,name', 'updater:id,name'])
             ->when($search !== '', fn (Builder $query) => $query->where(function (Builder $query) use ($search): void {
                 $query->where('kode_sumber', 'like', "%{$search}%")

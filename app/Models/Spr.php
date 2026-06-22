@@ -56,6 +56,16 @@ class Spr extends Model
         'refund_transaksi_keuangan_id',
         'refund_amount',
         'refund_at',
+        'refund_status',
+        'refund_requested_by',
+        'refund_requested_at',
+        'refund_manager_approved_by',
+        'refund_manager_approved_at',
+        'refund_owner_approved_by',
+        'refund_owner_approved_at',
+        'refund_rejected_by',
+        'refund_rejected_at',
+        'refund_approval_note',
         'catatan',
     ];
 
@@ -84,6 +94,10 @@ class Spr extends Model
         'tanggal_jatuh_tempo_termin' => 'date',
         'refund_amount' => 'float',
         'refund_at' => 'date',
+        'refund_requested_at' => 'datetime',
+        'refund_manager_approved_at' => 'datetime',
+        'refund_owner_approved_at' => 'datetime',
+        'refund_rejected_at' => 'datetime',
     ];
 
     public function costumer(): BelongsTo

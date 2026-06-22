@@ -1,0 +1,73 @@
+Menurutku kondisinya begini:
+Role Pengawas
+Secara fitur, pengawas sudah cukup bagus untuk ERP properti developer, bahkan sudah lumayan kompleks. Alurnya sudah mencakup:
+Kapling / unit
+Jadwal lapangan
+Progress pembangunan
+Laporan lapangan
+Tenaga kerja & alat
+Kontrol kualitas
+Defect / punch list
+Opname kontraktor
+Perubahan pekerjaan
+K3 / safety
+Serah terima internal
+Permintaan barang
+Sisa material lokasi
+Pemakaian material
+Pengembalian material
+Inventaris aset
+Ini sudah layak untuk role pengawas karena dia bisa mencatat realisasi lapangan, kebutuhan material, pemakaian aset, mutu pekerjaan, defect, sampai serah terima internal.
+Yang menurutku masih perlu dirapikan nanti:
+Pengawas jangan terlalu bebas akses Kapling / Unit; idealnya hanya lihat unit dan progress, bukan ubah data master unit.
+Opname Kontraktor bagusnya tetap input dari pengawas, tapi approval/pencairan jangan di pengawas.
+Perubahan Pekerjaan wajib approval Pimpro/Owner karena bisa berdampak biaya.
+Data yang sudah locked harus benar-benar hanya bisa dibuka oleh Owner/Super Admin.
+Dashboard pengawas khusus belum terlalu kelihatan; bagusnya ada ringkasan: jadwal hari ini, progress telat, defect belum selesai, material pending, aset dipinjam.
+Kesimpulan pengawas: sudah kuat dan layak ERP, tinggal rapikan batas akses dan dashboard kerja harian.
+Role Marketing
+Nah ini ada catatan penting: secara fitur marketing masih ada di sidebar dan route, tapi role marketing barusan sudah kita hapus dari database. Jadi saat ini secara master role, Marketing belum aktif sebagai role resmi. Kalau nanti mau dipakai lagi, perlu dibuat ulang role marketing atau digabung ke role lain.
+Kalau bicara fiturnya, marketing sudah cukup lengkap:
+Data customer
+Sumber lead
+Laporan lead
+Jadwal survey
+Follow up customer
+SPR
+Booking fee / uang muka
+Cash
+KPR Bank
+Akad
+Serah terima
+Unit available
+Pricelist
+Simulasi pembayaran
+Riwayat komunikasi
+Hot lead
+Reminder
+Pipeline
+Campaign
+Validasi berkas
+Target KPI / komisi
+Tapi untuk ERP yang rapi, marketing biasa seharusnya tidak pegang semua itu. Yang cocok untuk marketing biasa:
+Data customer milik sendiri
+Follow up customer milik sendiri
+Jadwal survey milik sendiri
+Reminder follow up
+SPR
+Input pembayaran awal, tapi statusnya menunggu konfirmasi keuangan
+Lihat unit available, pricelist, simulasi pembayaran
+Pantau KPR, akad, serah terima customer milik sendiri
+Yang lebih cocok untuk supervisor/pimpro/owner:
+Sumber lead
+Laporan lead
+Pipeline semua marketing
+Campaign & promosi
+Validasi berkas
+Distribusi lead
+Monitoring aktivitas marketing
+Approval diskon
+Target KPI & komisi
+Leaderboard sales
+Tagihan & kwitansi
+Kesimpulan marketing: fiturnya sudah cukup untuk ERP, tapi role-nya saat ini belum final karena marketing sudah dihapus. Kalau nanti marketing mau dipakai lagi, sebaiknya dibuat ulang sebagai role terpisah dengan akses lebih sempit, sedangkan kontrol tim masuk ke Owner/Pimpro atau nanti Supervisor Marketing kalau dibuat lagi.

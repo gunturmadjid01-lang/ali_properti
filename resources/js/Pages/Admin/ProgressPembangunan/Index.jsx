@@ -44,6 +44,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
         perumahan_id: '',
         detail_rumah_id: '',
         tahapan_pembangunan_id: '',
+        site_schedule_id: '',
         nama_progress: '',
         tanggal: new Date().toISOString().slice(0, 10),
         persentase: '',
@@ -58,6 +59,15 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
 
         return options.detailRumahs.filter((item) => item.perumahan_id === String(form.data.perumahan_id));
     }, [form.data.perumahan_id, options.detailRumahs]);
+    const scheduleOptions = useMemo(() => (options.siteSchedules ?? []).filter((item) => {
+        if (form.data.detail_rumah_id && item.detail_rumah_id !== String(form.data.detail_rumah_id)) {
+            return false;
+        }
+        if (form.data.tahapan_pembangunan_id && item.tahapan_pembangunan_id !== String(form.data.tahapan_pembangunan_id)) {
+            return false;
+        }
+        return true;
+    }), [form.data.detail_rumah_id, form.data.tahapan_pembangunan_id, options.siteSchedules]);
 
     const resetForm = () => {
         setEditing(null);
@@ -72,6 +82,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
             perumahan_id: row.perumahan_id ?? '',
             detail_rumah_id: row.detail_rumah_id ?? '',
             tahapan_pembangunan_id: row.tahapan_pembangunan_id ?? '',
+            site_schedule_id: row.site_schedule_id ?? '',
             nama_progress: row.nama_progress ?? '',
             tanggal: row.tanggal ?? new Date().toISOString().slice(0, 10),
             persentase: row.persentase ?? '',
@@ -160,6 +171,8 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                     ...form.data,
                                     detail_rumah_id: value,
                                     perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id,
+                                    site_schedule_id: '',
+                                    nama_progress: '',
                                 })}
                             />
                         </div>
@@ -169,19 +182,28 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                 value={form.data.tahapan_pembangunan_id}
                                 label="Pilih Tahapan"
                                 options={options.tahapanPembangunans}
-                                onChange={(value) => form.setData('tahapan_pembangunan_id', value)}
+                                onChange={(value) => form.setData({ ...form.data, tahapan_pembangunan_id: value, site_schedule_id: '', nama_progress: '' })}
                             />
                         </div>
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-3">
-                        <Input
-                            label="Nama Progress"
-                            value={form.data.nama_progress}
-                            error={form.errors.nama_progress}
-                            placeholder="Contoh: Pengecoran pondasi sisi kanan"
-                            onChange={(event) => form.setData('nama_progress', event.target.value)}
-                        />
+                        <div className="grid gap-2">
+                            <span className="text-sm font-extrabold">Nama Progress</span>
+                            <Dropdown
+                                label={form.data.detail_rumah_id && form.data.tahapan_pembangunan_id ? 'Pilih dari Jadwal Lapangan' : 'Pilih unit dan tahapan dulu'}
+                                value={form.data.site_schedule_id}
+                                options={scheduleOptions}
+                                disabled={!form.data.detail_rumah_id || !form.data.tahapan_pembangunan_id}
+                                onChange={(value, selected) => form.setData({
+                                    ...form.data,
+                                    site_schedule_id: value,
+                                    nama_progress: selected?.nama_pekerjaan ?? '',
+                                })}
+                            />
+                            {form.errors.site_schedule_id && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.site_schedule_id}</span>}
+                            {form.errors.nama_progress && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.nama_progress}</span>}
+                        </div>
                         <Input
                             label="Tanggal"
                             type="date"

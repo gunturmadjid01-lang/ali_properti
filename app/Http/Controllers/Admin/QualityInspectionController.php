@@ -5,7 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\BuildsFieldOptions;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Controller;
+use App\Models\FieldDefect;
+use App\Models\ProgressPembangunan;
 use App\Models\QualityInspection;
+use App\Models\SiteSchedule;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,12 +33,14 @@ class QualityInspectionController extends Controller
             'title' => 'Kontrol Kualitas',
             'baseUrl' => route('admin.quality-inspection.index', absolute: false),
             'filters' => ['search' => $search, 'perumahan_id' => $perumahanId, 'detail_rumah_id' => $detailRumahId],
-            'options' => $this->fieldOptions(),
+            'options' => $this->options(),
             'rows' => QualityInspection::query()
                 ->with([
                     'perumahan:id,nama_perusahaan',
                     'detailRumah:id,kode_nlok,nomor_rumah',
                     'tahapanPembangunan:id,nama_tahapan',
+                    'siteSchedule:id,kode_jadwal,nama_pekerjaan',
+                    'progressPembangunan:id,nama_progress',
                     'creator:id,name',
                     'updater:id,name',
                     'approvedBy:id,name',
@@ -56,9 +61,13 @@ class QualityInspectionController extends Controller
                     'perumahan_id' => (string) $row->perumahan_id,
                     'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
                     'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
+                    'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),
+                    'progress_pembangunan_id' => (string) ($row->progress_pembangunan_id ?? ''),
                     'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
                     'unit' => $row->detailRumah ? trim($row->detailRumah->kode_nlok.' '.$row->detailRumah->nomor_rumah) : 'Kawasan',
                     'tahapan' => $row->tahapanPembangunan?->nama_tahapan ?? '-',
+                    'jadwal' => $row->siteSchedule?->nama_pekerjaan ?? '-',
+                    'progress' => $row->progressPembangunan?->nama_progress ?? '-',
                     'hasil' => $row->hasil,
                     'item_pemeriksaan' => $row->item_pemeriksaan,
                     'temuan' => $row->temuan,
@@ -70,7 +79,7 @@ class QualityInspectionController extends Controller
                     'created_by_name' => $row->creator?->name ?? '-',
                     'updated_by_name' => $row->updater?->name ?? '-',
                     'approved_by_name' => $row->approvedBy?->name ?? '-',
-                    'can_approve' => $this->canApproveFieldData(),
+                    'can_approve' => $row->approval_status !== 'approved' && $this->canApproveFieldData(),
                     'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'manajer_pimpro', 'owner', 'super_admin']),
                     'can_unlock' => (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin']),
                     'can_edit' => ($row->record_status ?? 'draft') !== 'locked',
@@ -88,6 +97,8 @@ class QualityInspectionController extends Controller
             'perumahan_id' => ['required', 'exists:perumahans,id'],
             'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
             'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'],
+            'site_schedule_id' => ['nullable', 'exists:site_schedules,id'],
+            'progress_pembangunan_id' => ['nullable', 'exists:progress_pembangunans,id'],
             'hasil' => ['required', 'in:sesuai,defect,perlu_perbaikan'],
             'item_pemeriksaan' => ['required', 'string'],
             'temuan' => ['nullable', 'string'],
@@ -97,13 +108,14 @@ class QualityInspectionController extends Controller
             'foto' => ['nullable', 'image', 'max:4096'],
         ]);
 
-        QualityInspection::query()->create([
-            ...collect($validated)->except('foto')->all(),
+        $inspection = QualityInspection::query()->create([
+            ...$this->normalizePayload(collect($validated)->except('foto')->all()),
             'kode_inspeksi' => 'QC-'.now()->format('Ymd-His').'-'.random_int(10, 99),
             'foto' => $request->file('foto')?->store('kontrol-kualitas', 'public'),
             'created_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);
+        $this->syncDefectFromInspection($inspection);
 
         return back()->with('success', 'Hasil kontrol kualitas berhasil disimpan.');
     }
@@ -112,7 +124,12 @@ class QualityInspectionController extends Controller
     {
         abort_unless($this->canApproveFieldData(), 403, 'Hanya manager atau owner yang dapat menyetujui inspeksi.');
         $row = QualityInspection::query()->findOrFail($id);
+        if ($row->approval_status === 'approved') {
+            return back()->with('success', 'Kontrol kualitas sudah disetujui sebelumnya.');
+        }
+
         $row->update(['approval_status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+        $this->syncDefectFromInspection($row->fresh());
 
         return back()->with('success', 'Kontrol kualitas berhasil disetujui.');
     }
@@ -147,13 +164,14 @@ class QualityInspectionController extends Controller
         }
 
         $row->update([
-            ...collect($validated)->except('foto')->all(),
+            ...$this->normalizePayload(collect($validated)->except('foto')->all()),
             'foto' => $foto,
             'approval_status' => 'menunggu_approval_manager',
             'approved_by' => null,
             'approved_at' => null,
             'updated_by' => auth()->id(),
         ]);
+        $this->syncDefectFromInspection($row->fresh());
 
         return back()->with('success', 'Kontrol kualitas berhasil diperbarui.');
     }
@@ -176,6 +194,103 @@ class QualityInspectionController extends Controller
         return QualityInspection::class;
     }
 
+    protected function syncDefectFromInspection(QualityInspection $inspection): void
+    {
+        if (! in_array($inspection->hasil, ['defect', 'perlu_perbaikan'], true)) {
+            return;
+        }
+
+        FieldDefect::query()->updateOrCreate(
+            ['quality_inspection_id' => $inspection->id],
+            [
+                'kode_defect' => FieldDefect::query()->where('quality_inspection_id', $inspection->id)->value('kode_defect') ?: 'DEF-'.now()->format('ymd-His').'-'.random_int(10, 99),
+                'tanggal' => $inspection->tanggal,
+                'perumahan_id' => $inspection->perumahan_id,
+                'detail_rumah_id' => $inspection->detail_rumah_id,
+                'tahapan_pembangunan_id' => $inspection->tahapan_pembangunan_id,
+                'kategori' => 'pekerjaan',
+                'prioritas' => $inspection->hasil === 'defect' ? 'high' : 'medium',
+                'temuan' => $inspection->temuan ?: $inspection->item_pemeriksaan,
+                'instruksi_perbaikan' => $inspection->tindakan_perbaikan,
+                'target_selesai' => $inspection->target_selesai,
+                'status' => match ($inspection->status) {
+                    'selesai' => 'selesai',
+                    'dalam_perbaikan' => 'dalam_perbaikan',
+                    default => 'open',
+                },
+                'foto' => $inspection->foto,
+                'approval_status' => $inspection->approval_status,
+                'approved_by' => $inspection->approved_by,
+                'approved_at' => $inspection->approved_at,
+                'created_by' => $inspection->created_by,
+                'updated_by' => auth()->id(),
+            ],
+        );
+    }
+
+    private function options(): array
+    {
+        $options = $this->fieldOptions();
+        $options['siteSchedules'] = SiteSchedule::query()
+            ->whereNotNull('detail_rumah_id')
+            ->orderBy('tanggal_target')
+            ->get(['id', 'perumahan_id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'nama_pekerjaan', 'target_progress', 'realisasi_progress'])
+            ->map(fn (SiteSchedule $row) => [
+                'value' => (string) $row->id,
+                'label' => $row->nama_pekerjaan.' ('.$row->realisasi_progress.'/'.$row->target_progress.'%)',
+                'perumahan_id' => (string) $row->perumahan_id,
+                'detail_rumah_id' => (string) $row->detail_rumah_id,
+                'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
+                'nama_pekerjaan' => $row->nama_pekerjaan,
+            ])
+            ->values();
+        $options['progressPembangunans'] = ProgressPembangunan::query()
+            ->with('detailRumah:id,perumahan_id')
+            ->where('approval_status', 'approved')
+            ->latest('tanggal')
+            ->get(['id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'site_schedule_id', 'nama_progress', 'persentase'])
+            ->map(fn (ProgressPembangunan $row) => [
+                'value' => (string) $row->id,
+                'label' => $row->nama_progress.' - '.$row->persentase.'%',
+                'perumahan_id' => (string) ($row->detailRumah?->perumahan_id ?? ''),
+                'detail_rumah_id' => (string) $row->detail_rumah_id,
+                'tahapan_pembangunan_id' => (string) $row->tahapan_pembangunan_id,
+                'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),
+                'nama_progress' => $row->nama_progress,
+            ])
+            ->values();
+
+        return $options;
+    }
+
+    private function normalizePayload(array $payload): array
+    {
+        foreach (['detail_rumah_id', 'tahapan_pembangunan_id', 'site_schedule_id', 'progress_pembangunan_id'] as $key) {
+            if (array_key_exists($key, $payload) && blank($payload[$key])) {
+                $payload[$key] = null;
+            }
+        }
+
+        if (! empty($payload['progress_pembangunan_id'])) {
+            $progress = ProgressPembangunan::query()->with('detailRumah:id,perumahan_id')->find($payload['progress_pembangunan_id']);
+            if ($progress) {
+                $payload['detail_rumah_id'] = $progress->detail_rumah_id;
+                $payload['perumahan_id'] = $progress->detailRumah?->perumahan_id ?? $payload['perumahan_id'];
+                $payload['tahapan_pembangunan_id'] = $progress->tahapan_pembangunan_id;
+                $payload['site_schedule_id'] = $progress->site_schedule_id ?: $payload['site_schedule_id'];
+            }
+        } elseif (! empty($payload['site_schedule_id'])) {
+            $schedule = SiteSchedule::query()->find($payload['site_schedule_id']);
+            if ($schedule) {
+                $payload['perumahan_id'] = $schedule->perumahan_id;
+                $payload['detail_rumah_id'] = $schedule->detail_rumah_id;
+                $payload['tahapan_pembangunan_id'] = $schedule->tahapan_pembangunan_id;
+            }
+        }
+
+        return $payload;
+    }
+
     private function validatedPayload(Request $request): array
     {
         return $request->validate([
@@ -183,6 +298,8 @@ class QualityInspectionController extends Controller
             'perumahan_id' => ['required', 'exists:perumahans,id'],
             'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
             'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'],
+            'site_schedule_id' => ['nullable', 'exists:site_schedules,id'],
+            'progress_pembangunan_id' => ['nullable', 'exists:progress_pembangunans,id'],
             'hasil' => ['required', 'in:sesuai,defect,perlu_perbaikan'],
             'item_pemeriksaan' => ['required', 'string'],
             'temuan' => ['nullable', 'string'],

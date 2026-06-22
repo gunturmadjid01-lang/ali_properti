@@ -3,6 +3,7 @@ import { PlusCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../../../../Components/UI';
 import AdminLayout from '../../../../Layouts/AdminLayout';
+import { useResourcePermissions } from '../../../../Utils/permissions';
 
 function defaultValues(fields) {
     return fields.reduce((values, field) => {
@@ -18,11 +19,15 @@ function valuesFromRow(fields, row) {
     }, {});
 }
 
-function ManagementPageContent({ title, description, baseUrl, columns, fields, rows, filters, options, TableComponent, FormComponent, requestService }) {
+function ManagementPageContent({ title, description, baseUrl, permissionKey, readOnly = false, columns, fields, rows, filters, options, TableComponent, FormComponent, requestService }) {
     const defaults = useMemo(() => defaultValues(fields), [fields]);
     const form = useForm(defaults);
     const [selected, setSelected] = useState(null);
     const [formOpen, setFormOpen] = useState(false);
+    const resourcePermissions = useResourcePermissions(permissionKey, baseUrl);
+    const permissions = readOnly
+        ? { ...resourcePermissions, canCreate: false, canUpdate: false, canDelete: false, canUnlock: false }
+        : resourcePermissions;
 
     const resetForm = () => {
         setSelected(null);
@@ -31,6 +36,10 @@ function ManagementPageContent({ title, description, baseUrl, columns, fields, r
     };
 
     const openCreate = () => {
+        if (!permissions.canCreate) {
+            return;
+        }
+
         resetForm();
         setFormOpen(true);
     };
@@ -41,6 +50,10 @@ function ManagementPageContent({ title, description, baseUrl, columns, fields, r
     };
 
     const editRow = (row) => {
+        if (!permissions.canUpdate) {
+            return;
+        }
+
         setSelected(row);
         form.clearErrors();
         form.setData(valuesFromRow(fields, row));
@@ -49,6 +62,10 @@ function ManagementPageContent({ title, description, baseUrl, columns, fields, r
 
     const submit = (event) => {
         event.preventDefault();
+        if ((selected && !permissions.canUpdate) || (!selected && !permissions.canCreate)) {
+            return;
+        }
+
         requestService.submit({
             form,
             baseUrl,
@@ -69,9 +86,11 @@ function ManagementPageContent({ title, description, baseUrl, columns, fields, r
                             <h2 className="mt-1 text-xl font-extrabold">{title}</h2>
                             <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-soft dark:text-white/60">{description}</p>
                         </div>
-                        <Button type="button" onClick={openCreate}>
-                            <PlusCircle size={18} /> Tambah Baru
-                        </Button>
+                        {permissions.canCreate && (
+                            <Button type="button" onClick={openCreate}>
+                                <PlusCircle size={18} /> Tambah Baru
+                            </Button>
+                        )}
                     </div>
                 </section>
 
@@ -82,23 +101,26 @@ function ManagementPageContent({ title, description, baseUrl, columns, fields, r
                     rows={rows}
                     filters={filters}
                     options={options}
+                    permissions={permissions}
                     onEdit={editRow}
-                    onDelete={(row) => requestService.destroy({ baseUrl, row })}
+                    onDelete={(row) => permissions.canDelete && requestService.destroy({ baseUrl, row })}
                     onLock={(row) => requestService.lock?.({ baseUrl, row })}
-                    onUnlock={(row) => requestService.unlock?.({ baseUrl, row })}
+                    onUnlock={(row) => permissions.canUnlock && requestService.unlock?.({ baseUrl, row })}
                     onSearch={(search) => requestService.search({ baseUrl, search })}
                 />
 
-                <FormComponent
-                    open={formOpen}
-                    title={title}
-                    fields={fields}
-                    options={options}
-                    form={form}
-                    selected={selected}
-                    onSubmit={submit}
-                    onClose={closeForm}
-                />
+                {(permissions.canCreate || permissions.canUpdate) && (
+                    <FormComponent
+                        open={formOpen}
+                        title={title}
+                        fields={fields}
+                        options={options}
+                        form={form}
+                        selected={selected}
+                        onSubmit={submit}
+                        onClose={closeForm}
+                    />
+                )}
             </div>
         </>
     );
@@ -111,4 +133,3 @@ export default function ManagementPage(props) {
 }
 
 ManagementPage.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Admin'}>{page}</AdminLayout>;
-

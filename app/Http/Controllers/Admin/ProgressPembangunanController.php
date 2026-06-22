@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Models\DetailRumah;
 use App\Models\Perumahan;
 use App\Models\ProgressPembangunan;
+use App\Models\SiteSchedule;
 use App\Models\TahapanPembangunan;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
@@ -64,6 +65,7 @@ class ProgressPembangunanController extends Controller
                 'perumahan_id' => (string) ($row->detailRumah?->perumahan_id ?? ''),
                 'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
                 'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
+                'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),
                 'tanggal' => optional($row->tanggal)->format('Y-m-d'),
                 'nama_progress' => $row->nama_progress,
                 'perumahan' => $row->detailRumah?->perumahan?->nama_perusahaan ?? '-',
@@ -79,7 +81,7 @@ class ProgressPembangunanController extends Controller
                 'created_by_name' => $row->creator?->name ?? $row->user?->name ?? '-',
                 'updated_by_name' => $row->updater?->name ?? '-',
                 'approved_by' => $row->approvedBy?->name ?? '-',
-                'can_approve' => $this->canApprove(),
+                'can_approve' => $row->approval_status !== 'approved' && $this->canApprove(),
                 'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
                 'can_unlock' => $this->canManageDraftRows(),
                 'can_edit' => ($row->record_status ?? 'draft') !== 'locked',
@@ -121,6 +123,19 @@ class ProgressPembangunanController extends Controller
                     ->get(['id', 'nama_tahapan', 'bobot_persen'])
                     ->map(fn (TahapanPembangunan $row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)'])
                     ->values(),
+                'siteSchedules' => SiteSchedule::query()
+                    ->whereNotNull('detail_rumah_id')
+                    ->whereNotNull('tahapan_pembangunan_id')
+                    ->orderBy('tanggal_target')
+                    ->get(['id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'nama_pekerjaan', 'target_progress', 'realisasi_progress', 'status'])
+                    ->map(fn (SiteSchedule $row) => [
+                        'value' => (string) $row->id,
+                        'label' => $row->nama_pekerjaan.' (target '.$row->target_progress.'%, realisasi '.$row->realisasi_progress.'%)',
+                        'detail_rumah_id' => (string) $row->detail_rumah_id,
+                        'tahapan_pembangunan_id' => (string) $row->tahapan_pembangunan_id,
+                        'nama_pekerjaan' => $row->nama_pekerjaan,
+                    ])
+                    ->values(),
             ],
         ]);
     }
@@ -131,6 +146,7 @@ class ProgressPembangunanController extends Controller
         $validated = $request->validate([
             'detail_rumah_id' => ['required', 'exists:detail_rumahs,id'],
             'tahapan_pembangunan_id' => ['required', 'exists:tahapan_pembangunans,id'],
+            'site_schedule_id' => ['required', 'exists:site_schedules,id'],
             'nama_progress' => ['required', 'string', 'max:255'],
             'tanggal' => ['required', 'date'],
             'persentase' => ['required', 'numeric', 'min:0', 'max:100'],
@@ -145,6 +161,7 @@ class ProgressPembangunanController extends Controller
         ProgressPembangunan::query()->create([
             'detail_rumah_id' => $rumah->id,
             'tahapan_pembangunan_id' => $tahapan->id,
+            'site_schedule_id' => filled($validated['site_schedule_id'] ?? null) ? $validated['site_schedule_id'] : null,
             'nama_progress' => $validated['nama_progress'],
             'tanggal' => $validated['tanggal'],
             'tahapan' => $tahapan->bobot_persen,
@@ -171,6 +188,7 @@ class ProgressPembangunanController extends Controller
         $validated = $request->validate([
             'detail_rumah_id' => ['required', 'exists:detail_rumahs,id'],
             'tahapan_pembangunan_id' => ['required', 'exists:tahapan_pembangunans,id'],
+            'site_schedule_id' => ['required', 'exists:site_schedules,id'],
             'nama_progress' => ['required', 'string', 'max:255'],
             'tanggal' => ['required', 'date'],
             'persentase' => ['required', 'numeric', 'min:0', 'max:100'],
@@ -182,6 +200,11 @@ class ProgressPembangunanController extends Controller
         $tahapan = TahapanPembangunan::query()->findOrFail($validated['tahapan_pembangunan_id']);
         $this->ensureTahapanCapacity($rumah->id, $tahapan->id, (float) $validated['persentase'], $progress->id);
         $fotoPath = $progress->foto;
+        $oldDetailRumahId = $progress->detail_rumah_id;
+        $oldTahapanPembangunanId = $progress->tahapan_pembangunan_id;
+        $oldSiteScheduleId = $progress->site_schedule_id;
+        $oldNamaProgress = $progress->nama_progress;
+        $oldApprovalStatus = $progress->approval_status;
 
         if ($request->hasFile('foto')) {
             if ($fotoPath) {
@@ -194,6 +217,7 @@ class ProgressPembangunanController extends Controller
         $progress->update([
             'detail_rumah_id' => $rumah->id,
             'tahapan_pembangunan_id' => $tahapan->id,
+            'site_schedule_id' => filled($validated['site_schedule_id'] ?? null) ? $validated['site_schedule_id'] : null,
             'nama_progress' => $validated['nama_progress'],
             'tanggal' => $validated['tanggal'],
             'tahapan' => $tahapan->bobot_persen,
@@ -208,6 +232,11 @@ class ProgressPembangunanController extends Controller
             'updated_by' => auth()->id(),
         ]);
 
+        if ($oldApprovalStatus === 'approved') {
+            $this->recalculateRumahProgress(DetailRumah::query()->find($oldDetailRumahId));
+            $this->syncSiteSchedulesFor($oldDetailRumahId, $oldTahapanPembangunanId, $oldSiteScheduleId, $oldNamaProgress);
+        }
+
         return back()->with('success', 'Progress pembangunan berhasil diperbarui dan menunggu approval manager.');
     }
 
@@ -221,7 +250,17 @@ class ProgressPembangunanController extends Controller
             Storage::disk('public')->delete($progress->foto);
         }
 
+        $detailRumahId = $progress->detail_rumah_id;
+        $tahapanPembangunanId = $progress->tahapan_pembangunan_id;
+        $siteScheduleId = $progress->site_schedule_id;
+        $namaProgress = $progress->nama_progress;
+        $approvalStatus = $progress->approval_status;
         $progress->delete();
+
+        if ($approvalStatus === 'approved') {
+            $this->recalculateRumahProgress(DetailRumah::query()->find($detailRumahId));
+            $this->syncSiteSchedulesFor($detailRumahId, $tahapanPembangunanId, $siteScheduleId, $namaProgress);
+        }
 
         return back()->with('success', 'Progress pembangunan berhasil dihapus.');
     }
@@ -265,6 +304,7 @@ class ProgressPembangunanController extends Controller
             ]);
 
             $this->recalculateRumahProgress($progress->detailRumah);
+            $this->syncSiteSchedules($progress);
         });
 
         return back()->with('success', 'Progress pembangunan berhasil disetujui.');
@@ -286,6 +326,64 @@ class ProgressPembangunanController extends Controller
             'status_pembangunan' => $progressTotal >= 100 ? 'selesai' : 'sedang_dibangun',
             'updated_by' => auth()->id(),
         ]);
+    }
+
+    protected function syncSiteSchedules(ProgressPembangunan $progress): void
+    {
+        $this->syncSiteSchedulesFor($progress->detail_rumah_id, $progress->tahapan_pembangunan_id, $progress->site_schedule_id, $progress->nama_progress);
+    }
+
+    protected function syncSiteSchedulesFor(mixed $detailRumahId, mixed $tahapanPembangunanId, mixed $siteScheduleId = null, ?string $namaProgress = null): void
+    {
+        $approvedQuery = ProgressPembangunan::query()
+            ->where('detail_rumah_id', $detailRumahId)
+            ->where('tahapan_pembangunan_id', $tahapanPembangunanId)
+            ->where('approval_status', 'approved');
+
+        $scheduleQuery = SiteSchedule::query();
+
+        if (filled($siteScheduleId)) {
+            $approvedQuery->where('site_schedule_id', $siteScheduleId);
+            $scheduleQuery->whereKey($siteScheduleId);
+        } else {
+            $approvedQuery->whereNull('site_schedule_id')->where('nama_progress', $namaProgress);
+            $scheduleQuery
+                ->where('detail_rumah_id', $detailRumahId)
+                ->where('tahapan_pembangunan_id', $tahapanPembangunanId)
+                ->where('nama_pekerjaan', $namaProgress);
+        }
+
+        $approvedPercent = $approvedQuery->sum('persentase');
+
+        $scheduleQuery->get()
+            ->each(function (SiteSchedule $schedule) use ($approvedPercent): void {
+                $realisasi = min(100, (float) $approvedPercent);
+                $target = (float) ($schedule->target_progress ?? 100);
+                $status = $this->scheduleStatus($schedule, $realisasi, $target);
+
+                $schedule->update([
+                    'realisasi_progress' => $realisasi,
+                    'status' => $status,
+                    'updated_by' => auth()->id(),
+                ]);
+            });
+    }
+
+    protected function scheduleStatus(SiteSchedule $schedule, float $realisasi, float $target): string
+    {
+        if ($realisasi >= $target) {
+            return 'selesai';
+        }
+
+        if (($schedule->status ?? null) === 'tertahan') {
+            return 'tertahan';
+        }
+
+        if ($schedule->tanggal_target?->isPast()) {
+            return 'terlambat';
+        }
+
+        return $realisasi > 0 ? 'berjalan' : 'direncanakan';
     }
 
     protected function authorizePengawasOnly(): void

@@ -1,7 +1,8 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { CheckCircle2, ChevronRight, CreditCard, LoaderCircle, Lock, PlusCircle, Save, Search, ShieldCheck, Unlock, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronRight, CreditCard, Eye, LoaderCircle, Lock, PlusCircle, Save, Search, ShieldCheck, Unlock, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../../Components/UI';
+import DetailModal from '../../../../Components/UI/DetailModal';
 import AdminLayout from '../../../../Layouts/AdminLayout';
 
 function money(value) {
@@ -124,6 +125,7 @@ function PaymentModal({ open, onClose, sale, baseUrl, methods }) {
 export default function Index({ title, description, baseUrl, rows, filters = {}, options = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [paymentSale, setPaymentSale] = useState(null);
+    const [detailRow, setDetailRow] = useState(null);
     const form = useForm({
         spr_id: '',
         tanggal_transaksi: new Date().toISOString().slice(0, 10),
@@ -274,15 +276,18 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-4 py-3 font-semibold">{row.record_status_label}</td>
                                         <td className="px-4 py-3">
                                             <div className="flex justify-end gap-2">
+                                                <Button type="button" size="sm" variant="outline" onClick={() => setDetailRow(row)}>
+                                                    <Eye size={15} /> Detail
+                                                </Button>
                                                 {row.record_status === 'locked' ? (
-                                                    <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}>
+                                                    row.can_unlock && <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}>
                                                         <Unlock size={15} />
                                                     </Button>
                                                 ) : (
                                                     <>
-                                                        <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}>
+                                                        {row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}>
                                                             <Lock size={15} />
-                                                        </Button>
+                                                        </Button>}
                                                         <Button type="button" size="sm" onClick={() => setPaymentSale(row)}>
                                                             <CreditCard size={15} /> Bayar
                                                         </Button>
@@ -317,6 +322,26 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                 onClose={() => setPaymentSale(null)}
                 open={Boolean(paymentSale)}
                 sale={paymentSale}
+            />
+            <DetailModal
+                open={Boolean(detailRow)}
+                onClose={() => setDetailRow(null)}
+                row={detailRow}
+                title={detailRow ? `Detail Cash ${detailRow.kode_cash}` : 'Detail Cash'}
+                columns={[
+                    { key: 'kode_cash', label: 'Kode Cash' },
+                    { key: 'kode_spr', label: 'SPR' },
+                    { key: 'customer', label: 'Customer' },
+                    { key: 'unit', label: 'Unit' },
+                    { key: 'perumahan', label: 'Perumahan' },
+                    { key: 'harga_rumah', label: 'Harga Rumah', render: (row) => money(row.harga_rumah) },
+                    { key: 'total_dibayar', label: 'Total Dibayar', render: (row) => money(row.total_dibayar) },
+                    { key: 'sisa_tagihan', label: 'Sisa Tagihan', render: (row) => money(row.sisa_tagihan) },
+                    { key: 'status_label', label: 'Status Pembayaran' },
+                    { key: 'created_by', label: 'Marketing' },
+                    { key: 'record_status_label', label: 'Lock' },
+                    { key: 'catatan', label: 'Catatan', full: true },
+                ]}
             />
         </>
     );

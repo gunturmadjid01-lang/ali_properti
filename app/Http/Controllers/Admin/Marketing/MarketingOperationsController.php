@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\BerkasCostumer;
 use App\Models\Costumer;
 use App\Models\CostumerFollowUp;
@@ -32,6 +33,8 @@ use Inertia\Response;
 
 class MarketingOperationsController extends Controller
 {
+    use ScopesActivePerumahan;
+
     public function show(Request $request, string $section, MarketingOperationsService $service): Response
     {
         abort_unless(in_array($section, $this->sections(), true), 404);
@@ -79,12 +82,18 @@ class MarketingOperationsController extends Controller
     public function destroy(Request $request, string $section, string $id): RedirectResponse
     {
         $model = match ($section) {
-            'campaign' => MarketingCampaign::query()->findOrFail($id),
-            'reminder' => MarketingReminder::query()->findOrFail($id),
+            'campaign' => MarketingCampaign::query()
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+                ->findOrFail($id),
+            'reminder' => $this->reminderQueryFor($request)->findOrFail($id),
             'template' => MarketingTemplate::query()->findOrFail($id),
             'target-komisi' => $request->query('type') === 'commission'
-                ? MarketingCommission::query()->findOrFail($id)
-                : MarketingTarget::query()->findOrFail($id),
+                ? MarketingCommission::query()
+                    ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
+                    ->findOrFail($id)
+                : MarketingTarget::query()
+                    ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+                    ->findOrFail($id),
             default => abort(404),
         };
 
@@ -142,6 +151,12 @@ class MarketingOperationsController extends Controller
             'status' => ['required', Rule::in(['menunggu', 'valid', 'revisi', 'ditolak'])],
             'catatan_revisi' => ['nullable', 'string'],
         ]);
+        $documentQuery = $validated['document_type'] === SprBerkasCostumer::class
+            ? SprBerkasCostumer::query()->whereKey($validated['document_id'])
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
+            : BerkasCostumer::query()->whereKey($validated['document_id'])
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('submission.spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)));
+        abort_unless($documentQuery->exists(), 404);
 
         MarketingDocumentReview::query()->updateOrCreate(
             ['document_type' => $validated['document_type'], 'document_id' => $validated['document_id']],
@@ -190,7 +205,7 @@ class MarketingOperationsController extends Controller
         return match ($section) {
             'dashboard' => $this->dashboardData($request),
             'pipeline' => $this->pipelineData($request),
-            'campaign' => $this->campaignData(),
+            'campaign' => $this->campaignData($request),
             'reminder' => $this->reminderData($request),
             'dokumen' => $this->documentData($request),
             'piutang' => $this->receivableData($request),
@@ -218,17 +233,25 @@ class MarketingOperationsController extends Controller
             ],
             'performance' => User::query()
                 ->withCount([
-                    'sprs as spr_count' => fn (Builder $query) => $query->whereMonth('tanggal_spr', $month)->whereYear('tanggal_spr', $year),
-                    'kprSubmissions as kpr_count' => fn (Builder $query) => $query->whereMonth('created_at', $month)->whereYear('created_at', $year),
+                    'sprs as spr_count' => fn (Builder $query) => $query
+                        ->whereMonth('tanggal_spr', $month)
+                        ->whereYear('tanggal_spr', $year)
+                        ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))),
+                    'kprSubmissions as kpr_count' => fn (Builder $query) => $query
+                        ->whereMonth('created_at', $month)
+                        ->whereYear('created_at', $year)
+                        ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))),
                 ])
                 ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['marketing', 'supervisor_marketing', 'area_marketing']))
                 ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereKey($request->user()?->id))
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('perumahans', fn (Builder $query) => $query->whereKey($this->activePerumahanId($request))))
                 ->get(['id', 'name'])
                 ->map(fn (User $user) => ['id' => $user->id, 'name' => $user->name, 'spr' => $user->spr_count, 'kpr' => $user->kpr_count])
                 ->values(),
             'recent' => MarketingLeadActivity::query()
                 ->with(['costumer:id,nama', 'user:id,name'])
                 ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
                 ->latest('activity_at')
                 ->limit(10)
                 ->get()
@@ -269,11 +292,18 @@ class MarketingOperationsController extends Controller
         ];
     }
 
-    protected function campaignData(): array
+    protected function campaignData(Request $request): array
     {
         return [
-            'rows' => MarketingCampaign::query()->withCount('customers')->latest('id')->get()->map(fn (MarketingCampaign $row) => [
+            'rows' => MarketingCampaign::query()
+                ->with('perumahan:id,nama_perusahaan')
+                ->withCount('customers')
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+                ->latest('id')
+                ->get()
+                ->map(fn (MarketingCampaign $row) => [
                 ...$row->only(['id', 'kode_campaign', 'nama_campaign', 'kanal', 'anggaran', 'realisasi_biaya', 'target_lead', 'status', 'keterangan', 'record_status']),
+                'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
                 'tanggal_mulai' => optional($row->tanggal_mulai)->format('Y-m-d'),
                 'tanggal_selesai' => optional($row->tanggal_selesai)->format('Y-m-d'),
                 'lead_count' => $row->customers_count,
@@ -302,12 +332,14 @@ class MarketingOperationsController extends Controller
         $sprDocuments = SprBerkasCostumer::query()
             ->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id,created_by', 'dokumen:id,nama_dokumen'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->latest('id')
             ->get()
             ->map(fn ($row) => $this->documentRow($row, SprBerkasCostumer::class, $reviews));
         $kprDocuments = BerkasCostumer::query()
             ->with(['submission.spr.costumer:id,nama', 'submission:id,kode_kpr,spr_id', 'dokumen:id,nama_dokumen'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('submission.spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('submission.spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->latest('id')
             ->get()
             ->map(fn ($row) => $this->documentRow($row, BerkasCostumer::class, $reviews));
@@ -320,11 +352,13 @@ class MarketingOperationsController extends Controller
         $schedules = \App\Models\SprBillingSchedule::query()
             ->with(['spr.costumer:id,nama', 'spr.detailRumah.perumahan:id,nama_perusahaan'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->orderBy('tanggal_jatuh_tempo')
             ->get();
         $payments = SprPayment::query()
             ->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id,created_by', 'masterBank:id,nama_bank,nomor_rekening'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->latest('tanggal_pembayaran')
             ->limit(100)
             ->get();
@@ -366,23 +400,27 @@ class MarketingOperationsController extends Controller
     {
         return [
             'targets' => MarketingTarget::query()
-                ->with('user:id,name')
+                ->with(['user:id,name', 'perumahan:id,nama_perusahaan'])
                 ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
                 ->latest('tahun')
                 ->latest('bulan')
                 ->get()
                 ->map(fn ($row) => [
                 ...$row->only(['id', 'user_id', 'tahun', 'bulan', 'target_lead', 'target_survey', 'target_spr', 'target_closing', 'target_nilai_penjualan', 'catatan', 'record_status']),
+                'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
                 'user' => $row->user?->name ?? '-',
                 'type' => 'target',
             ]),
             'commissions' => MarketingCommission::query()
-                ->with(['user:id,name', 'spr:id,kode_spr,created_by'])
+                ->with(['user:id,name', 'spr:id,kode_spr,created_by,detail_rumah_id', 'spr.detailRumah.perumahan:id,nama_perusahaan'])
                 ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
                 ->latest('id')
                 ->get()
                 ->map(fn ($row) => [
                 ...$row->only(['id', 'spr_id', 'user_id', 'dasar_perhitungan', 'persentase', 'nominal', 'status', 'catatan', 'record_status']),
+                'perumahan' => $row->spr?->detailRumah?->perumahan?->nama_perusahaan ?? '-',
                 'user' => $row->user?->name ?? '-',
                 'spr' => $row->spr?->kode_spr ?? '-',
                 'tanggal_jatuh_tempo' => optional($row->tanggal_jatuh_tempo)->format('Y-m-d'),
@@ -401,7 +439,11 @@ class MarketingOperationsController extends Controller
     {
         return [
             'customers' => $this->customerQueryFor($request)->orderBy('nama')->get(['id', 'nama', 'no_identitas'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->nama} - {$row->no_identitas}"]),
-            'users' => User::query()->orderBy('name')->get(['id', 'name'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->name]),
+            'users' => User::query()
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('perumahans', fn (Builder $query) => $query->whereKey($this->activePerumahanId($request))))
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->name]),
             'sprs' => $this->sprQueryFor($request)->with('costumer:id,nama')->where('status', Spr::STATUS_DISETUJUI)->latest('id')->get(['id', 'kode_spr', 'costumer_id', 'nilai_pengajuan_akhir', 'harga_jual', 'created_by'])->map(fn ($row) => [
                 'value' => (string) $row->id,
                 'label' => "{$row->kode_spr} - ".($row->costumer?->nama ?? '-'),
@@ -435,13 +477,16 @@ class MarketingOperationsController extends Controller
     {
         MarketingCampaign::create([
             ...$request->validate($this->campaignRules()),
+            'perumahan_id' => $this->ensureActivePerumahan($request),
             'kode_campaign' => CodeGenerator::next(MarketingCampaign::class, 'kode_campaign', 'CMP'),
         ]);
     }
 
     protected function updateCampaign(Request $request, string $id): void
     {
-        $row = MarketingCampaign::query()->findOrFail($id);
+        $row = MarketingCampaign::query()
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+            ->findOrFail($id);
         abort_if($row->record_status === 'locked', 422, 'Campaign sudah di-lock.');
         $row->update($request->validate($this->campaignRules()));
     }
@@ -539,6 +584,8 @@ class MarketingOperationsController extends Controller
     {
         if ($request->input('type') === 'commission') {
             $data = $request->validate($this->commissionRules());
+            $this->ensureSprCanBeUsed($request, (int) $data['spr_id']);
+            $this->ensureTeamUserCanBeUsed($request, (int) $data['user_id']);
             MarketingCommission::create([
                 ...$data,
                 'kode_komisi' => CodeGenerator::next(MarketingCommission::class, 'kode_komisi', 'KMS'),
@@ -547,15 +594,24 @@ class MarketingOperationsController extends Controller
             return;
         }
 
-        MarketingTarget::create($request->validate($this->targetRules()));
+        $data = $request->validate($this->targetRules());
+        $this->ensureTeamUserCanBeUsed($request, (int) $data['user_id']);
+        MarketingTarget::create([
+            ...$data,
+            'perumahan_id' => $this->ensureActivePerumahan($request),
+        ]);
     }
 
     protected function updateTargetOrCommission(Request $request, string $id): void
     {
         if ($request->input('type') === 'commission') {
-            $row = MarketingCommission::query()->findOrFail($id);
+            $row = MarketingCommission::query()
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
+                ->findOrFail($id);
             abort_if($row->record_status === 'locked', 422, 'Komisi sudah di-lock.');
             $data = $request->validate($this->commissionRules());
+            $this->ensureSprCanBeUsed($request, (int) $data['spr_id']);
+            $this->ensureTeamUserCanBeUsed($request, (int) $data['user_id']);
             $row->update([
                 ...$data,
                 'nominal' => (float) $data['dasar_perhitungan'] * ((float) $data['persentase'] / 100),
@@ -563,9 +619,13 @@ class MarketingOperationsController extends Controller
             return;
         }
 
-        $row = MarketingTarget::query()->findOrFail($id);
+        $row = MarketingTarget::query()
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+            ->findOrFail($id);
         abort_if($row->record_status === 'locked', 422, 'Target sudah di-lock.');
-        $row->update($request->validate($this->targetRules($row->id)));
+        $data = $request->validate($this->targetRules($row->id));
+        $this->ensureTeamUserCanBeUsed($request, (int) $data['user_id']);
+        $row->update($data);
     }
 
     protected function targetRules(?int $ignoreId = null): array
@@ -632,11 +692,19 @@ class MarketingOperationsController extends Controller
 
     protected function lockableModel(string $section, string $id)
     {
+        $request = request();
+
         return match ($section) {
-            'campaign' => MarketingCampaign::query()->findOrFail($id),
+            'campaign' => MarketingCampaign::query()
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+                ->findOrFail($id),
             'template' => MarketingTemplate::query()->findOrFail($id),
-            'target' => MarketingTarget::query()->findOrFail($id),
-            'commission' => MarketingCommission::query()->findOrFail($id),
+            'target' => MarketingTarget::query()
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+                ->findOrFail($id),
+            'commission' => MarketingCommission::query()
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
+                ->findOrFail($id),
             default => abort(404),
         };
     }
@@ -652,19 +720,22 @@ class MarketingOperationsController extends Controller
     protected function customerQueryFor(Request $request): Builder
     {
         return Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id));
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request));
     }
 
     protected function sprQueryFor(Request $request): Builder
     {
         return Spr::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id));
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)));
     }
 
     protected function kprQueryFor(Request $request): Builder
     {
         return KprSubmission::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)));
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)));
     }
 
     protected function reminderQueryFor(Request $request): Builder
@@ -673,7 +744,8 @@ class MarketingOperationsController extends Controller
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where(function (Builder $query) use ($request): void {
                 $query->where('user_id', $request->user()?->id)
                     ->orWhereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id));
-            }));
+            }))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)));
     }
 
     protected function ensureCustomerCanBeUsed(Request $request, int $customerId): void
@@ -686,6 +758,37 @@ class MarketingOperationsController extends Controller
             Costumer::query()
                 ->whereKey($customerId)
                 ->where('created_by', $request->user()?->id)
+                ->where('perumahan_id', $this->ensureActivePerumahan($request))
+                ->exists(),
+            403,
+        );
+    }
+
+    protected function ensureTeamUserCanBeUsed(Request $request, int $userId): void
+    {
+        if (! $this->shouldScopeToActivePerumahan($request)) {
+            return;
+        }
+
+        abort_unless(
+            User::query()
+                ->whereKey($userId)
+                ->whereHas('perumahans', fn (Builder $query) => $query->whereKey($this->ensureActivePerumahan($request)))
+                ->exists(),
+            403,
+        );
+    }
+
+    protected function ensureSprCanBeUsed(Request $request, int $sprId): void
+    {
+        if (! $this->shouldScopeToActivePerumahan($request)) {
+            return;
+        }
+
+        abort_unless(
+            Spr::query()
+                ->whereKey($sprId)
+                ->whereHas('detailRumah', fn (Builder $query) => $query->where('perumahan_id', $this->ensureActivePerumahan($request)))
                 ->exists(),
             403,
         );
