@@ -15,7 +15,6 @@ use App\Models\SiteManpowerLog;
 use App\Models\SpkKontraktor;
 use App\Models\SpkKontraktorPayment;
 use App\Models\WorkChangeRequest;
-use App\Services\AccountingService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -127,12 +126,19 @@ class FieldSupervisionController extends Controller
             $payload = $this->normalizePayload($request, $section, $validated);
             $model = $config['model'];
 
-            $model::query()->create([
+            $row = $model::query()->create([
                 ...$payload,
                 $config['code'] => $this->nextCode($config['prefix']),
                 'created_by' => auth()->id(),
                 'updated_by' => auth()->id(),
             ]);
+
+            if ($section === 'tenaga-kerja-alat' && $row instanceof SiteManpowerLog) {
+                $assetIds = in_array($validated['sumber_alat'] ?? 'tidak_ada', ['aset_kantor', 'kombinasi'], true)
+                    ? ($validated['office_asset_ids'] ?? [])
+                    : [];
+                $row->officeAssets()->sync($assetIds);
+            }
         });
 
         return back()->with('success', $config['title'].' berhasil disimpan.');
@@ -154,6 +160,13 @@ class FieldSupervisionController extends Controller
                 $payload['approved_at'] = null;
             }
             $row->update([...$payload, 'updated_by' => auth()->id()]);
+
+            if ($section === 'tenaga-kerja-alat' && $row instanceof SiteManpowerLog) {
+                $assetIds = in_array($validated['sumber_alat'] ?? 'tidak_ada', ['aset_kantor', 'kombinasi'], true)
+                    ? ($validated['office_asset_ids'] ?? [])
+                    : [];
+                $row->officeAssets()->sync($assetIds);
+            }
         });
 
         return back()->with('success', $config['title'].' berhasil diperbarui.');
@@ -205,7 +218,7 @@ class FieldSupervisionController extends Controller
 
             if ($section === 'opname-kontraktor' && $row instanceof ContractorOpname) {
                 $row->update(['status' => 'disetujui']);
-                $this->syncOpnameToSpkPayment($row->fresh(), app(AccountingService::class));
+                $this->syncOpnameToSpkPayment($row->fresh());
             }
         });
 
@@ -256,6 +269,9 @@ class FieldSupervisionController extends Controller
         if (in_array($section, ['opname-kontraktor', 'perubahan-pekerjaan', 'tenaga-kerja-alat'], true)) {
             $base[] = 'spkKontraktor:id,nomor_spk,judul_pekerjaan,nilai_kontrak';
         }
+        if ($section === 'tenaga-kerja-alat') {
+            $base[] = 'officeAssets:id,kode_aset,nama_aset,status';
+        }
         if ($section === 'opname-kontraktor') {
             $base[] = 'progressPembangunan:id,nama_progress,persentase,persentase_total';
         }
@@ -293,6 +309,13 @@ class FieldSupervisionController extends Controller
     protected function row(Model $row, string $section): array
     {
         $config = $this->config($section);
+        $detail = $row->toArray();
+
+        if ($section === 'tenaga-kerja-alat' && $row instanceof SiteManpowerLog) {
+            $detail['office_asset_ids'] = $row->officeAssets->pluck('id')->map(fn ($id) => (string) $id)->values()->all();
+            $detail['office_assets_label'] = $row->officeAssets->map(fn ($asset) => $asset->kode_aset.' - '.$asset->nama_aset)->join(', ');
+            unset($detail['office_assets']);
+        }
 
         return [
             'id' => $row->id,
@@ -311,7 +334,7 @@ class FieldSupervisionController extends Controller
             'progress' => $row->progressPembangunan?->nama_progress ?? '-',
             'qc' => $row->qualityInspection?->kode_inspeksi ?? '-',
             'summary' => $this->summary($row, $section),
-            'detail' => $row->toArray(),
+            'detail' => $detail,
             'foto_url' => isset($row->foto) && $row->foto ? route('media', ['path' => $row->foto], false) : null,
             'status' => $row->status ?? '-',
             'approval_status' => $row->approval_status ?? '-',
@@ -333,7 +356,13 @@ class FieldSupervisionController extends Controller
             'defect' => trim(($row->prioritas ?? '').' - '.$row->temuan),
             'opname-kontraktor' => trim(($row->pekerjaan ?? '').' - Rp '.number_format((float) $row->nilai_diajukan, 0, ',', '.')),
             'perubahan-pekerjaan' => trim(($row->jenis_perubahan ?? '').' - '.$row->uraian_perubahan),
-            'tenaga-kerja-alat' => trim(ucwords(str_replace('_', ' ', (string) ($row->sumber_tenaga_kerja ?? 'kontraktor'))).' - '.($row->pekerjaan ?? '').' - '.(((int) $row->mandor) + ((int) $row->tukang) + ((int) $row->kenek)).' orang'),
+            'tenaga-kerja-alat' => trim(
+                ucwords(str_replace('_', ' ', (string) ($row->sumber_tenaga_kerja ?? 'kontraktor')))
+                .' - '.($row->pekerjaan ?? '')
+                .' - '.(((int) $row->mandor) + ((int) $row->tukang) + ((int) $row->kenek)).' orang'
+                .' - Upah Rp '.number_format((float) $row->nilai_upah, 0, ',', '.')
+                .((float) $row->biaya_sewa_alat > 0 ? ' - Sewa alat Rp '.number_format((float) $row->biaya_sewa_alat, 0, ',', '.') : '')
+            ),
             'k3' => trim(($row->tingkat_risiko ?? '').' - '.$row->temuan),
             'serah-terima-internal' => trim(($row->kondisi_bangunan ?? '').' - progress '.$row->progress_unit.'%'),
             default => '-',
@@ -386,14 +415,24 @@ class FieldSupervisionController extends Controller
                 ['name' => 'spk_kontraktor_id', 'label' => 'SPK Kontraktor', 'type' => 'select', 'optionsKey' => 'spks'],
                 ['name' => 'kontraktor', 'label' => 'Nama Kontraktor / Penyedia', 'type' => 'text'],
                 ['name' => 'nama_mandor', 'label' => 'Nama Mandor / Koordinator', 'type' => 'text'],
-                ['name' => 'mandor', 'label' => 'Mandor', 'type' => 'number'],
-                ['name' => 'tukang', 'label' => 'Tukang', 'type' => 'number'],
-                ['name' => 'kenek', 'label' => 'Kenek', 'type' => 'number'],
-                ['name' => 'tipe_upah', 'label' => 'Tipe Upah', 'type' => 'select', 'optionsKey' => 'wageTypes'],
-                ['name' => 'nilai_upah', 'label' => 'Nilai Upah', 'type' => 'currency'],
-                ['name' => 'jam_kerja', 'label' => 'Jam Kerja', 'type' => 'number'],
+                ['name' => 'mandor', 'label' => 'Jumlah Mandor', 'type' => 'number'],
+                ['name' => 'tukang', 'label' => 'Jumlah Tukang', 'type' => 'number'],
+                ['name' => 'kenek', 'label' => 'Jumlah Kenek', 'type' => 'number'],
+                ['name' => 'tipe_upah', 'label' => 'Tipe Upah', 'type' => 'select', 'optionsKey' => 'wageTypes', 'default' => 'harian'],
+                ['name' => 'jumlah_periode', 'label' => 'Jumlah Periode', 'type' => 'number', 'default' => '1', 'hideWhen' => ['tipe_upah' => ['borongan']]],
+                ['name' => 'tarif_mandor', 'label' => 'Tarif Mandor / Orang / Periode', 'type' => 'currency', 'hideWhen' => ['tipe_upah' => ['borongan']]],
+                ['name' => 'tarif_tukang', 'label' => 'Tarif Tukang / Orang / Periode', 'type' => 'currency', 'hideWhen' => ['tipe_upah' => ['borongan']]],
+                ['name' => 'tarif_kenek', 'label' => 'Tarif Kenek / Orang / Periode', 'type' => 'currency', 'hideWhen' => ['tipe_upah' => ['borongan']]],
+                ['name' => 'nilai_borongan', 'label' => 'Nilai Borongan', 'type' => 'currency', 'showWhen' => ['tipe_upah' => ['borongan']]],
+                ['name' => 'jam_kerja', 'label' => 'Jam Kerja', 'type' => 'number', 'default' => '8'],
                 ['name' => 'jam_lembur', 'label' => 'Jam Lembur', 'type' => 'number'],
-                ['name' => 'alat_digunakan', 'label' => 'Alat Digunakan', 'type' => 'textarea'],
+                ['name' => 'tarif_lembur', 'label' => 'Tarif Lembur / Orang / Jam', 'type' => 'currency'],
+                ['name' => 'nilai_upah', 'label' => 'Total Upah Terhitung', 'type' => 'computed-currency'],
+                ['name' => 'sumber_alat', 'label' => 'Sumber Alat', 'type' => 'select', 'optionsKey' => 'equipmentSources', 'default' => 'tidak_ada'],
+                ['name' => 'office_asset_ids', 'label' => 'Aset Kantor yang Digunakan', 'type' => 'multi-select', 'optionsKey' => 'officeAssets', 'showWhen' => ['sumber_alat' => ['aset_kantor', 'kombinasi']]],
+                ['name' => 'alat_digunakan', 'label' => 'Alat Luar yang Digunakan', 'type' => 'textarea', 'showWhen' => ['sumber_alat' => ['aset_luar', 'kombinasi']]],
+                ['name' => 'penyedia_alat', 'label' => 'Penyedia / Pemilik Alat Luar', 'type' => 'text', 'showWhen' => ['sumber_alat' => ['aset_luar', 'kombinasi']]],
+                ['name' => 'biaya_sewa_alat', 'label' => 'Biaya Sewa Alat Luar', 'type' => 'currency', 'showWhen' => ['sumber_alat' => ['aset_luar', 'kombinasi']]],
                 ['name' => 'pekerjaan', 'label' => 'Pekerjaan', 'type' => 'textarea'],
                 ['name' => 'catatan', 'label' => 'Catatan', 'type' => 'textarea'],
             ],
@@ -437,6 +476,16 @@ class FieldSupervisionController extends Controller
         $options['handoverStatuses'] = $this->simpleOptions(['diajukan', 'review', 'siap_marketing', 'perlu_perbaikan']);
         $options['manpowerSources'] = $this->simpleOptions(['kontraktor', 'tukang_owner', 'mandor_internal', 'harian_lepas']);
         $options['wageTypes'] = $this->simpleOptions(['harian', 'borongan', 'mingguan', 'bulanan']);
+        $options['equipmentSources'] = $this->simpleOptions(['tidak_ada', 'aset_kantor', 'aset_luar', 'kombinasi']);
+        $options['officeAssets'] = \App\Models\OfficeAsset::query()
+            ->whereNotIn('status', ['rusak', 'hilang'])
+            ->orderBy('nama_aset')
+            ->get(['id', 'kode_aset', 'nama_aset', 'status'])
+            ->map(fn ($asset) => [
+                'value' => (string) $asset->id,
+                'label' => $asset->kode_aset.' - '.$asset->nama_aset.' ('.ucwords(str_replace('_', ' ', $asset->status)).')',
+            ])
+            ->values();
 
         return $options;
     }
@@ -454,7 +503,34 @@ class FieldSupervisionController extends Controller
             'defect' => [...$rules, 'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'], 'quality_inspection_id' => ['nullable', 'exists:quality_inspections,id'], 'kategori' => ['required', 'string'], 'prioritas' => ['required', Rule::in(['low', 'medium', 'high', 'urgent'])], 'temuan' => ['required', 'string'], 'instruksi_perbaikan' => ['nullable', 'string'], 'target_selesai' => ['nullable', 'date'], 'tanggal_selesai' => ['nullable', 'date'], 'status' => ['required', 'string']],
             'opname-kontraktor' => [...$rules, 'spk_kontraktor_id' => ['nullable', 'exists:spk_kontraktors,id'], 'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'], 'progress_pembangunan_id' => ['nullable', 'exists:progress_pembangunans,id'], 'pekerjaan' => ['required', 'string'], 'progress_diakui' => ['nullable', 'numeric', 'min:0', 'max:100'], 'nilai_diajukan' => ['nullable', 'numeric', 'min:0'], 'nilai_disetujui' => ['nullable', 'numeric', 'min:0'], 'status' => ['required', 'string'], 'catatan' => ['nullable', 'string']],
             'perubahan-pekerjaan' => [...$rules, 'spk_kontraktor_id' => ['nullable', 'exists:spk_kontraktors,id'], 'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'], 'jenis_perubahan' => ['required', 'string'], 'uraian_perubahan' => ['required', 'string'], 'alasan' => ['nullable', 'string'], 'estimasi_biaya' => ['nullable', 'numeric', 'min:0'], 'estimasi_hari' => ['nullable', 'integer', 'min:0'], 'status' => ['required', 'string']],
-            'tenaga-kerja-alat' => [...$rules, 'sumber_tenaga_kerja' => ['required', Rule::in(['kontraktor', 'tukang_owner', 'mandor_internal', 'harian_lepas'])], 'spk_kontraktor_id' => ['nullable', 'exists:spk_kontraktors,id'], 'kontraktor' => ['nullable', 'string'], 'nama_mandor' => ['nullable', 'string'], 'mandor' => ['nullable', 'integer', 'min:0'], 'tukang' => ['nullable', 'integer', 'min:0'], 'kenek' => ['nullable', 'integer', 'min:0'], 'tipe_upah' => ['nullable', Rule::in(['harian', 'borongan', 'mingguan', 'bulanan'])], 'nilai_upah' => ['nullable', 'numeric', 'min:0'], 'jam_kerja' => ['nullable', 'numeric', 'min:0'], 'jam_lembur' => ['nullable', 'numeric', 'min:0'], 'alat_digunakan' => ['nullable', 'string'], 'pekerjaan' => ['nullable', 'string'], 'catatan' => ['nullable', 'string']],
+            'tenaga-kerja-alat' => [
+                ...$rules,
+                'sumber_tenaga_kerja' => ['required', Rule::in(['kontraktor', 'tukang_owner', 'mandor_internal', 'harian_lepas'])],
+                'spk_kontraktor_id' => ['nullable', 'exists:spk_kontraktors,id'],
+                'kontraktor' => ['nullable', 'string'],
+                'nama_mandor' => ['nullable', 'string'],
+                'mandor' => ['nullable', 'integer', 'min:0'],
+                'tukang' => ['nullable', 'integer', 'min:0'],
+                'kenek' => ['nullable', 'integer', 'min:0'],
+                'tipe_upah' => ['required', Rule::in(['harian', 'borongan', 'mingguan', 'bulanan'])],
+                'jumlah_periode' => ['required_unless:tipe_upah,borongan', 'nullable', 'numeric', 'min:0.01'],
+                'tarif_mandor' => ['nullable', 'numeric', 'min:0'],
+                'tarif_tukang' => ['nullable', 'numeric', 'min:0'],
+                'tarif_kenek' => ['nullable', 'numeric', 'min:0'],
+                'nilai_borongan' => ['required_if:tipe_upah,borongan', 'nullable', 'numeric', 'min:0'],
+                'nilai_upah' => ['nullable', 'numeric', 'min:0'],
+                'jam_kerja' => ['nullable', 'numeric', 'min:0'],
+                'jam_lembur' => ['nullable', 'numeric', 'min:0'],
+                'tarif_lembur' => ['nullable', 'numeric', 'min:0'],
+                'sumber_alat' => ['required', Rule::in(['tidak_ada', 'aset_kantor', 'aset_luar', 'kombinasi'])],
+                'office_asset_ids' => ['nullable', 'array', Rule::requiredIf(fn () => in_array($request->input('sumber_alat'), ['aset_kantor', 'kombinasi'], true))],
+                'office_asset_ids.*' => ['distinct', 'exists:office_assets,id'],
+                'alat_digunakan' => ['nullable', 'string', Rule::requiredIf(fn () => in_array($request->input('sumber_alat'), ['aset_luar', 'kombinasi'], true))],
+                'penyedia_alat' => ['nullable', 'string'],
+                'biaya_sewa_alat' => ['nullable', 'numeric', 'min:0'],
+                'pekerjaan' => ['nullable', 'string'],
+                'catatan' => ['nullable', 'string'],
+            ],
             'k3' => [...$rules, 'kategori' => ['required', 'string'], 'tingkat_risiko' => ['required', 'string'], 'temuan' => ['required', 'string'], 'tindakan' => ['nullable', 'string'], 'status' => ['required', 'string']],
             'serah-terima-internal' => [...$rules, 'progress_unit' => ['nullable', 'numeric', 'min:0', 'max:100'], 'kondisi_bangunan' => ['required', 'string'], 'checklist' => ['nullable', 'string'], 'catatan' => ['nullable', 'string'], 'status' => ['required', 'string']],
             default => $rules,
@@ -463,7 +539,7 @@ class FieldSupervisionController extends Controller
 
     protected function normalizePayload(Request $request, string $section, array $validated, ?Model $existing = null): array
     {
-        $payload = collect($validated)->except('foto')->all();
+        $payload = collect($validated)->except(['foto', 'office_asset_ids'])->all();
         foreach (['detail_rumah_id', 'tahapan_pembangunan_id', 'quality_inspection_id', 'spk_kontraktor_id', 'progress_pembangunan_id'] as $key) {
             if (array_key_exists($key, $payload) && blank($payload[$key])) {
                 $payload[$key] = null;
@@ -476,6 +552,27 @@ class FieldSupervisionController extends Controller
 
         if ($section === 'tenaga-kerja-alat' && ($payload['sumber_tenaga_kerja'] ?? 'kontraktor') !== 'kontraktor') {
             $payload['spk_kontraktor_id'] = null;
+        }
+
+        if ($section === 'tenaga-kerja-alat') {
+            $totalPekerja = (int) ($payload['mandor'] ?? 0) + (int) ($payload['tukang'] ?? 0) + (int) ($payload['kenek'] ?? 0);
+            $jumlahPeriode = max(0, (float) ($payload['jumlah_periode'] ?? 0));
+            $upahPokok = ($payload['tipe_upah'] ?? null) === 'borongan'
+                ? (float) ($payload['nilai_borongan'] ?? 0)
+                : (
+                    ((int) ($payload['mandor'] ?? 0) * (float) ($payload['tarif_mandor'] ?? 0))
+                    + ((int) ($payload['tukang'] ?? 0) * (float) ($payload['tarif_tukang'] ?? 0))
+                    + ((int) ($payload['kenek'] ?? 0) * (float) ($payload['tarif_kenek'] ?? 0))
+                ) * $jumlahPeriode;
+            $upahLembur = $totalPekerja * (float) ($payload['jam_lembur'] ?? 0) * (float) ($payload['tarif_lembur'] ?? 0);
+
+            $payload['nilai_upah'] = $upahPokok + $upahLembur;
+
+            if (! in_array($payload['sumber_alat'] ?? 'tidak_ada', ['aset_luar', 'kombinasi'], true)) {
+                $payload['alat_digunakan'] = null;
+                $payload['penyedia_alat'] = null;
+                $payload['biaya_sewa_alat'] = 0;
+            }
         }
 
         if ($request->hasFile('foto')) {
@@ -520,7 +617,7 @@ class FieldSupervisionController extends Controller
         }
     }
 
-    protected function syncOpnameToSpkPayment(ContractorOpname $opname, AccountingService $accounting): void
+    protected function syncOpnameToSpkPayment(ContractorOpname $opname): void
     {
         if (! $opname->spk_kontraktor_id) {
             return;
@@ -540,7 +637,7 @@ class FieldSupervisionController extends Controller
             $payment = SpkKontraktorPayment::query()
                 ->where('spk_kontraktor_id', $opname->spk_kontraktor_id)
                 ->whereNull('contractor_opname_id')
-                ->whereIn('status', ['menunggu_pengajuan', 'menunggu_approval_manager'])
+                ->where('status', 'menunggu_pengajuan')
                 ->orderBy('termin_ke')
                 ->first();
         }
@@ -554,29 +651,29 @@ class FieldSupervisionController extends Controller
                 'spk_kontraktor_id' => $opname->spk_kontraktor_id,
                 'termin_ke' => $lastTermin + 1,
                 'tanggal_jatuh_tempo' => $opname->tanggal,
-                'tanggal_pembayaran' => $opname->tanggal,
+                'tanggal_pembayaran' => null,
                 'nominal' => 0,
                 'status' => 'menunggu_pengajuan',
             ]);
         }
 
-        if ($payment->status === 'dana_cair') {
+        if ($payment->status !== 'menunggu_pengajuan') {
             throw ValidationException::withMessages([
-                'opname' => 'Termin SPK terkait sudah cair, buat opname/termin baru untuk koreksi berikutnya.',
+                'opname' => 'Termin SPK terkait sudah masuk proses pembayaran. Buat opname/termin baru untuk koreksi berikutnya.',
             ]);
         }
 
         $payment->update([
             'contractor_opname_id' => $opname->id,
-            'tanggal_pembayaran' => $opname->tanggal,
+            'tanggal_pembayaran' => null,
             'nominal' => $nominal,
             'keterangan' => trim('Opname '.$opname->kode_opname.' - '.$opname->pekerjaan),
-            'status' => 'menunggu_approval_manager',
-            'requested_by' => auth()->id(),
-            'requested_at' => now(),
+            'status' => 'menunggu_pengajuan',
+            'requested_by' => null,
+            'requested_at' => null,
+            'approved_by' => null,
+            'approved_at' => null,
         ]);
-
-        $accounting->recordContractorBill($payment->fresh('spkKontraktor'));
     }
 
     protected function simpleOptions(array $values): array

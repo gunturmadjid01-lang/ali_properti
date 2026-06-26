@@ -1,6 +1,6 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { CheckCircle2, Edit3, Eye, FileText, Lock, Search, Trash2, Unlock, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
 import { Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
@@ -14,7 +14,13 @@ function money(value) {
 function emptyData(fields) {
     return fields.reduce((carry, field) => ({
         ...carry,
-        [field.name]: field.default ?? (field.type === 'date' && field.name === 'tanggal' ? today() : field.type === 'number' || field.type === 'currency' ? '0' : ''),
+        [field.name]: field.default ?? (
+            field.type === 'multi-select'
+                ? []
+                : field.type === 'date' && field.name === 'tanggal'
+                    ? today()
+                    : ['number', 'currency', 'computed-currency'].includes(field.type) ? '0' : ''
+        ),
     }), {});
 }
 
@@ -25,6 +31,10 @@ function ErrorSummary({ errors }) {
 }
 
 function FieldInput({ field, value, error, options, form, filteredUnits }) {
+    const fieldLabel = field.name === 'jumlah_periode'
+        ? `Jumlah ${form.data.tipe_upah === 'mingguan' ? 'Minggu' : form.data.tipe_upah === 'bulanan' ? 'Bulan' : 'Hari'}`
+        : field.label;
+
     if (field.name === 'detail_rumah_id') {
         return (
             <div className="grid gap-2">
@@ -64,15 +74,66 @@ function FieldInput({ field, value, error, options, form, filteredUnits }) {
         );
     }
 
+    if (field.type === 'multi-select') {
+        const selectedValues = Array.isArray(value) ? value.map(String) : [];
+
+        return (
+            <div className="grid gap-2">
+                <span className="text-sm font-extrabold">{fieldLabel}</span>
+                <div className="grid max-h-48 gap-2 overflow-y-auto rounded-lg border border-silver-deep/70 bg-white/85 p-3 dark:border-white/10 dark:bg-white/8">
+                    {(options[field.optionsKey] ?? []).map((option) => (
+                        <label className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-1.5 hover:bg-silver-soft/70 dark:hover:bg-white/5" key={option.value}>
+                            <input
+                                type="checkbox"
+                                checked={selectedValues.includes(String(option.value))}
+                                onChange={(event) => {
+                                    const next = event.target.checked
+                                        ? [...selectedValues, String(option.value)]
+                                        : selectedValues.filter((item) => item !== String(option.value));
+                                    form.setData(field.name, next);
+                                }}
+                            />
+                            <span className="text-sm font-semibold">{option.label}</span>
+                        </label>
+                    ))}
+                    {(options[field.optionsKey] ?? []).length === 0 && <span className="text-sm text-ink-soft">Belum ada aset inventaris yang dapat dipilih.</span>}
+                </div>
+                {error && <span className="text-xs font-bold text-red-600">{error}</span>}
+            </div>
+        );
+    }
+
     if (field.type === 'textarea') {
-        return <Textarea label={field.label} value={value} error={error} onChange={(event) => form.setData(field.name, event.target.value)} />;
+        return <Textarea label={fieldLabel} value={value} error={error} onChange={(event) => form.setData(field.name, event.target.value)} />;
     }
 
     if (field.type === 'currency') {
-        return <CurrencyInput label={field.label} value={value} error={error} onChange={(next) => form.setData(field.name, next)} />;
+        return <CurrencyInput label={fieldLabel} value={value} error={error} onChange={(next) => form.setData(field.name, next)} />;
     }
 
-    return <Input label={field.label} type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} value={value} error={error} onChange={(event) => form.setData(field.name, event.target.value)} />;
+    if (field.type === 'computed-currency') {
+        return (
+            <div className="grid gap-2">
+                <span className="text-sm font-extrabold">{fieldLabel}</span>
+                <div className="min-h-11 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 font-extrabold text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+                    {money(value)}
+                </div>
+                <span className="text-xs font-semibold text-ink-soft">Dihitung otomatis dari upah pokok dan lembur.</span>
+            </div>
+        );
+    }
+
+    return <Input label={fieldLabel} type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'} value={value} error={error} onChange={(event) => form.setData(field.name, event.target.value)} />;
+}
+
+function fieldIsVisible(field, data) {
+    if (field.showWhen) {
+        return Object.entries(field.showWhen).every(([name, values]) => values.includes(data[name]));
+    }
+    if (field.hideWhen) {
+        return !Object.entries(field.hideWhen).some(([name, values]) => values.includes(data[name]));
+    }
+    return true;
 }
 
 export default function Index({ title, section, baseUrl, rows = { data: [], links: [] }, filters = {}, fields = [], options = {}, config = {} }) {
@@ -85,6 +146,42 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
 
     const filteredFormUnits = useMemo(() => (options.detailRumahs ?? []).filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, options.detailRumahs]);
     const filteredFilterUnits = useMemo(() => (options.detailRumahs ?? []).filter((row) => !filterPerumahan || row.perumahan_id === String(filterPerumahan)), [filterPerumahan, options.detailRumahs]);
+    const calculatedWage = useMemo(() => {
+        if (section !== 'tenaga-kerja-alat') return 0;
+        const mandor = Number(form.data.mandor || 0);
+        const tukang = Number(form.data.tukang || 0);
+        const kenek = Number(form.data.kenek || 0);
+        const workers = mandor + tukang + kenek;
+        const periods = Number(form.data.jumlah_periode || 0);
+        const baseWage = form.data.tipe_upah === 'borongan'
+            ? Number(form.data.nilai_borongan || 0)
+            : (
+                mandor * Number(form.data.tarif_mandor || 0)
+                + tukang * Number(form.data.tarif_tukang || 0)
+                + kenek * Number(form.data.tarif_kenek || 0)
+            ) * periods;
+        const overtime = workers * Number(form.data.jam_lembur || 0) * Number(form.data.tarif_lembur || 0);
+        return baseWage + overtime;
+    }, [
+        section,
+        form.data.mandor,
+        form.data.tukang,
+        form.data.kenek,
+        form.data.tipe_upah,
+        form.data.jumlah_periode,
+        form.data.tarif_mandor,
+        form.data.tarif_tukang,
+        form.data.tarif_kenek,
+        form.data.nilai_borongan,
+        form.data.jam_lembur,
+        form.data.tarif_lembur,
+    ]);
+
+    useEffect(() => {
+        if (section === 'tenaga-kerja-alat' && Number(form.data.nilai_upah || 0) !== calculatedWage) {
+            form.setData('nilai_upah', String(calculatedWage));
+        }
+    }, [calculatedWage, section]);
 
     const resetForm = () => {
         setEditing(null);
@@ -95,7 +192,10 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
     const editRow = (row) => {
         const next = emptyData(fields);
         fields.forEach((field) => {
-            next[field.name] = row.detail?.[field.name] === null || row.detail?.[field.name] === undefined ? '' : String(row.detail[field.name]);
+            const currentValue = row.detail?.[field.name];
+            next[field.name] = field.type === 'multi-select'
+                ? (Array.isArray(currentValue) ? currentValue.map(String) : [])
+                : currentValue === null || currentValue === undefined ? '' : String(currentValue);
         });
         setEditing(row);
         form.setData({ ...next, foto: null });
@@ -106,9 +206,11 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
         event.preventDefault();
         const requestOptions = { forceFormData: true, preserveScroll: true, onSuccess: resetForm };
         if (editing) {
-            form.put(`${baseUrl}/${editing.id}`, requestOptions);
+            form.transform((data) => ({ ...data, _method: 'put' }));
+            form.post(`${baseUrl}/${editing.id}`, requestOptions);
             return;
         }
+        form.transform((data) => data);
         form.post(baseUrl, requestOptions);
     };
 
@@ -136,7 +238,7 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
                 >
                     <ErrorSummary errors={form.errors} />
                     <div className="grid gap-4 md:grid-cols-3">
-                        {fields.map((field) => (
+                        {fields.filter((field) => fieldIsVisible(field, form.data)).map((field) => (
                             <div className={field.type === 'textarea' ? 'md:col-span-3' : ''} key={field.name}>
                                 <FieldInput field={field} value={form.data[field.name] ?? ''} error={form.errors[field.name]} options={options} form={form} filteredUnits={filteredFormUnits} />
                             </div>

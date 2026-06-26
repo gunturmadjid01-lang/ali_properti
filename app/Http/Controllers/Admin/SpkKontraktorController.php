@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Models\DetailRumah;
+use App\Models\DetailRumahHpp;
 use App\Models\Kontraktor;
 use App\Models\Perumahan;
+use App\Models\PerumahanHpp;
 use App\Models\SpkKontraktorAddition;
 use App\Models\SpkKontraktor;
 use App\Models\SpkKontraktorPayment;
@@ -28,21 +30,48 @@ class SpkKontraktorController extends Controller
 
     public function index(Request $request): Response
     {
-        return $this->renderIndex($request, false);
+        return $this->renderIndex($request, 'spk');
     }
 
     public function approvalIndex(Request $request): Response
     {
-        return $this->renderIndex($request, true);
+        return $this->renderIndex($request, 'approval');
     }
 
-    protected function renderIndex(Request $request, bool $approvalOnly): Response
+    public function disbursementIndex(Request $request): Response
     {
-        $this->authorizeProjectPaymentViewer();
+        abort_unless($this->canApprovePayment(), 403, 'Hanya manager atau owner yang dapat mengakses persetujuan pencairan SPK.');
+
+        return $this->renderIndex($request, 'disbursement');
+    }
+
+    public function paymentIndex(Request $request): Response
+    {
+        return $this->renderIndex($request, 'payment');
+    }
+
+    protected function renderIndex(Request $request, string $mode): Response
+    {
+        if ($mode === 'payment') {
+            abort_unless($this->canViewSpkPayment(), 403, 'Anda tidak memiliki permission untuk membuka pembayaran SPK.');
+        } else {
+            $this->authorizeProjectPaymentViewer();
+        }
         $search = trim((string) $request->query('search', ''));
+        $approvalOnly = $mode === 'approval';
+        $paymentOnly = $mode === 'payment';
+        $disbursementOnly = $mode === 'disbursement';
 
         $rows = SpkKontraktor::query()
             ->with(['kontraktor:id,nama_kontraktor', 'perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah', 'payments.contractorOpname:id,kode_opname', 'additions'])
+            ->when($disbursementOnly, fn (Builder $query) => $query->whereHas(
+                'payments',
+                fn (Builder $query) => $query->where('status', 'menunggu_approval_manager'),
+            ))
+            ->when($paymentOnly, fn (Builder $query) => $query->whereHas(
+                'payments',
+                fn (Builder $query) => $query->whereIn('status', ['menunggu_pengajuan', 'menunggu_pembayaran_keuangan']),
+            ))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('nomor_spk', 'like', "%{$search}%")
@@ -54,7 +83,10 @@ class SpkKontraktorController extends Controller
             ->latest('id')
             ->paginate(10)
             ->withQueryString()
-            ->through(fn (SpkKontraktor $row) => [
+            ->through(function (SpkKontraktor $row) {
+                $hppPlan = $this->hppPlanStatus($row);
+
+                return [
                 'id' => $row->id,
                 'kontraktor_id' => (string) $row->kontraktor_id,
                 'perumahan_id' => (string) ($row->perumahan_id ?? ''),
@@ -75,6 +107,9 @@ class SpkKontraktorController extends Controller
                 'lingkup_pekerjaan' => $row->lingkup_pekerjaan,
                 'catatan' => $row->catatan,
                 'status' => $row->status,
+                'hpp_plan_exists' => $hppPlan['exists'],
+                'hpp_plan_total' => $hppPlan['total'],
+                'hpp_plan_label' => $hppPlan['label'],
                 'kontraktor' => $row->kontraktor?->nama_kontraktor ?? '-',
                 'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
                 'unit' => $row->detailRumah ? trim($row->detailRumah->kode_nlok.' '.$row->detailRumah->nomor_rumah) : '-',
@@ -100,30 +135,73 @@ class SpkKontraktorController extends Controller
                     'total' => $addition->total,
                     'keterangan' => $addition->keterangan,
                 ])->values(),
-                'can_edit' => ($row->record_status ?? 'draft') !== 'locked' || $this->currentUserCanManageLockedRecords(),
-                'can_delete' => ($row->record_status ?? 'draft') !== 'locked' || $this->currentUserCanManageLockedRecords(),
-            ]);
+                'can_edit' => $this->canManageSpk() && ($row->record_status ?? 'draft') !== 'locked',
+                'can_delete' => $this->canManageSpk() && ($row->record_status ?? 'draft') !== 'locked',
+                'can_lock' => $this->canManageSpkLock() && ($row->record_status ?? 'draft') !== 'locked',
+                'can_unlock' => $this->canManageSpkLock() && ($row->record_status ?? 'draft') === 'locked',
+                ];
+            });
 
-        return Inertia::render('Admin/SpkKontraktor/Index', [
-            'title' => $approvalOnly ? 'Approval SPK' : 'SPK Kontraktor',
-            'description' => $approvalOnly
-                ? 'Daftar SPK untuk proses approval tanpa form input.'
-                : 'Buat surat perjanjian kontrak dan jadwal pembayaran kontraktor.',
+        $component = match ($mode) {
+            'disbursement' => 'Admin/SpkKontraktor/Disbursement',
+            'payment' => 'Admin/SpkKontraktor/Payment',
+            default => 'Admin/SpkKontraktor/Index',
+        };
+
+        return Inertia::render($component, [
+            'title' => match ($mode) {
+                'approval' => 'Approval Pembayaran SPK',
+                'disbursement' => 'Persetujuan Pencairan SPK',
+                'payment' => 'Pembayaran SPK Kontraktor',
+                default => 'SPK Kontraktor',
+            },
+            'description' => match ($mode) {
+                'approval' => 'Daftar termin SPK yang membutuhkan persetujuan manager atau owner.',
+                'disbursement' => 'Owner atau manager memeriksa detail termin sebelum menyetujui pencairan.',
+                'payment' => 'Admin keuangan mengajukan termin dan mencatat pembayaran setelah disetujui.',
+                default => 'Buat surat perjanjian kontrak dan jadwal pembayaran kontraktor.',
+            },
             'baseUrl' => route('admin.spk-kontraktor.index', absolute: false),
-            'pageUrl' => $approvalOnly
-                ? route('admin.spk-kontraktor.approval.index', absolute: false)
-                : route('admin.spk-kontraktor.index', absolute: false),
+            'pageUrl' => match ($mode) {
+                'approval' => route('admin.spk-kontraktor.approval.index', absolute: false),
+                'disbursement' => route('admin.spk-kontraktor.disbursement.index', absolute: false),
+                'payment' => route('admin.spk-kontraktor.payment.index', absolute: false),
+                default => route('admin.spk-kontraktor.index', absolute: false),
+            },
             'rows' => $rows,
             'filters' => ['search' => $search],
             'options' => $this->options(),
+            'permissions' => [
+                'canManageSpk' => $this->canManageSpk(),
+                'canViewPaymentDetail' => $this->canApprovePayment(),
+                'canRequestPayment' => $this->canRequestSpkPayment(),
+                'canApprovePayment' => $this->canApprovePayment(),
+                'canReleasePayment' => $this->canReleaseSpkPayment(),
+            ],
             'approvalOnly' => $approvalOnly,
+            'paymentOnly' => $paymentOnly,
+            'disbursementOnly' => $disbursementOnly,
         ]);
     }
 
-    public function requestPayment(string $id, string $paymentId, AccountingService $accounting): RedirectResponse
+    public function requestPayment(Request $request, string $id, string $paymentId, AccountingService $accounting): RedirectResponse
     {
-        $this->authorizeFinanceOrOwnerManager();
+        abort_unless($this->canRequestSpkPayment(), 403, 'Anda tidak memiliki permission untuk mengajukan pembayaran SPK.');
         $payment = $this->payment($id, $paymentId);
+        abort_unless($payment->status === 'menunggu_pengajuan', 422, 'Termin ini sudah diajukan sebelumnya.');
+        if (! $payment->spkKontraktor?->perumahan_id) {
+            throw ValidationException::withMessages([
+                'location' => 'Lokasi perumahan SPK belum dipilih. Perbarui SPK sebelum mengajukan pembayaran.',
+            ]);
+        }
+        $hppPlan = $this->hppPlanStatus($payment->spkKontraktor);
+
+        if (! $hppPlan['exists'] && ! $request->boolean('confirm_without_hpp')) {
+            throw ValidationException::withMessages([
+                'hpp' => 'Rencana HPP '.$hppPlan['label'].' belum diisi. Konfirmasi diperlukan untuk tetap mengajukan pembayaran.',
+            ]);
+        }
+
         DB::transaction(function () use ($payment, $accounting) {
             $payment->update([
                 'status' => 'menunggu_approval_manager',
@@ -132,6 +210,7 @@ class SpkKontraktorController extends Controller
             ]);
 
             $accounting->recordContractorBill($payment->fresh('spkKontraktor'));
+            $this->syncSpkStatus($payment->spkKontraktor);
         });
 
         return back()->with('success', 'Pembayaran termin berhasil diajukan ke manager.');
@@ -139,30 +218,36 @@ class SpkKontraktorController extends Controller
 
     public function approvePayment(string $id, string $paymentId): RedirectResponse
     {
-        $this->authorizeOwnerOrManager();
+        abort_unless($this->canApprovePayment(), 403, 'Hanya manager atau owner yang dapat menyetujui pembayaran termin.');
         $payment = $this->payment($id, $paymentId);
+        abort_unless($payment->status === 'menunggu_approval_manager', 422, 'Termin belum diajukan atau sudah diproses.');
         $payment->update([
-            'status' => 'menunggu_pencairan_owner',
+            'status' => 'menunggu_pembayaran_keuangan',
             'approved_by' => auth()->id(),
             'approved_at' => now(),
         ]);
+        $this->syncSpkStatus($payment->spkKontraktor);
 
         return back()->with('success', 'Pembayaran termin berhasil di-approve manager.');
     }
 
     public function releasePayment(string $id, string $paymentId, AccountingService $accounting): RedirectResponse
     {
-        $this->authorizeOwner();
+        abort_unless($this->canReleaseSpkPayment(), 403, 'Anda tidak memiliki permission untuk mencatat pembayaran SPK.');
         $payment = $this->payment($id, $paymentId);
+        abort_unless($payment->status === 'menunggu_pembayaran_keuangan', 422, 'Termin belum disetujui manager atau sudah dibayar.');
         DB::transaction(function () use ($payment, $accounting) {
+            $paidAt = now();
             $payment->update([
                 'status' => 'dana_cair',
                 'released_by' => auth()->id(),
-                'released_at' => now(),
-                'paid_at' => now(),
+                'released_at' => $paidAt,
+                'paid_at' => $paidAt,
+                'tanggal_pembayaran' => $paidAt->toDateString(),
             ]);
 
             $accounting->recordContractorPayment($payment->fresh('spkKontraktor.perumahan'));
+            $this->syncSpkStatus($payment->spkKontraktor);
         });
 
         return back()->with('success', 'Dana termin berhasil dicairkan.');
@@ -202,7 +287,12 @@ class SpkKontraktorController extends Controller
         $payload = $this->preparePayloadTotals($payload);
         $this->ensurePaymentTotalMatchesContract($payload);
         $spk = SpkKontraktor::query()->findOrFail($id);
-        $this->abortIfLocked($spk);
+        abort_if(($spk->record_status ?? 'draft') === 'locked', 422, 'SPK sudah dikunci. Buka lock terlebih dahulu sebelum mengubah data.');
+        abort_if(
+            $spk->payments()->where('status', '!=', 'menunggu_pengajuan')->exists(),
+            422,
+            'SPK tidak dapat diubah karena sudah memiliki termin yang diproses. Batalkan proses pembayaran terlebih dahulu.',
+        );
 
         DB::transaction(function () use ($spk, $payload) {
             $payments = $this->paymentsPayload($payload);
@@ -226,7 +316,7 @@ class SpkKontraktorController extends Controller
     {
         $this->authorizeOwnerOrManager();
         $spk = SpkKontraktor::query()->findOrFail($id);
-        $this->abortIfLocked($spk);
+        abort_if(($spk->record_status ?? 'draft') === 'locked', 422, 'SPK sudah dikunci. Buka lock terlebih dahulu sebelum menghapus data.');
         $spk->delete();
 
         return back()->with('success', 'SPK kontraktor berhasil dihapus.');
@@ -234,10 +324,10 @@ class SpkKontraktorController extends Controller
 
     protected function payload(Request $request): array
     {
-        return $request->validate([
+        $payload = $request->validate([
             'kontraktor_id' => ['required', 'exists:kontraktors,id'],
-            'perumahan_id' => ['nullable', 'exists:perumahans,id'],
-            'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
+            'perumahan_id' => ['required', 'exists:perumahans,id'],
+            'detail_rumah_id' => ['required_if:jenis_pekerjaan,rumah', 'nullable', 'exists:detail_rumahs,id'],
             'judul_pekerjaan' => ['required', 'string', 'max:255'],
             'jenis_pekerjaan' => ['required', 'in:rumah,jalan,pembukaan_lahan,lainnya'],
             'tanggal_spk' => ['required', 'date'],
@@ -252,7 +342,6 @@ class SpkKontraktorController extends Controller
             'payments' => ['required', 'array', 'min:1'],
             'nilai_kontrak_dasar' => ['required', 'numeric', 'min:0'],
             'payments.*.tanggal_jatuh_tempo' => ['nullable', 'date'],
-            'payments.*.tanggal_pembayaran' => ['nullable', 'date'],
             'payments.*.nominal' => ['required', 'numeric', 'min:0'],
             'payments.*.keterangan' => ['nullable', 'string'],
             'additions' => ['nullable', 'array'],
@@ -275,9 +364,23 @@ class SpkKontraktorController extends Controller
             'payments' => 'Jadwal pembayaran',
             'payments.*.nominal' => 'Nominal pembayaran',
             'payments.*.tanggal_jatuh_tempo' => 'Tanggal jatuh tempo',
-            'payments.*.tanggal_pembayaran' => 'Tanggal pembayaran',
             'additions.*.judul_penambahan' => 'Judul penambahan',
         ]);
+
+        if (! empty($payload['detail_rumah_id'])) {
+            $unitMatchesPerumahan = DetailRumah::query()
+                ->whereKey($payload['detail_rumah_id'])
+                ->where('perumahan_id', $payload['perumahan_id'])
+                ->exists();
+
+            if (! $unitMatchesPerumahan) {
+                throw ValidationException::withMessages([
+                    'detail_rumah_id' => 'Unit rumah harus berasal dari perumahan yang dipilih.',
+                ]);
+            }
+        }
+
+        return $payload;
     }
 
     protected function paymentsPayload(array $payload): array
@@ -290,7 +393,7 @@ class SpkKontraktorController extends Controller
             return [[
                 'termin_ke' => 1,
                 'tanggal_jatuh_tempo' => $first['tanggal_jatuh_tempo'] ?? $payload['tanggal_spk'],
-                'tanggal_pembayaran' => $first['tanggal_pembayaran'] ?? $payload['tanggal_spk'],
+                'tanggal_pembayaran' => null,
                 'nominal' => $payload['nilai_kontrak'],
                 'keterangan' => $first['keterangan'] ?? 'Pembayaran cash/lunas.',
                 'status' => 'menunggu_pengajuan',
@@ -302,7 +405,7 @@ class SpkKontraktorController extends Controller
             ->map(fn (array $payment, int $index) => [
                 'termin_ke' => $index + 1,
                 'tanggal_jatuh_tempo' => $payment['tanggal_jatuh_tempo'] ?? $payload['tanggal_spk'],
-                'tanggal_pembayaran' => $payment['tanggal_pembayaran'] ?? null,
+                'tanggal_pembayaran' => null,
                 'nominal' => $payment['nominal'] ?? 0,
                 'keterangan' => $payment['keterangan'] ?? null,
                 'status' => 'menunggu_pengajuan',
@@ -353,13 +456,33 @@ class SpkKontraktorController extends Controller
 
     public function lock(string $id): RedirectResponse
     {
-        $this->authorizeOwnerOrManager();
-        return $this->traitLock($id);
+        abort_unless($this->canManageSpkLock(), 403, 'Hanya owner atau manager yang dapat mengunci SPK.');
+        $spk = SpkKontraktor::query()->findOrFail($id);
+        $spk->update([
+            'record_status' => 'locked',
+            'locked_at' => now(),
+            'locked_by' => auth()->id(),
+            'status' => $spk->status === 'batal' ? 'batal' : 'aktif',
+            'updated_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'SPK berhasil dikunci dan tidak dapat diedit.');
     }
 
     public function unlock(string $id): RedirectResponse
     {
-        return $this->traitUnlock($id);
+        abort_unless($this->canManageSpkLock(), 403, 'Hanya owner atau manager yang dapat membuka lock SPK.');
+        $spk = SpkKontraktor::query()->findOrFail($id);
+        $hasProcessedPayment = $spk->payments()->where('status', '!=', 'menunggu_pengajuan')->exists();
+        $spk->update([
+            'record_status' => 'draft',
+            'locked_at' => null,
+            'locked_by' => null,
+            'status' => $spk->status === 'batal' ? 'batal' : ($hasProcessedPayment ? 'aktif' : 'draft'),
+            'updated_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'Lock SPK berhasil dibuka.');
     }
 
     protected function payment(string $spkId, string $paymentId): SpkKontraktorPayment
@@ -373,7 +496,7 @@ class SpkKontraktorController extends Controller
     {
         return match ($status) {
             'menunggu_approval_manager' => 'Menunggu Approval Manager',
-            'menunggu_pencairan_owner' => 'Menunggu Pencairan Owner',
+            'menunggu_pembayaran_keuangan' => 'Menunggu Pembayaran Keuangan',
             'dana_cair' => 'Dana Cair / Terbayar',
             default => 'Belum Diajukan',
         };
@@ -470,26 +593,101 @@ class SpkKontraktorController extends Controller
         abort_unless($user->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro', 'admin', 'admin_keuangan']), 403, 'Hanya owner, manager, atau admin yang dapat mengakses SPK kontraktor.');
     }
 
-    protected function authorizeFinanceOrOwnerManager(): void
+    protected function authorizePaymentDisbursement(): void
     {
-        $user = auth()->user();
-
-        if (! $user) {
-            return;
-        }
-
-        abort_unless($user->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro', 'admin_keuangan', 'admin']), 403, 'Hanya admin, admin keuangan, owner, atau manager yang dapat mengajukan pembayaran termin.');
+        abort_unless(
+            $this->canRequestSpkPayment() || $this->canReleaseSpkPayment(),
+            403,
+            'Anda tidak memiliki permission untuk memproses pembayaran termin.',
+        );
     }
 
-    protected function authorizeOwner(): void
+    protected function canManagePaymentDisbursement(): bool
     {
-        $user = auth()->user();
+        return $this->canRequestSpkPayment() || $this->canReleaseSpkPayment();
+    }
 
-        if (! $user) {
+    protected function canViewSpkPayment(): bool
+    {
+        return (bool) auth()->user()?->can('spk-payment.view');
+    }
+
+    protected function canRequestSpkPayment(): bool
+    {
+        return (bool) auth()->user()?->can('spk-payment.create');
+    }
+
+    protected function canReleaseSpkPayment(): bool
+    {
+        return (bool) auth()->user()?->can('spk-payment.update');
+    }
+
+    protected function canApprovePayment(): bool
+    {
+        return (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro']);
+    }
+
+    protected function canManageSpk(): bool
+    {
+        return (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro', 'admin']);
+    }
+
+    protected function canManageSpkLock(): bool
+    {
+        return (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro']);
+    }
+
+    protected function hppPlanStatus(SpkKontraktor $spk): array
+    {
+        if (! $spk->perumahan_id) {
+            return [
+                'exists' => false,
+                'total' => 0,
+                'label' => 'lokasi SPK',
+            ];
+        }
+
+        if ($spk->detail_rumah_id) {
+            $total = (float) DetailRumahHpp::query()
+                ->where('detail_rumah_id', $spk->detail_rumah_id)
+                ->withSum('items', 'jumlah_rab')
+                ->get()
+                ->sum('items_sum_jumlah_rab');
+
+            return [
+                'exists' => $total > 0,
+                'total' => $total,
+                'label' => 'unit rumah',
+            ];
+        }
+
+        $total = (float) PerumahanHpp::query()
+            ->where('perumahan_id', $spk->perumahan_id)
+            ->withSum('detailPerumahanHpps', 'jumlah_rab')
+            ->get()
+            ->sum('detail_perumahan_hpps_sum_jumlah_rab');
+
+        return [
+            'exists' => $total > 0,
+            'total' => $total,
+            'label' => 'perumahan',
+        ];
+    }
+
+    protected function syncSpkStatus(?SpkKontraktor $spk): void
+    {
+        if (! $spk || $spk->status === 'batal') {
             return;
         }
 
-        abort_unless($user->hasAnyRole(['owner', 'super_admin']), 403, 'Hanya owner yang dapat mencairkan dana termin.');
+        $payments = $spk->payments()->get(['status']);
+        $allPaid = $payments->isNotEmpty() && $payments->every(fn ($payment) => $payment->status === 'dana_cair');
+        $hasProcessed = $payments->contains(fn ($payment) => $payment->status !== 'menunggu_pengajuan');
+
+        $spk->update([
+            'status' => $allPaid ? 'selesai' : (($spk->record_status === 'locked' || $hasProcessed) ? 'aktif' : 'draft'),
+            'updated_by' => auth()->id(),
+        ]);
     }
 
     protected function authorizeOwnerOrManager(): void

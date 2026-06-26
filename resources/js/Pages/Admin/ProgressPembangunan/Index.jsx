@@ -109,10 +109,12 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
         };
 
         if (editing) {
-            form.put(`${baseUrl}/${editing.id}`, optionsSubmit);
+            form.transform((data) => ({ ...data, _method: 'put' }));
+            form.post(`${baseUrl}/${editing.id}`, optionsSubmit);
             return;
         }
 
+        form.transform((data) => data);
         form.post(baseUrl, optionsSubmit);
     };
 

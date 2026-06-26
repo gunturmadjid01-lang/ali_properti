@@ -36,6 +36,11 @@ const managerSidebar = [
                         link: "/admin/spk-kontraktor/approval",
                     },
                     {
+                        title: "Pencairan Pembayaran SPK",
+                        icon: WalletCards,
+                        link: "/admin/spk-kontraktor/pencairan",
+                    },
+                    {
                         title: "Approval SPR",
                         icon: ReceiptText,
                         link: "/admin/marketing/spr",

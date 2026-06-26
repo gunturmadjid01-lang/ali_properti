@@ -36,8 +36,13 @@ function SidebarIcon({ icon: Icon, className = '' }) {
 }
 
 function isActiveItem(item, currentUrl) {
-    if (item.link && currentUrl.startsWith(item.link)) {
-        return true;
+    if (item.link) {
+        const currentPath = currentUrl.split('?')[0].replace(/\/+$/, '') || '/';
+        const itemPath = item.link.split('?')[0].replace(/\/+$/, '') || '/';
+
+        if (item.exact ? currentPath === itemPath : currentPath === itemPath || currentPath.startsWith(`${itemPath}/`)) {
+            return true;
+        }
     }
 
     return item.items?.some((child) => isActiveItem(child, currentUrl)) ?? false;

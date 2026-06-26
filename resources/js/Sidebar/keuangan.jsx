@@ -110,6 +110,11 @@ const keuanganSidebar = [
                         icon: TrendingDown,
                         link: "/admin/keuangan/hutang",
                     },
+                    {
+                        title: "Pembayaran SPK Kontraktor",
+                        icon: WalletCards,
+                        link: "/admin/keuangan/pembayaran-spk",
+                    },
                 ],
             },
             {

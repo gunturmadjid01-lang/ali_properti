@@ -79,7 +79,7 @@ class TipePostSeeder extends Seeder
             [
                 'nama_post' => 'Tagihan Kontraktor',
                 'jenis' => 'pengeluaran',
-                'debit' => ChartOfAccount::HPP_KONSTRUKSI,
+                'debit' => ChartOfAccount::PERSEDIAAN_PROYEK,
                 'credit' => ChartOfAccount::HUTANG_KONTRAKTOR,
                 'is_system' => true,
             ],

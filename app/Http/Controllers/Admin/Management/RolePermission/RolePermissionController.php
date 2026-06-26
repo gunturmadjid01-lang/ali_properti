@@ -268,6 +268,21 @@ class RolePermissionController extends Controller
                     $module('kelompok-hpp', 'Kelompok HPP', ['view', 'create', 'update', 'delete', 'unlock']),
                 ],
             ],
+            [
+                'key' => 'project-finance',
+                'label' => 'Keuangan Proyek',
+                'modules' => [
+                    [
+                        'key' => 'spk-payment',
+                        'label' => 'Pembayaran SPK',
+                        'permissions' => [
+                            ['action' => 'view', 'label' => 'Buka Halaman', 'name' => 'spk-payment.view'],
+                            ['action' => 'create', 'label' => 'Ajukan Pembayaran', 'name' => 'spk-payment.create'],
+                            ['action' => 'update', 'label' => 'Catat Pembayaran', 'name' => 'spk-payment.update'],
+                        ],
+                    ],
+                ],
+            ],
         ];
     }
 

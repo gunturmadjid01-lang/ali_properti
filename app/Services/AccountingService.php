@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\CabangPerusahaan;
 use App\Models\ChartOfAccount;
+use App\Models\HppRealisasi;
 use App\Models\Journal;
+use App\Models\KelompokHpp;
 use App\Models\MaterialPurchase;
 use App\Models\SpkKontraktorPayment;
 use App\Models\TipePost;
@@ -64,18 +66,23 @@ class AccountingService
             return null;
         }
 
-        return $this->postJournal(
+        $tanggal = $payment->requested_at?->toDateString() ?? now()->toDateString();
+        $journal = $this->postJournal(
             source: $payment,
             type: self::CONTRACTOR_BILL,
-            tanggal: $payment->tanggal_pembayaran?->toDateString() ?? now()->toDateString(),
+            tanggal: $tanggal,
             perumahanId: $spk->perumahan_id,
             detailRumahId: $spk->detail_rumah_id,
             keterangan: "Tagihan termin {$payment->termin_ke} SPK {$spk->nomor_spk}",
             lines: [
-                ['account' => ChartOfAccount::HPP_KONSTRUKSI, 'debit' => $payment->nominal, 'kredit' => 0],
+                ['account' => ChartOfAccount::PERSEDIAAN_PROYEK, 'debit' => $payment->nominal, 'kredit' => 0],
                 ['account' => ChartOfAccount::HUTANG_KONTRAKTOR, 'debit' => 0, 'kredit' => $payment->nominal],
             ],
         );
+
+        $this->recordContractorHpp($payment, $tanggal);
+
+        return $journal;
     }
 
     public function recordContractorPayment(SpkKontraktorPayment $payment): ?Journal
@@ -87,10 +94,11 @@ class AccountingService
             return null;
         }
 
+        $tanggal = $payment->tanggal_pembayaran?->toDateString() ?? now()->toDateString();
         $journal = $this->postJournal(
             source: $payment,
             type: self::CONTRACTOR_PAYMENT,
-            tanggal: now()->toDateString(),
+            tanggal: $tanggal,
             perumahanId: $spk->perumahan_id,
             detailRumahId: $spk->detail_rumah_id,
             keterangan: "Pembayaran termin {$payment->termin_ke} SPK {$spk->nomor_spk}",
@@ -102,13 +110,56 @@ class AccountingService
 
         $this->recordCashflow(
             tipePostName: 'Pembayaran Hutang Kontraktor',
-            tanggal: now()->toDateString(),
+            tanggal: $tanggal,
             nominal: (float) $payment->nominal,
             keterangan: "Pembayaran termin {$payment->termin_ke} SPK {$spk->nomor_spk}",
             cabangId: $spk->perumahan?->cabang_id,
         );
 
         return $journal;
+    }
+
+    protected function recordContractorHpp(SpkKontraktorPayment $payment, string $tanggal): void
+    {
+        $payment->loadMissing(['spkKontraktor.detailRumah', 'spkKontraktor.perumahan']);
+        $spk = $payment->spkKontraktor;
+
+        if (! $spk) {
+            return;
+        }
+
+        $kelompokName = match ($spk->jenis_pekerjaan) {
+            'jalan' => 'Jalan Kawasan',
+            'pembukaan_lahan' => 'Biaya Pematangan Lahan',
+            default => 'Biaya Subkontraktor',
+        };
+        $kelompokId = KelompokHpp::query()->where('nama_hpp', $kelompokName)->value('id');
+        $target = $spk->detailRumah ?: $spk->perumahan;
+
+        if (! $target) {
+            return;
+        }
+
+        HppRealisasi::query()->firstOrCreate(
+            [
+                'sumber_type' => SpkKontraktorPayment::class,
+                'sumber_id' => $payment->id,
+            ],
+            [
+                'target_type' => $target::class,
+                'target_id' => $target->getKey(),
+                'perumahan_id' => $spk->perumahan_id,
+                'detail_rumah_id' => $spk->detail_rumah_id,
+                'tahapan_pembangunan_id' => null,
+                'kelompok_hpp_id' => $kelompokId,
+                'tanggal' => $tanggal,
+                'nominal' => $payment->nominal,
+                'keterangan' => "Realisasi HPP termin {$payment->termin_ke} SPK {$spk->nomor_spk}",
+                'user_id' => auth()->id(),
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ],
+        );
     }
 
     public function recordMaterialCashPurchase(MaterialPurchase $purchase): ?Journal

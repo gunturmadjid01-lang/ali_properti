@@ -145,6 +145,8 @@ Route::prefix('admin')->group(function () {
     Route::post('/kontraktor/{id}/unlock', [KontraktorController::class, 'unlock'])->name('admin.kontraktor.unlock');
     Route::get('/spk-kontraktor', [SpkKontraktorController::class, 'index'])->name('admin.spk-kontraktor.index');
     Route::get('/spk-kontraktor/approval', [SpkKontraktorController::class, 'approvalIndex'])->name('admin.spk-kontraktor.approval.index');
+    Route::get('/spk-kontraktor/pencairan', [SpkKontraktorController::class, 'disbursementIndex'])->name('admin.spk-kontraktor.disbursement.index');
+    Route::get('/keuangan/pembayaran-spk', [SpkKontraktorController::class, 'paymentIndex'])->name('admin.spk-kontraktor.payment.index');
     Route::post('/spk-kontraktor', [SpkKontraktorController::class, 'store'])->name('admin.spk-kontraktor.store');
     Route::put('/spk-kontraktor/{id}', [SpkKontraktorController::class, 'update'])->name('admin.spk-kontraktor.update');
     Route::delete('/spk-kontraktor/{id}', [SpkKontraktorController::class, 'destroy'])->name('admin.spk-kontraktor.destroy');

@@ -1,7 +1,7 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { Edit3, LoaderCircle, MinusCircle, PlusCircle, Save, Search, Trash2, X } from 'lucide-react';
+import { Edit3, Eye, LoaderCircle, Lock, MinusCircle, PlusCircle, Save, Search, Trash2, Unlock, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Button, CurrencyInput, Dropdown, Form, Input, Textarea } from '../../../Components/UI';
+import { Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
 function money(value) {
@@ -9,7 +9,7 @@ function money(value) {
 }
 
 function paymentTemplate() {
-    return { tanggal_jatuh_tempo: '', tanggal_pembayaran: '', nominal: '', keterangan: '' };
+    return { tanggal_jatuh_tempo: '', nominal: '', keterangan: '' };
 }
 
 function additionTemplate() {
@@ -39,9 +39,11 @@ function FormErrorSummary({ errors }) {
     );
 }
 
-export default function Index({ title, description, baseUrl, pageUrl = baseUrl, rows, filters = {}, options, approvalOnly = false }) {
+export default function Index({ title, description, baseUrl, pageUrl = baseUrl, rows, filters = {}, options, permissions = {}, approvalOnly = false, paymentOnly = false, disbursementOnly = false }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [editing, setEditing] = useState(null);
+    const [paymentDetail, setPaymentDetail] = useState(null);
+    const showPaymentSchedule = approvalOnly || paymentOnly || disbursementOnly;
     const form = useForm({
         kontraktor_id: '',
         perumahan_id: '',
@@ -90,7 +92,6 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                 form.setData('payments', [{
                     ...currentPayment,
                     tanggal_jatuh_tempo: form.data.tanggal_spk,
-                    tanggal_pembayaran: currentPayment.tanggal_pembayaran || form.data.tanggal_spk,
                     nominal: nextNominal,
                     keterangan: currentPayment.keterangan || 'Pembayaran cash / sekaligus.',
                 }]);
@@ -125,7 +126,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
             ...form.data,
             metode_pembayaran: value,
             payments: value === 'cash'
-                ? [{ ...paymentTemplate(), tanggal_jatuh_tempo: form.data.tanggal_spk, tanggal_pembayaran: form.data.tanggal_spk, nominal: totalKontrak, keterangan: 'Pembayaran cash / sekaligus.' }]
+                ? [{ ...paymentTemplate(), tanggal_jatuh_tempo: form.data.tanggal_spk, nominal: totalKontrak, keterangan: 'Pembayaran cash / sekaligus.' }]
                 : form.data.payments.length
                     ? form.data.payments
                     : [{ ...paymentTemplate(), tanggal_jatuh_tempo: form.data.tanggal_spk }],
@@ -138,7 +139,6 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
             form.setData('payments', [{
                 ...(form.data.payments[0] ?? paymentTemplate()),
                 tanggal_jatuh_tempo: form.data.tanggal_spk,
-                tanggal_pembayaran: form.data.tanggal_spk,
                 nominal: Number(value || 0) + additionsTotal,
             }]);
         }
@@ -174,7 +174,6 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
             })) : [additionTemplate()],
             payments: row.payments?.length ? row.payments.map((payment) => ({
                 tanggal_jatuh_tempo: payment.tanggal_jatuh_tempo ?? '',
-                tanggal_pembayaran: payment.tanggal_pembayaran ?? '',
                 nominal: payment.nominal ?? '',
                 keterangan: payment.keterangan ?? '',
             })) : [paymentTemplate()],
@@ -193,7 +192,17 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
     };
 
     const postPaymentAction = (row, payment, action) => {
-        router.post(`${baseUrl}/${row.id}/payments/${payment.id}/${action}`, {}, { preserveScroll: true });
+        let payload = {};
+
+        if (action === 'request' && !row.hpp_plan_exists) {
+            const confirmed = window.confirm(
+                `Rencana HPP ${row.hpp_plan_label} belum diisi. Pembayaran tetap akan dicatat sebagai realisasi dan dapat membuat anggaran terlihat terlampaui. Tetap ajukan pembayaran?`,
+            );
+            if (!confirmed) return;
+            payload = { confirm_without_hpp: true };
+        }
+
+        router.post(`${baseUrl}/${row.id}/payments/${payment.id}/${action}`, payload, { preserveScroll: true });
     };
 
     return (
@@ -206,7 +215,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                     <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">{description}</p>
                 </section>
 
-                    {!approvalOnly && (
+                    {!approvalOnly && !paymentOnly && !disbursementOnly && permissions.canManageSpk && (
                     <Form
                         collapsible
                         title={editing ? 'Edit SPK Kontraktor' : 'Tambah SPK Kontraktor'}
@@ -241,8 +250,17 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Status SPK</span><Dropdown value={form.data.status} options={options.status} onChange={(value) => form.setData('status', value)} /></div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown value={form.data.perumahan_id} label="Pilih Perumahan" options={options.perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Unit Rumah</span><Dropdown value={form.data.detail_rumah_id} label="Opsional" options={detailRumahOptions} onChange={(value, selected) => form.setData({ ...form.data, detail_rumah_id: value, perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id })} /></div>
+                        <div className="grid gap-2">
+                            <span className="text-sm font-extrabold">Perumahan</span>
+                            <Dropdown value={form.data.perumahan_id} label="Pilih Perumahan" options={options.perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '' })} />
+                            {form.errors.perumahan_id && <span className="text-xs font-bold text-red-600">{form.errors.perumahan_id}</span>}
+                        </div>
+                        <div className="grid gap-2">
+                            <span className="text-sm font-extrabold">Unit Rumah</span>
+                            <Dropdown value={form.data.detail_rumah_id} label={form.data.jenis_pekerjaan === 'rumah' ? 'Wajib pilih unit' : 'Opsional untuk pekerjaan kawasan'} options={detailRumahOptions} onChange={(value, selected) => form.setData({ ...form.data, detail_rumah_id: value, perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id })} />
+                            <span className="text-xs text-ink-soft">{form.data.jenis_pekerjaan === 'rumah' ? 'Pembangunan rumah dicatat ke HPP unit.' : 'Tanpa unit, biaya dicatat ke HPP perumahan/kawasan.'}</span>
+                            {form.errors.detail_rumah_id && <span className="text-xs font-bold text-red-600">{form.errors.detail_rumah_id}</span>}
+                        </div>
                         <CurrencyInput label="Nilai Dasar Kontrak" value={form.data.nilai_kontrak_dasar} error={form.errors.nilai_kontrak_dasar} onChange={setNilaiDasarKontrak} />
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
@@ -307,10 +325,9 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                         </div>
 
                         {form.data.payments.map((payment, index) => (
-                            <div className="grid gap-3 rounded-lg bg-silver-soft/80 p-3 dark:bg-white/5 md:grid-cols-[0.4fr_0.8fr_0.9fr_1fr_auto]" key={index}>
+                            <div className="grid gap-3 rounded-lg bg-silver-soft/80 p-3 dark:bg-white/5 md:grid-cols-[0.4fr_0.9fr_1fr_1fr_auto]" key={index}>
                                 <Input label="Termin" value={index + 1} readOnly />
                                 <Input label="Jatuh Tempo" type="date" value={payment.tanggal_jatuh_tempo} onChange={(event) => setPayment(index, 'tanggal_jatuh_tempo', event.target.value)} />
-                                <Input label="Tanggal Bayar" type="date" value={payment.tanggal_pembayaran} onChange={(event) => setPayment(index, 'tanggal_pembayaran', event.target.value)} />
                                 <CurrencyInput label="Nominal" value={payment.nominal} onChange={(value) => setPayment(index, 'nominal', value)} readOnly={form.data.metode_pembayaran === 'cash'} />
                                 <Input label="Keterangan" value={payment.keterangan} onChange={(event) => setPayment(index, 'keterangan', event.target.value)} />
                                 <div className="flex items-end justify-end"><Button type="button" variant="ghost" size="sm" className="text-red-600" disabled={form.data.metode_pembayaran === 'cash' || form.data.payments.length === 1} onClick={() => form.setData('payments', form.data.payments.filter((_, paymentIndex) => paymentIndex !== index))}><MinusCircle size={16} /></Button></div>
@@ -339,7 +356,20 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-silver-deep/60 text-sm dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
-                                <tr>{['Nomor SPK', 'Kontraktor', 'Pekerjaan', 'Lokasi', 'Nilai Dasar', 'Tambahan', 'Total', 'Metode', 'Approval', 'Jadwal Pembayaran', 'Status SPK', 'Aksi'].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
+                                <tr>{[
+                                    'Nomor SPK',
+                                    'Kontraktor',
+                                    'Pekerjaan',
+                                    'Lokasi',
+                                    'Nilai Dasar',
+                                    'Tambahan',
+                                    'Total',
+                                    'Metode',
+                                    'Approval',
+                                    ...(showPaymentSchedule ? ['Jadwal Pembayaran'] : []),
+                                    'Status SPK',
+                                    'Aksi',
+                                ].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
                             </thead>
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
                                 {rows.data.map((row) => (
@@ -353,30 +383,34 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                         <td className="px-5 py-4 font-extrabold">{money(row.nilai_kontrak)}</td>
                                         <td className="px-5 py-4 font-bold">{row.metode_pembayaran === 'cash' ? 'Cash / Sekaligus' : 'Cicil / Termin'}</td>
                                         <td className="px-5 py-4 font-bold">{row.approval_role === 'admin' ? 'Admin' : 'Manager'}</td>
-                                        <td className="px-5 py-4">
+                                        {showPaymentSchedule && <td className="px-5 py-4">
                                             <div className="grid min-w-[320px] gap-2">
                                                 {row.payments.map((payment) => (
                                                     <div className="rounded-lg border border-silver-deep/60 p-2 dark:border-white/10" key={`${row.id}-${payment.termin_ke}`}>
                                                         <p className="font-extrabold">Termin {payment.termin_ke}: {money(payment.nominal)}</p>
                                                         <p className="text-xs font-bold text-ink-soft">Jatuh tempo: {payment.tanggal_jatuh_tempo ?? '-'} | Bayar: {payment.tanggal_pembayaran ?? '-'} | {payment.status_label}</p>
+                                                        {(approvalOnly || paymentOnly || disbursementOnly) && <p className={`text-xs font-bold ${row.hpp_plan_exists ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}`}>
+                                                            {row.hpp_plan_exists ? `Rencana HPP ${row.hpp_plan_label}: ${money(row.hpp_plan_total)}` : `Peringatan: rencana HPP ${row.hpp_plan_label} belum diisi.`}
+                                                        </p>}
                                                         {payment.opname && <p className="text-xs font-bold text-ink-soft">Opname: {payment.opname}</p>}
-                                                        <div className="mt-2 flex flex-wrap gap-2">
-                                                            {payment.status === 'menunggu_approval_manager' && <Button type="button" size="sm" variant="outline" onClick={() => postPaymentAction(row, payment, 'approve')}>Approve Manager</Button>}
-                                                            {payment.status === 'menunggu_pencairan_owner' && <Button type="button" size="sm" onClick={() => postPaymentAction(row, payment, 'release')}>Cairkan Owner</Button>}
-                                                        </div>
+                                                        {(approvalOnly || paymentOnly || disbursementOnly) && <div className="mt-2 flex flex-wrap gap-2">
+                                                            {paymentOnly && permissions.canRequestPayment && payment.status === 'menunggu_pengajuan' && <Button type="button" size="sm" variant="outline" onClick={() => postPaymentAction(row, payment, 'request')}>Ajukan Pembayaran</Button>}
+                                                            {(approvalOnly || disbursementOnly) && permissions.canApprovePayment && payment.status === 'menunggu_approval_manager' && <Button type="button" size="sm" variant="outline" onClick={() => postPaymentAction(row, payment, 'approve')}>Setujui Pencairan</Button>}
+                                                            {paymentOnly && permissions.canReleasePayment && payment.status === 'menunggu_pembayaran_keuangan' && <Button type="button" size="sm" onClick={() => postPaymentAction(row, payment, 'release')}>Bayar oleh Keuangan</Button>}
+                                                        </div>}
                                                     </div>
                                                 ))}
                                             </div>
-                                        </td>
-                                        <td className="px-5 py-4 font-bold">{row.status}</td>
+                                        </td>}
+                                        <td className="px-5 py-4 font-bold">{row.status}<br /><span className="text-xs text-ink-soft">{row.record_status_label}</span></td>
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
-                                                {!approvalOnly && (
+                                                {permissions.canViewPaymentDetail && <Button type="button" size="sm" variant="outline" onClick={() => setPaymentDetail(row)}><Eye size={15} /> Detail Pembayaran</Button>}
+                                                {!approvalOnly && !paymentOnly && !disbursementOnly && permissions.canManageSpk && (
                                                     <>
                                                         {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>}
-                                                        {row.record_status === 'locked'
-                                                            ? <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}>Unlock</Button>
-                                                            : <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}>Lock</Button>}
+                                                        {row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={15} /> Lock</Button>}
+                                                        {row.can_unlock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={15} /> Unlock</Button>}
                                                         {row.can_delete && <Button type="button" size="sm" variant="outline" onClick={() => destroyRow(row)}><Trash2 size={15} /> Hapus</Button>}
                                                     </>
                                                 )}
@@ -384,12 +418,73 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                         </td>
                                     </tr>
                                 ))}
-                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={12}>Belum ada SPK kontraktor.</td></tr>}
+                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={showPaymentSchedule ? 12 : 11}>Belum ada SPK kontraktor.</td></tr>}
                             </tbody>
                         </table>
                     </div>
                 </section>
             </div>
+            <Modal
+                open={Boolean(paymentDetail)}
+                onClose={() => setPaymentDetail(null)}
+                title={paymentDetail ? `Detail Pembayaran ${paymentDetail.nomor_spk}` : 'Detail Pembayaran SPK'}
+                footer={<Button type="button" variant="outline" onClick={() => setPaymentDetail(null)}>Tutup</Button>}
+            >
+                {paymentDetail && (
+                    <div className="grid gap-4 text-sm">
+                        <div className="grid gap-3 rounded-lg border border-silver-deep/60 p-4 dark:border-white/10 md:grid-cols-2">
+                            <p><b>Nomor SPK:</b> {paymentDetail.nomor_spk}</p>
+                            <p><b>Kontraktor:</b> {paymentDetail.kontraktor}</p>
+                            <p><b>Pekerjaan:</b> {paymentDetail.judul_pekerjaan}</p>
+                            <p><b>Jenis pekerjaan:</b> {String(paymentDetail.jenis_pekerjaan ?? '-').replaceAll('_', ' ')}</p>
+                            <p><b>Lokasi:</b> {paymentDetail.perumahan} / {paymentDetail.unit}</p>
+                            <p><b>Tanggal SPK:</b> {paymentDetail.tanggal_spk || '-'}</p>
+                            <p><b>Periode pekerjaan:</b> {paymentDetail.tanggal_mulai || '-'} s/d {paymentDetail.tanggal_selesai || '-'}</p>
+                            <p><b>Nilai dasar:</b> {money(paymentDetail.nilai_kontrak_dasar)}</p>
+                            <p><b>Total tambahan:</b> {money(paymentDetail.total_penambahan)}</p>
+                            <p><b>Total SPK:</b> {money(paymentDetail.nilai_kontrak)}</p>
+                            <p><b>Metode pembayaran:</b> {paymentDetail.metode_pembayaran === 'cash' ? 'Cash / Sekaligus' : 'Cicil / Termin'}</p>
+                            <p><b>Approval:</b> {paymentDetail.approval_role === 'admin' ? 'Admin' : 'Manager'}</p>
+                            <p><b>Status SPK:</b> {paymentDetail.status}</p>
+                            <p><b>Status Dokumen:</b> {paymentDetail.record_status_label}</p>
+                            <p><b>Rencana HPP:</b> {paymentDetail.hpp_plan_exists ? money(paymentDetail.hpp_plan_total) : `Belum diisi untuk ${paymentDetail.hpp_plan_label}`}</p>
+                        </div>
+                        <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10">
+                            <p className="font-extrabold">Lingkup Pekerjaan</p>
+                            <p className="mt-1 whitespace-pre-wrap text-ink-soft">{paymentDetail.lingkup_pekerjaan || '-'}</p>
+                        </div>
+                        {paymentDetail.additions?.length > 0 && (
+                            <div className="grid gap-3">
+                                <p className="font-extrabold">Tambahan Pekerjaan</p>
+                                {paymentDetail.additions.map((addition, index) => (
+                                    <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10" key={addition.id ?? index}>
+                                        <p className="font-extrabold">{addition.judul_penambahan}</p>
+                                        <p>{addition.volume} {addition.satuan || ''} × {money(addition.harga_satuan)} = {money(addition.total)}</p>
+                                        <p className="text-ink-soft">{addition.deskripsi || addition.keterangan || '-'}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div className="grid gap-3">
+                            <p className="font-extrabold">Rincian Pembayaran</p>
+                            {paymentDetail.payments.map((payment) => (
+                                <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10" key={payment.id}>
+                                    <p className="font-extrabold">Termin {payment.termin_ke} — {money(payment.nominal)}</p>
+                                    <p>Jatuh tempo: {payment.tanggal_jatuh_tempo ?? '-'}</p>
+                                    <p>Tanggal bayar: {payment.tanggal_pembayaran ?? '-'}</p>
+                                    <p>Status: {payment.status_label}</p>
+                                    <p>Keterangan: {payment.keterangan || '-'}</p>
+                                    {payment.opname && <p>Referensi opname: {payment.opname}</p>}
+                                </div>
+                            ))}
+                        </div>
+                        <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10">
+                            <p className="font-extrabold">Catatan SPK</p>
+                            <p className="mt-1 whitespace-pre-wrap text-ink-soft">{paymentDetail.catatan || '-'}</p>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </>
     );
 }

@@ -163,6 +163,7 @@ class RolePermissionSeeder extends Seeder
             'quality-inspection' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
             'field-supervision' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
             'spk-kontraktor' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
+            'spk-payment' => ['view', 'create', 'update'],
             'asset-inventory' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner', 'approve_admin'],
             'master-material' => ['view', 'create', 'update', 'delete', 'unlock'],
             'material-request' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_owner', 'approve_admin'],
@@ -303,6 +304,9 @@ class RolePermissionSeeder extends Seeder
                 'kelompok-hpp.manage',
                 'laporan.view',
                 'laporan.export',
+                'spk-payment.view',
+                'spk-payment.create',
+                'spk-payment.update',
             ],
             'pengawas' => [
                 'dashboard.view',
