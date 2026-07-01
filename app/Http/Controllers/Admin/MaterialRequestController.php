@@ -277,7 +277,7 @@ class MaterialRequestController extends Controller
             'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
             'gudangs' => Gudang::query()->where('status', 'aktif')->orderBy('nama_gudang')->get(['id', 'nama_gudang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])->values(),
             'detailRumahs' => DetailRumah::query()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}", 'perumahan_id' => (string) $row->perumahan_id])->values(),
-            'tahapanPembangunans' => TahapanPembangunan::query()->where('status', 'aktif')->orderBy('urutan')->get(['id', 'nama_tahapan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan])->values(),
+            'tahapanPembangunans' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'unit')->orderBy('urutan')->get(['id', 'nama_tahapan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan])->values(),
             'kelompokHpps' => KelompokHpp::query()
                 ->forLogistic()
                 ->orderBy('kategori')

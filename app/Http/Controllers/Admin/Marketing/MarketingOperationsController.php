@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ChecksMarketingAccess;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\BerkasCostumer;
 use App\Models\Costumer;
@@ -33,11 +34,19 @@ use Inertia\Response;
 
 class MarketingOperationsController extends Controller
 {
-    use ScopesActivePerumahan;
+    use ChecksMarketingAccess, ScopesActivePerumahan;
 
     public function show(Request $request, string $section, MarketingOperationsService $service): Response
     {
         abort_unless(in_array($section, $this->sections(), true), 404);
+        $permissions = $this->permissionsForSection($request, $section);
+        if ($section !== 'dashboard') {
+            $this->abortUnlessMarketingAccess(
+                $request,
+                $this->defaultRolesForSection($section),
+                $this->permissionForSection($section),
+            );
+        }
 
         $service->syncAutomaticReminders($request->user()?->id);
         if ($section === 'piutang') {
@@ -50,11 +59,13 @@ class MarketingOperationsController extends Controller
             'baseUrl' => route('admin.marketing.operasional.show', $section, absolute: false),
             'data' => $this->data($request, $section),
             'options' => $this->options($request),
+            'permissions' => $permissions,
         ]);
     }
 
     public function store(Request $request, string $section): RedirectResponse
     {
+        $this->abortUnlessMarketingAccess($request, $this->defaultRolesForSection($section), $this->permissionForSection($section));
         match ($section) {
             'campaign' => $this->storeCampaign($request),
             'reminder' => $this->storeReminder($request),
@@ -68,6 +79,7 @@ class MarketingOperationsController extends Controller
 
     public function update(Request $request, string $section, string $id): RedirectResponse
     {
+        $this->abortUnlessMarketingAccess($request, $this->defaultRolesForSection($section), $this->permissionForSection($section));
         match ($section) {
             'campaign' => $this->updateCampaign($request, $id),
             'reminder' => $this->updateReminder($request, $id),
@@ -81,6 +93,7 @@ class MarketingOperationsController extends Controller
 
     public function destroy(Request $request, string $section, string $id): RedirectResponse
     {
+        $this->abortUnlessMarketingAccess($request, $this->defaultRolesForSection($section), $this->permissionForSection($section));
         $model = match ($section) {
             'campaign' => MarketingCampaign::query()
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
@@ -145,6 +158,7 @@ class MarketingOperationsController extends Controller
 
     public function reviewDocument(Request $request): RedirectResponse
     {
+        $this->abortUnlessMarketingAccess($request, ['supervisor_marketing'], 'marketing.document-review.manage');
         $validated = $request->validate([
             'document_type' => ['required', Rule::in([SprBerkasCostumer::class, BerkasCostumer::class])],
             'document_id' => ['required', 'integer'],
@@ -688,6 +702,98 @@ class MarketingOperationsController extends Controller
     protected function sections(): array
     {
         return ['dashboard', 'pipeline', 'campaign', 'reminder', 'dokumen', 'piutang', 'target-komisi', 'template'];
+    }
+
+    protected function permissionsForSection(Request $request, string $section): array
+    {
+        $user = $request->user();
+
+        return match ($section) {
+            'pipeline' => [
+                'canView' => $this->hasMarketingAccess($request, ['manager', 'owner'], 'marketing.pipeline-report.view'),
+                'canCreate' => false,
+                'canUpdate' => false,
+                'canDelete' => false,
+                'canUnlock' => false,
+            ],
+            'campaign' => [
+                'canView' => $this->hasMarketingAccess($request, ['pengawas'], 'marketing.campaign.manage'),
+                'canCreate' => (bool) $user?->can('marketing.campaign.create') || $user?->can('marketing.campaign.manage'),
+                'canUpdate' => (bool) $user?->can('marketing.campaign.update') || $user?->can('marketing.campaign.manage'),
+                'canDelete' => (bool) $user?->can('marketing.campaign.delete') || $user?->can('marketing.campaign.manage'),
+                'canUnlock' => (bool) $user?->can('marketing.campaign.unlock') || $user?->can('marketing.campaign.manage'),
+            ],
+            'reminder' => [
+                'canView' => $this->hasMarketingAccess($request, ['supervisor_marketing'], 'marketing.reminder.manage'),
+                'canCreate' => (bool) $user?->can('marketing.reminder.create') || $user?->can('marketing.reminder.manage'),
+                'canUpdate' => (bool) $user?->can('marketing.reminder.update') || $user?->can('marketing.reminder.manage'),
+                'canDelete' => (bool) $user?->can('marketing.reminder.delete') || $user?->can('marketing.reminder.manage'),
+                'canUnlock' => (bool) $user?->can('marketing.reminder.unlock') || $user?->can('marketing.reminder.manage'),
+            ],
+            'dokumen' => [
+                'canView' => $this->hasMarketingAccess($request, ['supervisor_marketing'], 'marketing.document-review.manage'),
+                'canCreate' => false,
+                'canUpdate' => (bool) $user?->can('marketing.document-review.manage'),
+                'canDelete' => false,
+                'canUnlock' => false,
+            ],
+            'piutang' => [
+                'canView' => $this->hasMarketingAccess($request, ['owner', 'manager'], 'marketing.receivable.view'),
+                'canCreate' => false,
+                'canUpdate' => false,
+                'canDelete' => false,
+                'canUnlock' => false,
+            ],
+            'target-komisi' => [
+                'canView' => $this->hasMarketingAccess($request, ['supervisor_marketing', 'manager'], 'marketing.target-commission.manage'),
+                'canCreate' => (bool) $user?->can('marketing.target-commission.create') || $user?->can('marketing.target-commission.manage'),
+                'canUpdate' => (bool) $user?->can('marketing.target-commission.update') || $user?->can('marketing.target-commission.manage'),
+                'canDelete' => (bool) $user?->can('marketing.target-commission.delete') || $user?->can('marketing.target-commission.manage'),
+                'canUnlock' => (bool) $user?->can('marketing.target-commission.unlock') || $user?->can('marketing.target-commission.manage'),
+            ],
+            'template' => [
+                'canView' => $this->hasMarketingAccess($request, ['supervisor_marketing'], 'marketing.template.manage'),
+                'canCreate' => (bool) $user?->can('marketing.template.create') || $user?->can('marketing.template.manage'),
+                'canUpdate' => (bool) $user?->can('marketing.template.update') || $user?->can('marketing.template.manage'),
+                'canDelete' => (bool) $user?->can('marketing.template.delete') || $user?->can('marketing.template.manage'),
+                'canUnlock' => (bool) $user?->can('marketing.template.unlock') || $user?->can('marketing.template.manage'),
+            ],
+            default => [
+                'canView' => true,
+                'canCreate' => false,
+                'canUpdate' => false,
+                'canDelete' => false,
+                'canUnlock' => false,
+            ],
+        };
+    }
+
+    protected function defaultRolesForSection(string $section): array
+    {
+        return match ($section) {
+            'pipeline' => ['manager', 'owner'],
+            'campaign' => ['pengawas'],
+            'reminder' => ['marketing', 'area_marketing', 'supervisor_marketing', 'manager', 'owner', 'manajer_pimpro', 'pengawas'],
+            'dokumen' => ['supervisor_marketing'],
+            'piutang' => ['owner', 'manager', 'manajer_pimpro'],
+            'target-komisi' => ['supervisor_marketing', 'manager'],
+            'template' => ['marketing', 'area_marketing', 'supervisor_marketing', 'manager', 'owner', 'manajer_pimpro'],
+            default => [],
+        };
+    }
+
+    protected function permissionForSection(string $section): ?string
+    {
+        return match ($section) {
+            'pipeline' => 'marketing.pipeline-report.view',
+            'campaign' => 'marketing.campaign.manage',
+            'reminder' => 'marketing.reminder.manage',
+            'dokumen' => 'marketing.document-review.manage',
+            'piutang' => 'marketing.receivable.view',
+            'target-komisi' => 'marketing.target-commission.manage',
+            'template' => 'marketing.template.manage',
+            default => null,
+        };
     }
 
     protected function lockableModel(string $section, string $id)

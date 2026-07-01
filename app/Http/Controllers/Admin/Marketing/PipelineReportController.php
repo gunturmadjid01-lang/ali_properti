@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ChecksMarketingAccess;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\MarketingLeadActivity;
 use App\Services\Marketing\MarketingLeadStatusService;
@@ -14,10 +15,11 @@ use Inertia\Response;
 
 class PipelineReportController extends Controller
 {
-    use ScopesActivePerumahan;
+    use ChecksMarketingAccess, ScopesActivePerumahan;
 
     public function index(Request $request): Response
     {
+        $this->abortUnlessMarketingAccess($request, ['manager', 'owner'], 'marketing.pipeline-report.view');
         $dateFrom = $request->query('date_from') ?: now()->startOfMonth()->toDateString();
         $dateTo = $request->query('date_to') ?: now()->toDateString();
         $from = Carbon::parse($dateFrom)->startOfDay();

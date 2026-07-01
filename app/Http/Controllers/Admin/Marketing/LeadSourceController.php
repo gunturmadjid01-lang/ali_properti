@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Admin\Marketing;
 
+use App\Http\Controllers\Concerns\ChecksMarketingAccess;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Http\Controllers\Controller;
@@ -16,11 +17,23 @@ use Inertia\Response;
 
 class LeadSourceController extends Controller
 {
-    use HandlesCrudLock, ScopesActivePerumahan;
+    use ChecksMarketingAccess, HandlesCrudLock, ScopesActivePerumahan;
 
     public function index(Request $request): Response
     {
+        $this->abortUnlessMarketingAccess($request, ['manager', 'supervisor_marketing'], 'marketing.lead-source.manage');
         $search = trim((string) $request->query('search', ''));
+        $canManage = $this->hasAnyMarketingPermission($request, [
+            'marketing.lead-source.manage',
+            'marketing.lead-source.create',
+            'marketing.lead-source.update',
+            'marketing.lead-source.delete',
+            'marketing.lead-source.unlock',
+            'marketing-lead-source.create',
+            'marketing-lead-source.update',
+            'marketing-lead-source.delete',
+            'marketing-lead-source.unlock',
+        ]);
 
         $rows = MarketingLeadSource::query()
             ->withCount(['costumers' => fn (Builder $query) => $query
@@ -46,10 +59,10 @@ class LeadSourceController extends Controller
                 'record_status' => $source->record_status ?? 'draft',
                 'created_by_name' => $source->creator?->name ?? '-',
                 'updated_by_name' => $source->updater?->name ?? '-',
-                'can_edit' => ($source->record_status ?? 'draft') !== 'locked',
-                'can_delete' => ($source->record_status ?? 'draft') !== 'locked',
+                'can_edit' => ($source->record_status ?? 'draft') !== 'locked' && $this->hasAnyMarketingPermission($request, ['marketing.lead-source.update', 'marketing-lead-source.update', 'marketing.lead-source.manage']),
+                'can_delete' => ($source->record_status ?? 'draft') !== 'locked' && $this->hasAnyMarketingPermission($request, ['marketing.lead-source.delete', 'marketing-lead-source.delete', 'marketing.lead-source.manage']),
                 'can_lock' => ($source->record_status ?? 'draft') !== 'locked',
-                'can_unlock' => auth()->user()?->hasAnyRole(['owner', 'super_admin']) && ($source->record_status ?? 'draft') === 'locked',
+                'can_unlock' => (($source->record_status ?? 'draft') === 'locked') && ($this->hasAnyMarketingPermission($request, ['marketing.lead-source.unlock', 'marketing-lead-source.unlock', 'marketing.lead-source.manage']) || auth()->user()?->hasAnyRole(['owner', 'super_admin'])),
             ]);
 
         return Inertia::render('Admin/Marketing/LeadSource/Index', [
@@ -58,6 +71,12 @@ class LeadSourceController extends Controller
             'baseUrl' => route('admin.marketing.sumber-lead.index', absolute: false),
             'rows' => $rows,
             'filters' => ['search' => $search],
+            'permissions' => [
+                'canCreate' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.create', 'marketing-lead-source.create']),
+                'canUpdate' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.update', 'marketing-lead-source.update']),
+                'canDelete' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.delete', 'marketing-lead-source.delete']),
+                'canUnlock' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.unlock', 'marketing-lead-source.unlock']) || auth()->user()?->hasAnyRole(['owner', 'super_admin']),
+            ],
             'options' => [
                 'kategoriOptions' => $this->kategoriOptions(),
                 'statusOptions' => $this->statusOptions(),
@@ -67,6 +86,7 @@ class LeadSourceController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        $this->abortUnlessMarketingAccess($request, ['manager', 'supervisor_marketing'], 'marketing.lead-source.manage');
         $validated = $this->validatePayload($request);
 
         MarketingLeadSource::query()->create([
@@ -79,6 +99,7 @@ class LeadSourceController extends Controller
 
     public function update(Request $request, string $id): RedirectResponse
     {
+        $this->abortUnlessMarketingAccess($request, ['manager', 'supervisor_marketing'], 'marketing.lead-source.manage');
         $source = MarketingLeadSource::query()->findOrFail($id);
         $this->abortIfLocked($source);
         $source->update($this->validatePayload($request));
@@ -88,6 +109,7 @@ class LeadSourceController extends Controller
 
     public function destroy(string $id): RedirectResponse
     {
+        $this->abortUnlessMarketingAccess(request(), ['manager', 'supervisor_marketing'], 'marketing.lead-source.manage');
         $source = MarketingLeadSource::query()->findOrFail($id);
         $this->abortIfLocked($source);
         $source->delete();

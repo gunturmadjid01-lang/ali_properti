@@ -271,7 +271,7 @@ function SimpleTable({ rows = [], columns = [] }) {
     );
 }
 
-function Distribution({ data, baseUrl }) {
+function Distribution({ data, baseUrl, permissions = {} }) {
     const form = useForm({ costumer_id: '', user_id: '' });
     const submit = (event) => {
         event.preventDefault();
@@ -279,13 +279,15 @@ function Distribution({ data, baseUrl }) {
     };
     return (
         <div className="grid gap-4">
-            <Card className="p-4">
-                <form className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end" onSubmit={submit}>
-                    <Dropdown label="Lead" value={form.data.costumer_id} options={(data.rows ?? []).map((row) => ({ value: String(row.id), label: `${row.customer} - ${row.telepon ?? '-'}` }))} onChange={(value) => form.setData('costumer_id', value)} />
-                    <Dropdown label="Marketing" value={form.data.user_id} options={data.marketingOptions ?? []} onChange={(value) => form.setData('user_id', value)} />
-                    <Button disabled={form.processing} type="submit"><Send size={16} /> Assign</Button>
-                </form>
-            </Card>
+            {permissions.canCreate && (
+                <Card className="p-4">
+                    <form className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end" onSubmit={submit}>
+                        <Dropdown label="Lead" value={form.data.costumer_id} options={(data.rows ?? []).map((row) => ({ value: String(row.id), label: `${row.customer} - ${row.telepon ?? '-'}` }))} onChange={(value) => form.setData('costumer_id', value)} />
+                        <Dropdown label="Marketing" value={form.data.user_id} options={data.marketingOptions ?? []} onChange={(value) => form.setData('user_id', value)} />
+                        <Button disabled={form.processing} type="submit"><Send size={16} /> Assign</Button>
+                    </form>
+                </Card>
+            )}
             <SimpleTable rows={data.rows} columns={[
                 { key: 'kode', label: 'Kode' },
                 { key: 'customer', label: 'Customer' },
@@ -298,7 +300,7 @@ function Distribution({ data, baseUrl }) {
     );
 }
 
-function Leaderboard({ data, baseUrl, filters }) {
+function Leaderboard({ data, baseUrl, filters, permissions = {} }) {
     const [period, setPeriod] = useState(filters.period ?? data.period ?? 'week');
     const [referenceDate, setReferenceDate] = useState(filters.reference_date ?? data.reference_date ?? '');
     const submit = (event) => {
@@ -358,7 +360,7 @@ function Leaderboard({ data, baseUrl, filters }) {
     );
 }
 
-export default function Index({ title, section, baseUrl, filters = {}, data = {} }) {
+export default function Index({ title, section, baseUrl, filters = {}, data = {}, permissions = {} }) {
     const content = {
         'unit-stock': <UnitStock data={data} baseUrl={baseUrl} filters={filters} />,
         pricelist: <Pricelist data={data} baseUrl={baseUrl} filters={filters} />,
@@ -373,7 +375,7 @@ export default function Index({ title, section, baseUrl, filters = {}, data = {}
             { key: 'last_follow_up', label: 'Follow Up Terakhir' },
             { key: 'catatan', label: 'Catatan' },
         ]} />,
-        'distribusi-lead': <Distribution data={data} baseUrl={baseUrl} />,
+        'distribusi-lead': <Distribution data={data} baseUrl={baseUrl} permissions={permissions} />,
         'monitoring-aktivitas': (
             <div className="grid gap-4">
                 <DateRangeFilter baseUrl={baseUrl} filters={filters} data={data} />
@@ -395,7 +397,7 @@ export default function Index({ title, section, baseUrl, filters = {}, data = {}
             { key: 'last_activity', label: 'Aktivitas Terakhir' },
             { key: 'age_days', label: 'Umur Hari' },
         ]} />,
-        'leaderboard-sales': <Leaderboard data={data} baseUrl={baseUrl} filters={filters} />,
+        'leaderboard-sales': <Leaderboard data={data} baseUrl={baseUrl} filters={filters} permissions={permissions} />,
     }[section];
 
     return (

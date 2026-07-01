@@ -16,6 +16,8 @@ function money(value) {
 
 function Hpp({
     title = 'HPP Perumahan',
+    backLabel = 'Perumahan',
+    metaLine,
     perumahan = {},
     rows = [],
     summary = { jumlah_rab: 0, jumlah_realisasi: 0, sisa_anggaran: 0 },
@@ -62,7 +64,7 @@ function Hpp({
                         <div>
                             <div className="mb-3 flex flex-wrap gap-2">
                                 <Button as={Link} href={baseUrl} variant="ghost" size="sm">
-                                    <ArrowLeft size={16} /> Perumahan
+                                    <ArrowLeft size={16} /> {backLabel}
                                 </Button>
                                 <Button as={Link} href={detailUrl} variant="outline" size="sm">
                                     Detail Rumah
@@ -71,7 +73,7 @@ function Hpp({
                             <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">{title}</p>
                             <h2 className="mt-2 font-display text-3xl font-extrabold">{perumahan.nama_perusahaan}</h2>
                             <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">
-                                {perumahan.cabang ?? '-'} | {perumahan.alamat}
+                                {metaLine ?? `${perumahan.cabang ?? '-'} | ${perumahan.alamat ?? '-'}`}
                             </p>
                         </div>
                     </div>

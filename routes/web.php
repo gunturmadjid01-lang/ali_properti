@@ -161,6 +161,9 @@ Route::prefix('admin')->group(function () {
     Route::delete('/unit-rumah/{id}', [AdminUnitRumahController::class, 'destroy'])->name('admin.unit-rumah.destroy');
     Route::post('/unit-rumah/{id}/lock', [AdminUnitRumahController::class, 'lock'])->name('admin.unit-rumah.lock');
     Route::post('/unit-rumah/{id}/unlock', [AdminUnitRumahController::class, 'unlock'])->name('admin.unit-rumah.unlock');
+    Route::get('/unit-rumah/{id}/hpp', [AdminUnitRumahController::class, 'hpp'])->name('admin.unit-rumah.hpp.detail');
+    Route::put('/unit-rumah/{id}/hpp', [AdminUnitRumahController::class, 'updateHpp'])->name('admin.unit-rumah.hpp.update');
+    Route::put('/unit-rumah/{id}/hpp/{itemId}', [AdminUnitRumahController::class, 'updateHpp'])->name('admin.unit-rumah.hpp.item.update');
     Route::get('/permintaan-barang', [MaterialRequestController::class, 'index'])->name('admin.material-request.index');
     Route::post('/permintaan-barang', [MaterialRequestController::class, 'store'])->name('admin.material-request.store');
     Route::put('/permintaan-barang/{id}', [MaterialRequestController::class, 'update'])->name('admin.material-request.update');

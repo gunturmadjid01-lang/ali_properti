@@ -159,6 +159,8 @@ class PerumahanController extends Controller
             ->with(['creator:id,name', 'updater:id,name', 'detailRumahHpps.items.kelompokHpp'])
             ->where('perumahan_id', $perumahan->id)
             ->findOrFail($rumahId);
+        $kelompokHpps = KelompokHpp::query()->orderBy('nama_hpp')->get(['id', 'nama_hpp']);
+        $hppRows = $this->rumahHppRows($rumah, $kelompokHpps);
 
         $progress = ProgressPembangunan::query()
             ->with(['tahapanPembangunan:id,nama_tahapan,bobot_persen', 'user:id,name', 'approvedBy:id,name', 'lockedBy:id,name'])
@@ -290,13 +292,25 @@ class PerumahanController extends Controller
                 'created_by' => $rumah->creator?->name ?? '-',
                 'updated_by' => $rumah->updater?->name ?? '-',
             ],
+            'hppRows' => $hppRows,
+            'hppSummary' => [
+                'jumlah_rab' => $hppRows->sum('jumlah_rab'),
+                'jumlah_realisasi' => $hppRows->sum('jumlah_realisasi'),
+                'sisa_anggaran' => $hppRows->sum('sisa_anggaran'),
+            ],
             'progressRows' => $progress,
             'materialRows' => $materialRequests,
             'logistikRows' => $logistik,
             'options' => [
                 'statusPembangunan' => $this->statusPembangunanOptions(),
                 'statusPenjualan' => $this->statusPenjualanOptions(),
+                'kelompokHpps' => $this->kelompokHppOptions(),
             ],
+            'permissions' => [
+                'canManageHpp' => auth()->user()?->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro']) ?? false,
+            ],
+            'hppUrl' => route('admin.management.perumahan.rumah.hpp.update', [$perumahan->id, $rumah->id], false),
+            'hppDetailUrl' => route('admin.management.perumahan.rumah.hpp.detail', [$perumahan->id, $rumah->id], false),
             'filters' => ['search' => $search],
         ]);
     }
@@ -823,6 +837,7 @@ class PerumahanController extends Controller
     {
         return TahapanPembangunan::query()
             ->where('status', 'aktif')
+            ->where('konteks', 'unit')
             ->orderBy('urutan')
             ->get(['id', 'nama_tahapan', 'bobot_persen'])
             ->map(fn (TahapanPembangunan $tahapan) => [

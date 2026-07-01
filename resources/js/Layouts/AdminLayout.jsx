@@ -52,6 +52,41 @@ function activeItemKey(items, currentUrl) {
     return items.find((item) => isActiveItem(item, currentUrl))?.title ?? null;
 }
 
+function canSeeSidebarItem(item, roles, permissions) {
+    if (item.roles?.length && !item.roles.some((role) => roles.includes(role))) {
+        return Boolean(item.permission && permissions.includes(item.permission));
+    }
+
+    if (item.permission && !permissions.includes(item.permission)) {
+        return item.roles?.length ? item.roles.some((role) => roles.includes(role)) : false;
+    }
+
+    return true;
+}
+
+function filterSidebarItems(items, roles, permissions) {
+    return items
+        .map((item) => {
+            const children = item.items ? filterSidebarItems(item.items, roles, permissions) : null;
+            const visible = canSeeSidebarItem(item, roles, permissions);
+
+            if (!visible && (!children || children.length === 0)) {
+                return null;
+            }
+
+            if (item.items) {
+                if (!children || children.length === 0) {
+                    return null;
+                }
+
+                return { ...item, items: children };
+            }
+
+            return visible ? item : null;
+        })
+        .filter(Boolean);
+}
+
 function SidebarList({ items, collapsed, currentUrl, badges = {}, level = 0 }) {
     const [openKey, setOpenKey] = useState(() => activeItemKey(items, currentUrl));
 
@@ -155,6 +190,7 @@ export default function AdminLayout({ children, title = 'Dashboard' }) {
     const activePerumahan = auth?.active_perumahan ?? user?.active_perumahan ?? null;
     const needsActivePerumahanSelection = Boolean(auth?.needs_active_perumahan_selection ?? user?.needs_active_perumahan_selection);
     const roles = user?.roles?.length ? user.roles : [];
+    const permissions = user?.permissions?.length ? user.permissions : [];
     const displayUser = user ?? {
         name: 'Guest Admin',
         email: 'Akses tanpa login',
@@ -200,8 +236,13 @@ export default function AdminLayout({ children, title = 'Dashboard' }) {
 
         const selectedRole = roles.find((role) => sidebarsByRole[role]);
 
-        return sidebarsByRole[selectedRole] ?? [];
-    }, [roles]);
+        const sidebar = sidebarsByRole[selectedRole] ?? [];
+
+        return sidebar.map((section) => ({
+            ...section,
+            items: filterSidebarItems(section.items ?? [], roles, permissions),
+        })).filter((section) => (section.items ?? []).length > 0);
+    }, [permissions, roles]);
 
     const hasMenu = menuSections.length > 0;
 

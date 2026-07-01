@@ -11,7 +11,7 @@ function ErrorSummary({ errors }) {
     return <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm font-bold text-red-700">{messages.map((message) => <p key={message}>{message}</p>)}</div>;
 }
 
-export default function Index({ title, description, baseUrl, rows = { data: [], links: [] }, filters = {}, options = {} }) {
+export default function Index({ title, description, baseUrl, rows = { data: [], links: [] }, filters = {}, options = {}, permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [editing, setEditing] = useState(null);
     const [detail, setDetail] = useState(null);
@@ -52,6 +52,7 @@ export default function Index({ title, description, baseUrl, rows = { data: [], 
 
         form.post(baseUrl, requestOptions);
     };
+    const showForm = Boolean(permissions.canCreate || permissions.canUpdate);
 
     return (
         <>
@@ -63,34 +64,38 @@ export default function Index({ title, description, baseUrl, rows = { data: [], 
                     <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">{description}</p>
                 </section>
 
-                <Form
-                    collapsible
-                    title={editing ? `Edit ${editing.kode_sumber}` : 'Tambah Sumber Lead'}
-                    description="Contoh: Facebook Ads, Instagram, Referral, Spanduk, Walk-in, Pameran, atau Agen."
-                    onSubmit={submit}
-                    actions={(
-                        <>
-                            {editing && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}
-                            <Button type="submit" disabled={form.processing}><PlusCircle size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan Sumber'}</Button>
-                        </>
-                    )}
-                >
-                    <ErrorSummary errors={form.errors} />
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <Input label="Nama Sumber Lead" value={form.data.nama_sumber} error={form.errors.nama_sumber} onChange={(event) => form.setData('nama_sumber', event.target.value)} />
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Kategori</span>
-                            <Dropdown label="Pilih Kategori" value={form.data.kategori} options={options.kategoriOptions ?? []} onChange={(value) => form.setData('kategori', value)} />
-                            {form.errors.kategori && <span className="text-xs font-bold text-red-600">{form.errors.kategori}</span>}
+                {showForm && (
+                    <Form
+                        collapsible
+                        title={editing ? `Edit ${editing.kode_sumber}` : 'Tambah Sumber Lead'}
+                        description="Contoh: Facebook Ads, Instagram, Referral, Spanduk, Walk-in, Pameran, atau Agen."
+                        onSubmit={submit}
+                        actions={(
+                            <>
+                                {editing && permissions.canUpdate && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}
+                                {((editing && permissions.canUpdate) || (!editing && permissions.canCreate)) && (
+                                    <Button type="submit" disabled={form.processing}><PlusCircle size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan Sumber'}</Button>
+                                )}
+                            </>
+                        )}
+                    >
+                        <ErrorSummary errors={form.errors} />
+                        <div className="grid gap-4 md:grid-cols-3">
+                            <Input label="Nama Sumber Lead" value={form.data.nama_sumber} error={form.errors.nama_sumber} onChange={(event) => form.setData('nama_sumber', event.target.value)} />
+                            <div className="grid gap-2">
+                                <span className="text-sm font-extrabold">Kategori</span>
+                                <Dropdown label="Pilih Kategori" value={form.data.kategori} options={options.kategoriOptions ?? []} onChange={(value) => form.setData('kategori', value)} />
+                                {form.errors.kategori && <span className="text-xs font-bold text-red-600">{form.errors.kategori}</span>}
+                            </div>
+                            <div className="grid gap-2">
+                                <span className="text-sm font-extrabold">Status</span>
+                                <Dropdown label="Pilih Status" value={form.data.status} options={options.statusOptions ?? []} onChange={(value) => form.setData('status', value)} />
+                                {form.errors.status && <span className="text-xs font-bold text-red-600">{form.errors.status}</span>}
+                            </div>
                         </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Status</span>
-                            <Dropdown label="Pilih Status" value={form.data.status} options={options.statusOptions ?? []} onChange={(value) => form.setData('status', value)} />
-                            {form.errors.status && <span className="text-xs font-bold text-red-600">{form.errors.status}</span>}
-                        </div>
-                    </div>
-                    <Textarea label="Keterangan" value={form.data.keterangan} error={form.errors.keterangan} onChange={(event) => form.setData('keterangan', event.target.value)} />
-                </Form>
+                        <Textarea label="Keterangan" value={form.data.keterangan} error={form.errors.keterangan} onChange={(event) => form.setData('keterangan', event.target.value)} />
+                    </Form>
+                )}
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form className="grid gap-3 p-5 md:grid-cols-[1fr_auto]" onSubmit={(event) => { event.preventDefault(); router.get(baseUrl, { search }, { preserveState: true, replace: true }); }}>
@@ -115,10 +120,10 @@ export default function Index({ title, description, baseUrl, rows = { data: [], 
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
                                                 <Button type="button" size="sm" variant="outline" onClick={() => setDetail(row)}><Eye size={14} /> Detail</Button>
-                                                {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Edit</Button>}
-                                                {row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus sumber lead ini?') && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>}
+                                                {permissions.canUpdate && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Edit</Button>}
+                                                {permissions.canDelete && row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus sumber lead ini?') && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>}
                                                 {row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={14} /> Lock</Button>}
-                                                {row.can_unlock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={14} /> Unlock</Button>}
+                                                {row.can_unlock && permissions.canUnlock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={14} /> Unlock</Button>}
                                             </div>
                                         </td>
                                     </tr>

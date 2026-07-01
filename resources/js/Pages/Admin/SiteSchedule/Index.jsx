@@ -1,6 +1,6 @@
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { CalendarClock, Edit3, Eye, Lock, Search, Trash2, Unlock, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
 import { Button, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
@@ -16,8 +16,24 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
     const form = useForm({ perumahan_id: '', detail_rumah_id: '', tahapan_pembangunan_id: '', nama_pekerjaan: '', tanggal_mulai: new Date().toISOString().slice(0, 10), tanggal_target: '', target_progress: 100, realisasi_progress: 0, status: 'direncanakan', kendala: '', catatan: '' });
     const perumahans = options.perumahans ?? [];
     const detailRumahs = options.detailRumahs ?? [];
-    const tahapanPembangunans = options.tahapanPembangunans ?? [];
+    const tahapanPembangunansUnit = options.tahapanPembangunansUnit ?? options.tahapanPembangunans ?? [];
+    const tahapanPembangunansKawasan = options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? [];
+    const tahapanPembangunans = useMemo(
+        () => (form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan),
+        [form.data.detail_rumah_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+    );
     const unitOptions = useMemo(() => detailRumahs.filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, detailRumahs]);
+    useEffect(() => {
+        if (!form.data.tahapan_pembangunan_id) {
+            return;
+        }
+
+        const valid = tahapanPembangunans.some((option) => option.value === String(form.data.tahapan_pembangunan_id));
+
+        if (!valid) {
+            form.setData('tahapan_pembangunan_id', '');
+        }
+    }, [form, form.data.tahapan_pembangunan_id, tahapanPembangunans]);
     const resetForm = () => {
         setEditing(null);
         form.reset();
@@ -54,7 +70,15 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                     <div className="grid gap-4 md:grid-cols-3">
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown label="Pilih Perumahan" value={form.data.perumahan_id} options={perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '' })} /></div>
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Unit</span><Dropdown label="Kawasan / Unit" value={form.data.detail_rumah_id} options={unitOptions} onChange={(value) => form.setData('detail_rumah_id', value)} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown label="Pilih Tahapan" value={form.data.tahapan_pembangunan_id} options={tahapanPembangunans} onChange={(value) => form.setData('tahapan_pembangunan_id', value)} /></div>
+                        <div className="grid gap-2">
+                            <span className="text-sm font-extrabold">Tahapan</span>
+                            <Dropdown
+                                label={form.data.detail_rumah_id ? 'Pilih Tahapan Rumah' : 'Pilih Tahapan Kawasan'}
+                                value={form.data.tahapan_pembangunan_id}
+                                options={tahapanPembangunans}
+                                onChange={(value) => form.setData('tahapan_pembangunan_id', value)}
+                            />
+                        </div>
                     </div>
                     <Input label="Nama Pekerjaan / Target" value={form.data.nama_pekerjaan} onChange={(event) => form.setData('nama_pekerjaan', event.target.value)} />
                     <div className="grid gap-4 md:grid-cols-4"><Input label="Tanggal Mulai" type="date" value={form.data.tanggal_mulai} onChange={(event) => form.setData('tanggal_mulai', event.target.value)} /><Input label="Tanggal Target" type="date" value={form.data.tanggal_target} onChange={(event) => form.setData('tanggal_target', event.target.value)} /><Input label="Target %" type="number" min="0" max="100" value={form.data.target_progress} onChange={(event) => form.setData('target_progress', event.target.value)} /><Input label="Realisasi Otomatis %" type="number" min="0" max="100" value={form.data.realisasi_progress} disabled inputClassName="bg-silver-soft/80 text-ink-soft" /></div>

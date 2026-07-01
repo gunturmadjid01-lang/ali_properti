@@ -20,7 +20,7 @@ trait BuildsFieldOptions
                     'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}",
                     'perumahan_id' => (string) $row->perumahan_id,
                 ])->values(),
-            'tahapanPembangunans' => TahapanPembangunan::query()->where('status', 'aktif')->orderBy('urutan')->get(['id', 'nama_tahapan'])
+            'tahapanPembangunans' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'unit')->orderBy('urutan')->get(['id', 'nama_tahapan'])
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan])->values(),
         ];
     }

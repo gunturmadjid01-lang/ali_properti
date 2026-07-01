@@ -416,10 +416,11 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-5 py-4 font-semibold">{row.status}</td>
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
-                                        {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>}
-                                        <Button as={Link} href={row.detail_url} size="sm" variant="outline">
-                                            <Eye size={15} /> Detail
-                                        </Button>
+                                                {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>}
+                                                <Button as={Link} href={row.detail_url} size="sm" variant="outline">
+                                                    <Eye size={15} /> Detail
+                                                </Button>
+                                                {row.can_edit && <Button as={Link} href={row.hpp_url} size="sm" variant="outline"><Edit3 size={15} /> Edit HPP</Button>}
                                                 {row.can_delete && <Button type="button" size="sm" variant="outline" onClick={() => destroyRow(row)}><Trash2 size={15} /> Hapus</Button>}
                                                 {row.record_status === 'locked' ? (
                                                     permissions.canManageLocked && <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>

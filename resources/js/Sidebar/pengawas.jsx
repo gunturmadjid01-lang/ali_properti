@@ -89,6 +89,19 @@ const pengawasSidebar = [
                 ],
             },
             {
+                title: "Manajemen Marketing",
+                icon: UsersRound,
+                items: [
+                    {
+                        title: "Campaign & Promosi",
+                        icon: ClipboardCheck,
+                        link: "/admin/marketing/operasional/campaign",
+                        roles: ["pengawas"],
+                        permission: "marketing.campaign.manage",
+                    },
+                ],
+            },
+            {
                 title: "Management Logistik",
                 icon: Boxes,
                 items: [

@@ -57,6 +57,7 @@ class RolePermissionSeeder extends Seeder
             'marketing.pipeline-report.view',
             'marketing.receivable.view',
             'marketing.target-commission.manage',
+            'marketing.leaderboard.view',
 
             'dokumen-legalitas.view',
             'dokumen-legalitas.create',
@@ -183,6 +184,19 @@ class RolePermissionSeeder extends Seeder
             }
         }
         $permissions = array_values(array_unique($permissions));
+        $ownerBlockedPrefixes = [
+            'marketing.lead-source.',
+            'marketing-lead-source.',
+            'marketing.campaign.',
+            'marketing-campaign.',
+            'marketing.document-review.',
+            'marketing-document-review.',
+            'marketing.lead-distribution.',
+            'marketing-lead-distribution.',
+            'marketing.target-commission.',
+            'marketing-target.',
+        ];
+        $ownerPermissions = array_values(array_filter($permissions, fn (string $permission) => ! collect($ownerBlockedPrefixes)->contains(fn (string $prefix) => str_starts_with($permission, $prefix))));
 
         foreach ($permissions as $permission) {
             Permission::findOrCreate($permission, 'web');
@@ -203,7 +217,7 @@ class RolePermissionSeeder extends Seeder
 
         $rolePermissions = [
             'super_admin' => $permissions,
-            'owner' => $permissions,
+            'owner' => $ownerPermissions,
             'admin' => [
                 'dashboard.view',
                 'approval.view',

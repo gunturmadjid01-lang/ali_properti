@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Controller;
 use App\Models\ProgressPembangunan;
 use App\Models\SiteSchedule;
+use App\Models\TahapanPembangunan;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -31,7 +32,11 @@ class SiteScheduleController extends Controller
             'title' => 'Jadwal Lapangan',
             'baseUrl' => route('admin.site-schedule.index', absolute: false),
             'filters' => ['search' => $search, 'perumahan_id' => $perumahanId, 'detail_rumah_id' => $detailRumahId],
-            'options' => $this->fieldOptions(),
+            'options' => [
+                ...$this->fieldOptions(),
+                'tahapanPembangunansUnit' => $this->tahapanOptionsFor('unit'),
+                'tahapanPembangunansKawasan' => $this->tahapanOptionsFor('kawasan'),
+            ],
             'rows' => SiteSchedule::query()
                 ->with([
                     'perumahan:id,nama_perusahaan',
@@ -94,6 +99,7 @@ class SiteScheduleController extends Controller
             'kendala' => ['nullable', 'string'],
             'catatan' => ['nullable', 'string'],
         ]);
+        $this->ensureTahapanContext($validated);
 
         SiteSchedule::query()->create([
             ...$this->schedulePayload($validated),
@@ -134,8 +140,10 @@ class SiteScheduleController extends Controller
         $this->authorizeFieldUser();
         $row = SiteSchedule::query()->findOrFail($id);
         $this->abortIfLocked($row);
+        $validated = $this->validatedPayload($request);
+        $this->ensureTahapanContext($validated);
         $row->update([
-            ...$this->schedulePayload($this->validatedPayload($request)),
+            ...$this->schedulePayload($validated),
             'updated_by' => auth()->id(),
         ]);
 
@@ -179,6 +187,40 @@ class SiteScheduleController extends Controller
             'realisasi_progress' => $realisasi,
             'status' => $this->scheduleStatus($validated, $realisasi, $target),
         ];
+    }
+
+    private function tahapanOptionsFor(string $context): array
+    {
+        return TahapanPembangunan::query()
+            ->where('status', 'aktif')
+            ->where('konteks', $context)
+            ->orderBy('urutan')
+            ->get(['id', 'nama_tahapan', 'bobot_persen'])
+            ->map(fn (TahapanPembangunan $row) => [
+                'value' => (string) $row->id,
+                'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)',
+                'bobot_persen' => $row->bobot_persen,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function ensureTahapanContext(array $validated): void
+    {
+        if (blank($validated['tahapan_pembangunan_id'] ?? null)) {
+            return;
+        }
+
+        $context = filled($validated['detail_rumah_id'] ?? null) ? 'unit' : 'kawasan';
+        $tahapan = TahapanPembangunan::query()->findOrFail($validated['tahapan_pembangunan_id']);
+
+        abort_unless(
+            $tahapan->konteks === $context,
+            422,
+            $context === 'unit'
+                ? 'Saat unit rumah dipilih, pilih tahapan dari daftar rumah.'
+                : 'Saat unit rumah belum dipilih, pilih tahapan dari daftar kawasan.'
+        );
     }
 
     private function approvedProgressForSchedule(mixed $detailRumahId, mixed $tahapanPembangunanId): float

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Concerns\ChecksMarketingAccess;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\BankKredit;
 use App\Models\Costumer;
@@ -24,7 +25,7 @@ use Inertia\Response;
 
 class MarketingToolsController extends Controller
 {
-    use ScopesActivePerumahan;
+    use ChecksMarketingAccess, ScopesActivePerumahan;
 
     protected array $sections = [
         'unit-stock' => 'Unit Available / Stock Unit',
@@ -41,6 +42,7 @@ class MarketingToolsController extends Controller
     public function show(Request $request, string $section): Response
     {
         abort_unless(array_key_exists($section, $this->sections), 404);
+        $this->abortUnlessMarketingAccess($request, $this->defaultRolesForSection($section), $this->permissionForSection($section));
 
         return Inertia::render('Admin/Marketing/Tools/Index', [
             'title' => $this->sections[$section],
@@ -48,12 +50,13 @@ class MarketingToolsController extends Controller
             'baseUrl' => route('admin.marketing.tools.show', $section, absolute: false),
             'filters' => $request->only(['search', 'status', 'perumahan_id', 'date_from', 'date_to', 'period', 'reference_date']),
             'data' => $this->data($request, $section),
+            'permissions' => $this->permissionsForSection($request, $section),
         ]);
     }
 
     public function assignLead(Request $request): RedirectResponse
     {
-        abort_unless($this->canManageTeam($request), 403, 'Hanya supervisor marketing yang dapat distribusi lead.');
+        $this->abortUnlessMarketingAccess($request, ['supervisor_marketing'], 'marketing.lead-distribution.manage', 403, 'Hanya supervisor marketing yang dapat distribusi lead.');
 
         $validated = $request->validate([
             'costumer_id' => ['required', 'exists:costumers,id'],
@@ -236,7 +239,7 @@ class MarketingToolsController extends Controller
 
     protected function distributionData(Request $request): array
     {
-        abort_unless($this->canManageTeam($request), 403);
+        $this->abortUnlessMarketingAccess($request, ['supervisor_marketing'], 'marketing.lead-distribution.view');
 
         return [
             'rows' => $this->customerQuery($request)
@@ -262,7 +265,7 @@ class MarketingToolsController extends Controller
 
     protected function activityData(Request $request): array
     {
-        abort_unless($this->canManageTeam($request), 403);
+        $this->abortUnlessMarketingAccess($request, ['owner', 'manager', 'supervisor_marketing'], 'marketing.activity.view');
         $dateFrom = $request->query('date_from') ?: now()->startOfMonth()->toDateString();
         $dateTo = $request->query('date_to') ?: now()->toDateString();
         $activePerumahanId = $this->shouldScopeToActivePerumahan($request)
@@ -340,7 +343,7 @@ class MarketingToolsController extends Controller
 
     protected function leaderboardData(Request $request): array
     {
-        abort_unless($this->canManageTeam($request), 403);
+        $this->abortUnlessMarketingAccess($request, ['owner', 'manager', 'supervisor_marketing'], 'marketing.leaderboard.view');
 
         $period = in_array($request->query('period'), ['week', 'month', 'year'], true)
             ? $request->query('period')
@@ -530,5 +533,61 @@ class MarketingToolsController extends Controller
             'owner',
             'super_admin',
         ]);
+    }
+
+    protected function permissionsForSection(Request $request, string $section): array
+    {
+        $user = $request->user();
+
+        return match ($section) {
+            'distribusi-lead' => [
+                'canView' => $this->hasMarketingAccess($request, ['supervisor_marketing'], 'marketing.lead-distribution.manage'),
+                'canCreate' => (bool) $user?->can('marketing.lead-distribution.create') || $user?->can('marketing.lead-distribution.manage'),
+                'canUpdate' => (bool) $user?->can('marketing.lead-distribution.update') || $user?->can('marketing.lead-distribution.manage'),
+                'canDelete' => (bool) $user?->can('marketing.lead-distribution.delete') || $user?->can('marketing.lead-distribution.manage'),
+                'canUnlock' => (bool) $user?->can('marketing.lead-distribution.unlock') || $user?->can('marketing.lead-distribution.manage'),
+            ],
+            'monitoring-aktivitas' => [
+                'canView' => $this->hasMarketingAccess($request, ['owner', 'manager', 'supervisor_marketing'], 'marketing.activity.view'),
+                'canCreate' => false,
+                'canUpdate' => false,
+                'canDelete' => false,
+                'canUnlock' => false,
+            ],
+            'leaderboard-sales' => [
+                'canView' => $this->hasMarketingAccess($request, ['owner', 'manager', 'supervisor_marketing'], 'marketing.leaderboard.view'),
+                'canCreate' => false,
+                'canUpdate' => false,
+                'canDelete' => false,
+                'canUnlock' => false,
+            ],
+            default => [
+                'canView' => true,
+                'canCreate' => false,
+                'canUpdate' => false,
+                'canDelete' => false,
+                'canUnlock' => false,
+            ],
+        };
+    }
+
+    protected function defaultRolesForSection(string $section): array
+    {
+        return match ($section) {
+            'distribusi-lead' => ['supervisor_marketing'],
+            'monitoring-aktivitas' => ['owner', 'manager', 'supervisor_marketing'],
+            'leaderboard-sales' => ['owner', 'manager', 'supervisor_marketing'],
+            default => ['marketing', 'area_marketing', 'supervisor_marketing', 'manager', 'owner', 'manajer_pimpro', 'pengawas'],
+        };
+    }
+
+    protected function permissionForSection(string $section): ?string
+    {
+        return match ($section) {
+            'distribusi-lead' => 'marketing.lead-distribution.manage',
+            'monitoring-aktivitas' => 'marketing.activity.view',
+            'leaderboard-sales' => 'marketing.leaderboard.view',
+            default => null,
+        };
     }
 }

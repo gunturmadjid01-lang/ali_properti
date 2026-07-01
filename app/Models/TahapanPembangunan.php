@@ -11,7 +11,7 @@ class TahapanPembangunan extends Model
 {
     use HasFactory, SoftDeletes;
 
-    protected $fillable = ['nama_tahapan', 'bobot_persen', 'urutan', 'status'];
+    protected $fillable = ['nama_tahapan', 'bobot_persen', 'urutan', 'status', 'konteks'];
 
     protected $casts = [
         'bobot_persen' => 'float',

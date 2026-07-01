@@ -32,16 +32,16 @@ function Empty({ text = 'Belum ada data.' }) {
     return <div className="px-5 py-10 text-center text-sm font-bold text-ink-soft dark:text-white/50">{text}</div>;
 }
 
-function Actions({ row, onEdit, onDelete, onLock, type }) {
+function Actions({ row, onEdit, onDelete, onLock, type, canEdit = true, canDelete = true, canLock = true }) {
     return (
         <div className="flex justify-end gap-2">
-            {onEdit && <Button size="sm" variant="outline" type="button" onClick={() => onEdit(row, type)}><PencilLine size={14} /></Button>}
-            {onLock && (
+            {onEdit && canEdit && <Button size="sm" variant="outline" type="button" onClick={() => onEdit(row, type)}><PencilLine size={14} /></Button>}
+            {onLock && canLock && (
                 <Button size="sm" variant="outline" type="button" onClick={() => onLock(row, type)}>
                     {row.record_status === 'locked' ? <Unlock size={14} /> : <Lock size={14} />}
                 </Button>
             )}
-            {onDelete && row.record_status !== 'locked' && !row.is_system && (
+            {onDelete && canDelete && row.record_status !== 'locked' && !row.is_system && (
                 <Button size="sm" variant="outline" type="button" onClick={() => onDelete(row, type)}><Trash2 size={14} /></Button>
             )}
         </div>
@@ -173,7 +173,7 @@ function Pipeline({ data }) {
     );
 }
 
-function CampaignTable({ data, onEdit, onDelete, onLock }) {
+function CampaignTable({ data, onEdit, onDelete, onLock, permissions = {} }) {
     return (
         <Card className="overflow-hidden">
             <div className="overflow-x-auto">
@@ -192,7 +192,7 @@ function CampaignTable({ data, onEdit, onDelete, onLock }) {
                                 <td className="px-4 py-4">{money(row.realisasi_biaya)}</td>
                                 <td className="px-4 py-4">{row.lead_count} / {row.target_lead}</td>
                                 <td className="px-4 py-4"><span className={badge(row.status)}>{row.status}</span></td>
-                                <td className="px-4 py-4"><Actions row={row} onEdit={onEdit} onDelete={onDelete} onLock={onLock} /></td>
+                                <td className="px-4 py-4"><Actions row={row} onEdit={onEdit} onDelete={onDelete} onLock={onLock} canEdit={permissions.canUpdate} canDelete={permissions.canDelete} canLock={permissions.canUnlock} /></td>
                             </tr>
                         ))}
                     </tbody>
@@ -203,7 +203,7 @@ function CampaignTable({ data, onEdit, onDelete, onLock }) {
     );
 }
 
-function ReminderTable({ data, onEdit, onDelete, baseUrl }) {
+function ReminderTable({ data, onEdit, onDelete, baseUrl, permissions = {} }) {
     return (
         <Card className="overflow-hidden">
             <div className="divide-y divide-silver-deep/50 dark:divide-white/10">
@@ -213,8 +213,8 @@ function ReminderTable({ data, onEdit, onDelete, baseUrl }) {
                         <div className="text-sm"><b>{row.remind_at?.replace('T', ' ')}</b><p className="text-xs text-ink-soft">{row.user}</p></div>
                         <span className={badge(row.status)}>{row.status}</span>
                         <div className="flex gap-2">
-                            {row.status === 'menunggu' && <Button size="sm" type="button" onClick={() => router.post(`${baseUrl}/${row.id}/complete`, {}, { preserveScroll: true })}><CheckCircle2 size={14} /> Selesai</Button>}
-                            <Actions row={row} onEdit={onEdit} onDelete={onDelete} />
+                            {row.status === 'menunggu' && permissions.canUpdate && <Button size="sm" type="button" onClick={() => router.post(`${baseUrl}/${row.id}/complete`, {}, { preserveScroll: true })}><CheckCircle2 size={14} /> Selesai</Button>}
+                            <Actions row={row} onEdit={onEdit} onDelete={onDelete} canEdit={permissions.canUpdate} canDelete={permissions.canDelete} />
                         </div>
                     </div>
                 ))}
@@ -224,7 +224,7 @@ function ReminderTable({ data, onEdit, onDelete, baseUrl }) {
     );
 }
 
-function Documents({ data, baseUrl }) {
+function Documents({ data, baseUrl, permissions = {} }) {
     const [reviewRow, setReviewRow] = useState(null);
     const form = useForm({ document_type: '', document_id: '', status: 'valid', catatan_revisi: '' });
     const open = (row) => {
@@ -247,20 +247,20 @@ function Documents({ data, baseUrl }) {
                                     <td className="px-4 py-4 font-bold">{row.source}</td><td className="px-4 py-4">{row.reference}</td><td className="px-4 py-4">{row.customer}</td>
                                     <td className="px-4 py-4">{row.document}</td><td className="px-4 py-4"><a className="font-bold text-emerald-600 underline" href={row.url} target="_blank" rel="noreferrer">{row.file}</a></td>
                                     <td className="px-4 py-4"><span className={badge(row.status)}>{row.status}</span>{row.catatan_revisi && <p className="mt-1 text-xs text-red-600">{row.catatan_revisi}</p>}</td>
-                                    <td className="px-4 py-4"><Button size="sm" variant="outline" onClick={() => open(row)}><FileCheck2 size={14} /> Review</Button></td>
+                                    <td className="px-4 py-4">{permissions.canUpdate && <Button size="sm" variant="outline" onClick={() => open(row)}><FileCheck2 size={14} /> Review</Button>}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
             </Card>
-            <Modal open={Boolean(reviewRow)} onClose={() => setReviewRow(null)} title="Validasi Berkas" size="md">
+            {permissions.canUpdate && <Modal open={Boolean(reviewRow)} onClose={() => setReviewRow(null)} title="Validasi Berkas" size="md">
                 <form className="grid gap-4" onSubmit={submit}>
                     <Dropdown label="Status" value={form.data.status} options={['menunggu', 'valid', 'revisi', 'ditolak'].map((x) => ({ value: x, label: x.replace('_', ' ') }))} onChange={(value) => form.setData('status', value)} />
                     <Textarea label="Catatan Revisi" value={form.data.catatan_revisi} onChange={(e) => form.setData('catatan_revisi', e.target.value)} />
                     <div className="flex justify-end"><Button disabled={form.processing}>Simpan Review</Button></div>
                 </form>
-            </Modal>
+            </Modal>}
         </>
     );
 }
@@ -300,19 +300,21 @@ function Receivables({ data }) {
     );
 }
 
-function TargetCommission({ data, onEdit, onDelete, onLock, setCreateType }) {
+function TargetCommission({ data, onEdit, onDelete, onLock, setCreateType, permissions = {} }) {
     return (
         <div className="grid gap-6">
-            <div className="flex flex-wrap gap-2">
-                <Button onClick={() => setCreateType('target')}><Target size={16} /> Tambah Target</Button>
-                <Button variant="outline" onClick={() => setCreateType('commission')}><BadgeDollarSign size={16} /> Tambah Komisi</Button>
-            </div>
+            {permissions.canCreate && (
+                <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => setCreateType('target')}><Target size={16} /> Tambah Target</Button>
+                    <Button variant="outline" onClick={() => setCreateType('commission')}><BadgeDollarSign size={16} /> Tambah Komisi</Button>
+                </div>
+            )}
             <Card className="overflow-hidden">
                 <h3 className="border-b border-silver-deep/60 px-5 py-4 text-lg font-extrabold dark:border-white/10">Target dan KPI</h3>
                 <div className="overflow-x-auto"><table className="min-w-full text-sm">
                     <thead className="bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-white/5"><tr>{['Perumahan', 'Marketing', 'Periode', 'Lead', 'Survey', 'SPR', 'Closing', 'Nilai', 'Aksi'].map((x) => <th className="px-4 py-3" key={x}>{x}</th>)}</tr></thead>
                     <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">{(data.targets ?? []).map((row) => <tr key={row.id}>
-                        <td className="px-4 py-4 font-semibold">{row.perumahan}</td><td className="px-4 py-4 font-bold">{row.user}</td><td className="px-4 py-4">{row.bulan}/{row.tahun}</td><td className="px-4 py-4">{row.target_lead}</td><td className="px-4 py-4">{row.target_survey}</td><td className="px-4 py-4">{row.target_spr}</td><td className="px-4 py-4">{row.target_closing}</td><td className="px-4 py-4">{money(row.target_nilai_penjualan)}</td><td className="px-4 py-4"><Actions row={row} type="target" onEdit={onEdit} onDelete={onDelete} onLock={onLock} /></td>
+                        <td className="px-4 py-4 font-semibold">{row.perumahan}</td><td className="px-4 py-4 font-bold">{row.user}</td><td className="px-4 py-4">{row.bulan}/{row.tahun}</td><td className="px-4 py-4">{row.target_lead}</td><td className="px-4 py-4">{row.target_survey}</td><td className="px-4 py-4">{row.target_spr}</td><td className="px-4 py-4">{row.target_closing}</td><td className="px-4 py-4">{money(row.target_nilai_penjualan)}</td><td className="px-4 py-4"><Actions row={row} type="target" onEdit={onEdit} onDelete={onDelete} onLock={onLock} canEdit={permissions.canUpdate} canDelete={permissions.canDelete} canLock={permissions.canUnlock} /></td>
                     </tr>)}</tbody>
                 </table></div>
             </Card>
@@ -321,7 +323,7 @@ function TargetCommission({ data, onEdit, onDelete, onLock, setCreateType }) {
                 <div className="overflow-x-auto"><table className="min-w-full text-sm">
                     <thead className="bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-white/5"><tr>{['Perumahan', 'SPR', 'Marketing', 'Dasar', 'Persen', 'Komisi', 'Status', 'Aksi'].map((x) => <th className="px-4 py-3" key={x}>{x}</th>)}</tr></thead>
                     <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">{(data.commissions ?? []).map((row) => <tr key={row.id}>
-                        <td className="px-4 py-4 font-semibold">{row.perumahan}</td><td className="px-4 py-4 font-bold">{row.spr}</td><td className="px-4 py-4">{row.user}</td><td className="px-4 py-4">{money(row.dasar_perhitungan)}</td><td className="px-4 py-4">{row.persentase}%</td><td className="px-4 py-4 font-bold">{money(row.nominal)}</td><td className="px-4 py-4"><span className={badge(row.status)}>{row.status}</span></td><td className="px-4 py-4"><Actions row={row} type="commission" onEdit={onEdit} onDelete={onDelete} onLock={onLock} /></td>
+                        <td className="px-4 py-4 font-semibold">{row.perumahan}</td><td className="px-4 py-4 font-bold">{row.spr}</td><td className="px-4 py-4">{row.user}</td><td className="px-4 py-4">{money(row.dasar_perhitungan)}</td><td className="px-4 py-4">{row.persentase}%</td><td className="px-4 py-4 font-bold">{money(row.nominal)}</td><td className="px-4 py-4"><span className={badge(row.status)}>{row.status}</span></td><td className="px-4 py-4"><Actions row={row} type="commission" onEdit={onEdit} onDelete={onDelete} onLock={onLock} canEdit={permissions.canUpdate} canDelete={permissions.canDelete} canLock={permissions.canUnlock} /></td>
                     </tr>)}</tbody>
                 </table></div>
             </Card>
@@ -329,13 +331,13 @@ function TargetCommission({ data, onEdit, onDelete, onLock, setCreateType }) {
     );
 }
 
-function Templates({ data, onEdit, onDelete, onLock }) {
+function Templates({ data, onEdit, onDelete, onLock, permissions = {} }) {
     const copy = async (text) => navigator.clipboard?.writeText(text);
     return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{(data.rows ?? []).map((row) => (
         <Card className="p-5" key={row.id}>
             <div className="flex items-start justify-between gap-3"><div><strong>{row.nama_template}</strong><p className="text-xs uppercase text-ink-soft">{row.kanal} · {row.tahapan || 'umum'}</p></div><span className={badge(row.status)}>{row.status}</span></div>
             <p className="mt-4 min-h-24 whitespace-pre-wrap rounded-xl bg-silver-soft/80 p-3 text-sm dark:bg-white/5">{row.isi_template}</p>
-            <div className="mt-4 flex justify-between gap-2"><Button size="sm" variant="outline" onClick={() => copy(row.isi_template)}><Copy size={14} /> Salin</Button><Actions row={row} onEdit={onEdit} onDelete={onDelete} onLock={onLock} /></div>
+            <div className="mt-4 flex justify-between gap-2"><Button size="sm" variant="outline" onClick={() => copy(row.isi_template)}><Copy size={14} /> Salin</Button><Actions row={row} onEdit={onEdit} onDelete={onDelete} onLock={onLock} canEdit={permissions.canUpdate} canDelete={permissions.canDelete} canLock={permissions.canUnlock} /></div>
         </Card>
     ))}</div>;
 }
@@ -411,10 +413,10 @@ function CrudModal({ section, row, type, options, baseUrl, onClose }) {
     );
 }
 
-export default function Index({ title, section, baseUrl, data = {}, options = {} }) {
+export default function Index({ title, section, baseUrl, data = {}, options = {}, permissions = {} }) {
     const [editing, setEditing] = useState(null);
     const [createType, setCreateType] = useState(null);
-    const canCreate = ['campaign', 'reminder', 'template'].includes(section);
+    const canCreate = Boolean(permissions.canCreate);
     const deleteRow = (row, type) => {
         if (!window.confirm('Hapus data ini?')) return;
         router.delete(`${baseUrl}/${row.id}`, { data: { type }, preserveScroll: true });
@@ -441,12 +443,12 @@ export default function Index({ title, section, baseUrl, data = {}, options = {}
                 </Card>
                 {section === 'dashboard' && <Dashboard data={data} />}
                 {section === 'pipeline' && <Pipeline data={data} />}
-                {section === 'campaign' && <CampaignTable data={data} onEdit={editRow} onDelete={deleteRow} onLock={lockRow} />}
-                {section === 'reminder' && <ReminderTable data={data} onEdit={editRow} onDelete={deleteRow} baseUrl={baseUrl} />}
-                {section === 'dokumen' && <Documents data={data} baseUrl={baseUrl} />}
+                {section === 'campaign' && <CampaignTable data={data} onEdit={editRow} onDelete={deleteRow} onLock={lockRow} permissions={permissions} />}
+                {section === 'reminder' && <ReminderTable data={data} onEdit={editRow} onDelete={deleteRow} baseUrl={baseUrl} permissions={permissions} />}
+                {section === 'dokumen' && <Documents data={data} baseUrl={baseUrl} permissions={permissions} />}
                 {section === 'piutang' && <Receivables data={data} />}
-                {section === 'target-komisi' && <TargetCommission data={data} onEdit={editRow} onDelete={deleteRow} onLock={lockRow} setCreateType={setCreateType} />}
-                {section === 'template' && <Templates data={data} onEdit={editRow} onDelete={deleteRow} onLock={lockRow} />}
+                {section === 'target-komisi' && <TargetCommission data={data} onEdit={editRow} onDelete={deleteRow} onLock={lockRow} setCreateType={setCreateType} permissions={permissions} />}
+                {section === 'template' && <Templates data={data} onEdit={editRow} onDelete={deleteRow} onLock={lockRow} permissions={permissions} />}
             </div>
             {(createType || editing) && (
                 <CrudModal

@@ -119,6 +119,7 @@ class ProgressPembangunanController extends Controller
                     ->values(),
                 'tahapanPembangunans' => TahapanPembangunan::query()
                     ->where('status', 'aktif')
+                    ->where('konteks', 'unit')
                     ->orderBy('urutan')
                     ->get(['id', 'nama_tahapan', 'bobot_persen'])
                     ->map(fn (TahapanPembangunan $row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)'])
