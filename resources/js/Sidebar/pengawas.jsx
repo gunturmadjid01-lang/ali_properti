@@ -28,7 +28,7 @@ const pengawasSidebar = [
                 link: "/admin/dashboard",
             },
             {
-                title: "Management Proyek",
+                title: "Manajemen Proyek",
                 icon: Home,
                 items: [
                     {
@@ -96,39 +96,43 @@ const pengawasSidebar = [
                         title: "Campaign & Promosi",
                         icon: ClipboardCheck,
                         link: "/admin/marketing/operasional/campaign",
-                        roles: ["pengawas"],
                         permission: "marketing.campaign.manage",
                     },
                 ],
             },
             {
-                title: "Management Logistik",
+                title: "Manajemen Logistik",
                 icon: Boxes,
                 items: [
                     {
                         title: "Permintaan Barang",
                         icon: PackagePlus,
                         link: "/admin/permintaan-barang",
+                        permission: "material-request.view",
                     },
                     {
                         title: "Sisa Material Lokasi",
                         icon: Warehouse,
                         link: "/admin/sisa-material-lokasi",
+                        permission: "site-material-stock.view",
                     },
                     {
                         title: "Pemakaian Material",
                         icon: Boxes,
                         link: "/admin/pemakaian-material",
+                        permission: "material-usage.view",
                     },
                     {
                         title: "Inventaris Aset",
                         icon: Wrench,
                         link: "/admin/inventaris-aset",
+                        permission: "asset-inventory.view",
                     },
                     {
                         title: "Pengembalian Stok",
                         icon: RotateCcw,
                         link: "/admin/pengembalian-material",
+                        permission: "material-return.view",
                     },
                 ],
             },

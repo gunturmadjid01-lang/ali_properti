@@ -25,7 +25,12 @@ class MaterialReturnController extends Controller
             'title' => 'Pengembalian Stok',
             'baseUrl' => route('admin.material-return.index', absolute: false),
             'filters' => ['search' => $search],
-            'canCreate' => (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
+            'permissions' => [
+                'canCreate' => (bool) auth()->user()?->can('material-return.create'),
+                'canReceive' => (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'owner', 'super_admin']),
+                'canLock' => (bool) auth()->check(),
+                'canUnlock' => $this->currentUserCanManageLockedRecords(),
+            ],
             'rows' => MaterialReturn::query()
                 ->with([
                     'gudang:id,nama_gudang',
@@ -83,7 +88,7 @@ class MaterialReturnController extends Controller
 
     public function store(Request $request, MaterialWorkflowService $workflow): RedirectResponse
     {
-        $this->authorizePengawas();
+        abort_unless($this->canCreateReturn(), 403, 'Hanya pengawas yang dapat mengajukan pengembalian stok.');
         $validated = $request->validate([
             'tanggal' => ['required', 'date'],
             'gudang_id' => ['required', 'exists:gudangs,id'],
@@ -124,9 +129,9 @@ class MaterialReturnController extends Controller
         return MaterialReturn::class;
     }
 
-    private function authorizePengawas(): void
+    private function canCreateReturn(): bool
     {
-        abort_unless(auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']), 403, 'Hanya pengawas yang dapat mengajukan pengembalian stok.');
+        return (bool) auth()->user()?->can('material-return.create');
     }
 
     private function canReceive(): bool

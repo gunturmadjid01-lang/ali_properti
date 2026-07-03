@@ -63,8 +63,89 @@ class ApprovalSettingController extends Controller
 
     private function ensureDefaultSettings(): void
     {
+        $roleIds = fn (array $roleNames) => Role::query()
+            ->whereIn('name', $roleNames)
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        $defaults = [
+            'customer' => [
+                'create' => [true, $roleIds(['supervisor_marketing', 'manajer_pimpro'])],
+                'update' => [true, $roleIds(['supervisor_marketing', 'manajer_pimpro'])],
+                'delete' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+            ],
+            'marketing-lead-source' => [
+                'create' => [false, []],
+                'update' => [false, []],
+                'delete' => [false, []],
+            ],
+            'perumahan' => [
+                'create' => [false, []],
+                'update' => [false, []],
+                'delete' => [false, []],
+            ],
+            'detail-rumah' => [
+                'create' => [false, []],
+                'update' => [false, []],
+                'delete' => [false, []],
+            ],
+            'progress' => [
+                'create' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'update' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'delete' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+            ],
+            'site-report' => [
+                'create' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'update' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'delete' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+            ],
+            'quality-inspection' => [
+                'create' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'update' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'delete' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+            ],
+            'field-supervision' => [
+                'create' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'update' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'delete' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+            ],
+            'site-schedule' => [
+                'create' => [false, []],
+                'update' => [false, []],
+                'delete' => [false, []],
+            ],
+            'material-request' => [
+                'create' => [true, $roleIds(['user_area_gudang', 'owner'])],
+                'update' => [true, $roleIds(['user_area_gudang', 'owner'])],
+                'delete' => [true, $roleIds(['owner'])],
+            ],
+            'material-purchase' => [
+                'create' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'update' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'delete' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+            ],
+            'spk-kontraktor' => [
+                'create' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'update' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'delete' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+            ],
+            'spr' => [
+                'create' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'update' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+                'delete' => [true, $roleIds(['manajer_pimpro', 'owner'])],
+            ],
+            'spr-payment' => [
+                'create' => [true, $roleIds(['keuangan', 'admin_keuangan', 'owner'])],
+                'update' => [true, $roleIds(['keuangan', 'admin_keuangan', 'owner'])],
+                'delete' => [true, $roleIds(['keuangan', 'admin_keuangan', 'owner'])],
+            ],
+        ];
+
         foreach (ApprovalResources::modules() as $moduleKey => $module) {
             foreach (ApprovalResources::actions() as $action => $label) {
+                [$requiresApproval, $approverRoleIds] = $defaults[$moduleKey][$action] ?? [false, []];
                 ApprovalSetting::query()->firstOrCreate(
                     [
                         'module_key' => $moduleKey,
@@ -72,8 +153,8 @@ class ApprovalSettingController extends Controller
                     ],
                     [
                         'module_label' => $module['label'],
-                        'requires_approval' => false,
-                        'approver_role_ids' => [],
+                        'requires_approval' => $requiresApproval,
+                        'approver_role_ids' => $approverRoleIds,
                         'is_active' => true,
                     ],
                 );

@@ -13,7 +13,7 @@ class SiteManpowerLog extends Model
     use HasUserAudit, SoftDeletes;
 
     protected $fillable = [
-        'kode_log', 'tanggal', 'perumahan_id', 'detail_rumah_id', 'spk_kontraktor_id',
+        'kode_log', 'tanggal', 'perumahan_id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'site_schedule_id', 'progress_pembangunan_id', 'spk_kontraktor_id',
         'sumber_tenaga_kerja', 'kontraktor', 'nama_mandor', 'mandor', 'tukang',
         'kenek', 'tipe_upah', 'jumlah_periode', 'tarif_mandor', 'tarif_tukang',
         'tarif_kenek', 'nilai_borongan', 'nilai_upah', 'jam_kerja', 'jam_lembur',
@@ -43,5 +43,8 @@ class SiteManpowerLog extends Model
     public function spkKontraktor(): BelongsTo { return $this->belongsTo(SpkKontraktor::class); }
     public function perumahan(): BelongsTo { return $this->belongsTo(Perumahan::class); }
     public function detailRumah(): BelongsTo { return $this->belongsTo(DetailRumah::class); }
+    public function tahapanPembangunan(): BelongsTo { return $this->belongsTo(TahapanPembangunan::class); }
+    public function siteSchedule(): BelongsTo { return $this->belongsTo(SiteSchedule::class); }
+    public function progressPembangunan(): BelongsTo { return $this->belongsTo(ProgressPembangunan::class); }
     public function officeAssets(): BelongsToMany { return $this->belongsToMany(OfficeAsset::class)->withTimestamps(); }
 }

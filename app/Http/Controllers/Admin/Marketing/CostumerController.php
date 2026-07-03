@@ -10,6 +10,7 @@ use App\Http\Requests\Admin\Marketing\UpdateCostumerRequest;
 use App\Models\Costumer;
 use App\Models\MarketingLeadSource;
 use App\Models\MarketingCampaign;
+use App\Services\ApprovalWorkflowService;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -123,32 +124,42 @@ class CostumerController extends Controller
         ]);
     }
 
-    public function store(StoreCostumerRequest $request, MarketingLeadStatusService $leadStatus): RedirectResponse
+    public function store(
+        StoreCostumerRequest $request,
+        MarketingLeadStatusService $leadStatus,
+        ApprovalWorkflowService $approvalWorkflow,
+    ): RedirectResponse
     {
         $this->ensureCampaignAllowed($request, $request->validated('marketing_campaign_id'));
 
-        $customer = Costumer::create([
+        $payload = [
             ...$request->validated(),
             'perumahan_id' => $this->propertyIdForWrite($request, $request->validated('perumahan_id')),
             'kode_costumer' => $this->nextCustomerCode(),
             'status_lead' => 'lead_baru',
             'created_by' => $this->shouldAutoAssignNewCustomer($request) ? $request->user()?->id : null,
             'updated_by' => $request->user()?->id,
-        ]);
+        ];
 
-        $leadStatus->markCustomer(
-            $customer->id,
-            MarketingLeadStatusService::LEAD_BARU,
-            Costumer::class,
-            $customer->id,
-            'Customer baru dibuat.',
-            true
-        );
+        return $approvalWorkflow->create('customer', $payload, function (array $payload) use ($leadStatus): void {
+            $customer = Costumer::create($payload);
 
-        return back()->with('success', 'Calon konsumen berhasil ditambahkan.');
+            $leadStatus->markCustomer(
+                $customer->id,
+                MarketingLeadStatusService::LEAD_BARU,
+                Costumer::class,
+                $customer->id,
+                'Customer baru dibuat.',
+                true
+            );
+        });
     }
 
-    public function update(UpdateCostumerRequest $request, string $id): RedirectResponse
+    public function update(
+        UpdateCostumerRequest $request,
+        string $id,
+        ApprovalWorkflowService $approvalWorkflow,
+    ): RedirectResponse
     {
         $row = Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
@@ -159,25 +170,33 @@ class CostumerController extends Controller
             $this->ensurePerumahanAllowed($request, (int) $row->perumahan_id);
         }
         $this->ensureCampaignAllowed($request, $request->validated('marketing_campaign_id'), (int) $row->perumahan_id);
-        $row->update([
+
+        $payload = [
             ...$request->validated(),
             'perumahan_id' => $this->shouldScopeToActivePerumahan($request) ? $row->perumahan_id : ($request->validated('perumahan_id') ?: $row->perumahan_id),
             'updated_by' => $request->user()?->id,
-        ]);
+        ];
 
-        return back()->with('success', 'Calon konsumen berhasil diperbarui.');
+        return $approvalWorkflow->update('customer', $row, $payload, function (Costumer $row, array $payload): void {
+            $row->update($payload);
+        });
     }
 
-    public function destroy(Request $request, string $id): RedirectResponse
+    public function destroy(
+        Request $request,
+        string $id,
+        ApprovalWorkflowService $approvalWorkflow,
+    ): RedirectResponse
     {
         $row = Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
         $this->abortIfLocked($row);
-        $row->delete();
 
-        return back()->with('success', 'Calon konsumen berhasil dihapus.');
+        return $approvalWorkflow->delete('customer', $row, function (Costumer $row): void {
+            $row->delete();
+        });
     }
 
     protected function fields(): array

@@ -244,7 +244,7 @@ class KprSubmissionController extends Controller
 
     public function unlockFollowUp(Request $request, string $id, string $followUpId): RedirectResponse
     {
-        abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya owner yang dapat membuka lock data.');
+        abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock data.');
 
         $submission = $this->submissionQueryFor($request)->findOrFail($id);
         $followUp = KprFollowUp::query()

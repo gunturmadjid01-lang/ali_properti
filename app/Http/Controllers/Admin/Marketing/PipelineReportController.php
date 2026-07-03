@@ -19,7 +19,7 @@ class PipelineReportController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->abortUnlessMarketingAccess($request, ['manager', 'owner'], 'marketing.pipeline-report.view');
+        $this->abortUnlessMarketingAccess($request, ['manajer_pimpro', 'owner'], 'marketing.pipeline-report.view');
         $dateFrom = $request->query('date_from') ?: now()->startOfMonth()->toDateString();
         $dateTo = $request->query('date_to') ?: now()->toDateString();
         $from = Carbon::parse($dateFrom)->startOfDay();

@@ -155,7 +155,7 @@ export default function Refund({ title, description, baseUrl, filters = {}, rows
                                         <td className="px-4 py-3">
                                             <div className="flex justify-end gap-2">
                                                 {row.can_request && <Button size="sm" type="button" onClick={() => setRequestRow(row)}><RotateCcw size={15} /> Refund</Button>}
-                                                {row.can_approve_manager && <Button size="sm" type="button" onClick={() => setApproval({ row, action: 'manager' })}><CheckCircle2 size={15} /> Approve Manager</Button>}
+                                                {row.can_approve_manager && <Button size="sm" type="button" onClick={() => setApproval({ row, action: 'manager' })}><CheckCircle2 size={15} /> Approve Manajer</Button>}
                                                 {row.can_approve_owner && <Button size="sm" type="button" onClick={() => setApproval({ row, action: 'owner' })}><CheckCircle2 size={15} /> Approve Owner</Button>}
                                                 {row.can_reject && <Button size="sm" type="button" variant="outline" onClick={() => setApproval({ row, action: 'reject' })}><XCircle size={15} /> Tolak</Button>}
                                             </div>

@@ -1,8 +1,8 @@
-import { Link } from '@inertiajs/react';
-import { ShieldCheck, Sparkles } from 'lucide-react';
-import { assets } from '../Data/site';
+import { Link } from "@inertiajs/react";
+import { ShieldCheck, Sparkles } from "lucide-react";
+import { assets } from "../Data/site";
 
-export default function AuthLayout({ children, title = 'Login' }) {
+export default function AuthLayout({ children, title = "Login" }) {
     return (
         <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_16%,rgba(255,241,191,0.55),transparent_24rem),radial-gradient(circle_at_82%_22%,rgba(216,186,114,0.18),transparent_28rem),linear-gradient(135deg,#eff3f7_0%,#dde4ea_56%,#f7efe0_100%)] text-ink">
             <div className="absolute inset-0 -z-10 bg-[linear-gradient(115deg,transparent_0_68%,rgba(31,37,43,0.04)_68%_68.35%,transparent_68.35%_100%)]" />
@@ -28,22 +28,16 @@ export default function AuthLayout({ children, title = 'Login' }) {
                         <span className="inline-flex min-h-9 items-center gap-2 rounded-full border border-champagne/30 bg-white/6 px-4 text-xs font-extrabold uppercase tracking-[0.16em] text-champagne">
                             <Sparkles size={15} /> Akses Internal Properti
                         </span>
-                        <h1 className="mt-5 font-display text-4xl font-extrabold leading-[1.02] lg:text-5xl">
-                            Masuk ke panel kerja untuk mengelola proyek, customer, keuangan, dan legalitas.
-                        </h1>
-                        <p className="mt-5 max-w-lg text-sm leading-7 text-white/72 lg:text-base">
-                            Sistem ini dipakai untuk membagi akses berdasarkan area kerja, supaya tiap tim fokus pada data yang memang menjadi tanggung jawabnya.
-                        </p>
                     </div>
 
                     <div className="mt-10 grid gap-3 sm:grid-cols-2">
                         {[
-                            'Owner',
-                            'Manajer / Pimpro',
-                            'Keuangan',
-                            'Marketing',
-                            'Legal',
-                            'Gudang / Logistik',
+                            "Owner",
+                            "Manajer / Pimpro",
+                            "Keuangan",
+                            "Marketing",
+                            "Legal",
+                            "Gudang / Logistik",
                         ].map((item) => (
                             <div
                                 className="rounded-2xl border border-white/10 bg-white/6 px-4 py-3 text-sm font-bold text-white/80 backdrop-blur"
@@ -52,15 +46,6 @@ export default function AuthLayout({ children, title = 'Login' }) {
                                 {item}
                             </div>
                         ))}
-                    </div>
-
-                    <div className="mt-10 rounded-2xl border border-champagne/18 bg-white/6 p-5 backdrop-blur">
-                        <div className="flex items-start gap-3">
-                            <ShieldCheck className="mt-0.5 text-champagne" size={20} />
-                            <p className="text-sm leading-7 text-white/76">
-                                Login ini disiapkan untuk area internal. Setelah masuk, user diarahkan ke dashboard admin sesuai hak akses yang diberikan.
-                            </p>
-                        </div>
                     </div>
                 </section>
 
@@ -74,7 +59,8 @@ export default function AuthLayout({ children, title = 'Login' }) {
                                 Masuk ke sistem
                             </h2>
                             <p className="mt-2 text-sm leading-6 text-ink-soft">
-                                Gunakan email dan password akun internal untuk melanjutkan.
+                                Gunakan email dan password akun internal untuk
+                                melanjutkan.
                             </p>
                         </div>
 

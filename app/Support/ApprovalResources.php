@@ -3,10 +3,23 @@
 namespace App\Support;
 
 use App\Models\CabangPerusahaan;
+use App\Models\Costumer;
+use App\Models\DetailRumah;
+use App\Models\FieldDefect;
 use App\Models\DokumenLegalitas;
 use App\Models\DokumenLegalitasRumah;
+use App\Models\MarketingLeadSource;
 use App\Models\MasterBank;
+use App\Models\ProgressPembangunan;
 use App\Models\Perumahan;
+use App\Models\QualityInspection;
+use App\Models\SiteReport;
+use App\Models\SiteSchedule;
+use App\Models\Spr;
+use App\Models\SprPayment;
+use App\Models\MaterialPurchase;
+use App\Models\MaterialRequest;
+use App\Models\SpkKontraktor;
 use App\Models\TipePost;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
@@ -25,9 +38,21 @@ class ApprovalResources
                 'label' => 'Management Perumahan',
                 'model' => Perumahan::class,
             ],
+            'detail-rumah' => [
+                'label' => 'Management Detail Rumah',
+                'model' => DetailRumah::class,
+            ],
             'master-bank' => [
                 'label' => 'Management Master Bank',
                 'model' => MasterBank::class,
+            ],
+            'customer' => [
+                'label' => 'Customer / Calon Konsumen',
+                'model' => Costumer::class,
+            ],
+            'marketing-lead-source' => [
+                'label' => 'Marketing Sumber Lead',
+                'model' => MarketingLeadSource::class,
             ],
             'dokumen-legalitas' => [
                 'label' => 'Management Dokumen Legalitas',
@@ -40,6 +65,46 @@ class ApprovalResources
             'tipe-post' => [
                 'label' => 'Management Tipe Post',
                 'model' => TipePost::class,
+            ],
+            'progress' => [
+                'label' => 'Progress Pembangunan',
+                'model' => ProgressPembangunan::class,
+            ],
+            'site-schedule' => [
+                'label' => 'Jadwal Lapangan',
+                'model' => SiteSchedule::class,
+            ],
+            'site-report' => [
+                'label' => 'Laporan Lapangan',
+                'model' => SiteReport::class,
+            ],
+            'quality-inspection' => [
+                'label' => 'Kontrol Kualitas',
+                'model' => QualityInspection::class,
+            ],
+            'field-supervision' => [
+                'label' => 'Pengawasan Lapangan',
+                'model' => FieldDefect::class,
+            ],
+            'material-request' => [
+                'label' => 'Permintaan Material',
+                'model' => MaterialRequest::class,
+            ],
+            'material-purchase' => [
+                'label' => 'Pembelian Material',
+                'model' => MaterialPurchase::class,
+            ],
+            'spk-kontraktor' => [
+                'label' => 'SPK Kontraktor',
+                'model' => SpkKontraktor::class,
+            ],
+            'spr' => [
+                'label' => 'Surat Pemesanan Rumah',
+                'model' => Spr::class,
+            ],
+            'spr-payment' => [
+                'label' => 'Pembayaran SPR',
+                'model' => SprPayment::class,
             ],
             'user' => [
                 'label' => 'Management User',

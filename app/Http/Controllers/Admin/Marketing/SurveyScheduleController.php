@@ -88,8 +88,8 @@ class SurveyScheduleController extends Controller
                 'updated_by_name' => $schedule->updater?->name ?? '-',
                 'can_edit' => ($schedule->record_status ?? 'draft') !== 'locked',
                 'can_delete' => ($schedule->record_status ?? 'draft') !== 'locked',
-                'can_lock' => ($schedule->record_status ?? 'draft') !== 'locked',
-                'can_unlock' => auth()->user()?->hasAnyRole(['owner', 'super_admin']) && ($schedule->record_status ?? 'draft') === 'locked',
+                'can_lock' => (bool) auth()->check() && ($schedule->record_status ?? 'draft') !== 'locked',
+                'can_unlock' => $this->currentUserCanManageLockedRecords() && ($schedule->record_status ?? 'draft') === 'locked',
             ]);
 
         return Inertia::render('Admin/Marketing/SurveySchedule/Index', [

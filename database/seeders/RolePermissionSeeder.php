@@ -24,7 +24,6 @@ class RolePermissionSeeder extends Seeder
             'roles.view',
             'roles.manage',
             'approval.view',
-            'approval.manage',
             'approval.settings',
 
             'cabang.view',
@@ -45,7 +44,30 @@ class RolePermissionSeeder extends Seeder
             'customer.update',
             'customer.delete',
             'customer.follow-up',
+            'booking.view',
+            'booking.create',
+            'booking.update',
+            'booking.delete',
             'booking.manage',
+            'spr-payment.view',
+            'spr-payment.create',
+            'spr-payment.update',
+            'spr-payment.delete',
+            'kpr.view',
+            'kpr.create',
+            'kpr.update',
+            'kpr.delete',
+            'kpr-akad.view',
+            'kpr-akad.create',
+            'kpr-akad.update',
+            'kpr-akad.delete',
+            'handover-customer.view',
+            'handover-customer.create',
+            'handover-customer.update',
+            'handover-customer.delete',
+            'payment-simulation.view',
+            'pricelist.view',
+            'unit-stock.view',
             'marketing.lead-source.manage',
             'marketing.lead-report.view',
             'marketing.pipeline.view',
@@ -116,6 +138,7 @@ class RolePermissionSeeder extends Seeder
             'laporan.export',
 
             'master-bank.manage',
+            'bank-account-ledger.view',
             'tipe-post.manage',
             'kelompok-hpp.manage',
             'settings.manage',
@@ -123,7 +146,6 @@ class RolePermissionSeeder extends Seeder
 
         $matrixActions = [
             'view', 'create', 'update', 'delete', 'unlock',
-            'approve_manager', 'approve_owner', 'approve_finance', 'approve_admin',
         ];
         $matrixModules = [
             'dashboard' => ['view'],
@@ -139,8 +161,8 @@ class RolePermissionSeeder extends Seeder
             'kelompok-hpp' => ['view', 'create', 'update', 'delete', 'unlock'],
             'customer' => $matrixActions,
             'customer-follow-up' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'booking' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
-            'spr-payment' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_finance'],
+            'booking' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'spr-payment' => ['view', 'create', 'update', 'delete', 'unlock'],
             'kpr' => ['view', 'create', 'update', 'delete', 'unlock'],
             'cash-purchase' => $matrixActions,
             'kpr-akad' => ['view', 'create', 'update', 'delete', 'unlock'],
@@ -153,28 +175,28 @@ class RolePermissionSeeder extends Seeder
             'marketing-pipeline' => ['view'],
             'marketing-campaign' => ['view', 'create', 'update', 'delete', 'unlock'],
             'marketing-reminder' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'marketing-document-review' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
+            'marketing-document-review' => ['view', 'create', 'update', 'delete', 'unlock'],
             'marketing-template' => ['view', 'create', 'update', 'delete', 'unlock'],
             'marketing-lead-distribution' => ['view', 'create', 'update', 'delete', 'unlock'],
             'marketing-activity' => ['view'],
             'marketing-target' => ['view', 'create', 'update', 'delete', 'unlock'],
             'site-schedule' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'progress' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
-            'site-report' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
-            'quality-inspection' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
-            'field-supervision' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
-            'spk-kontraktor' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner'],
+            'progress' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'site-report' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'quality-inspection' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'field-supervision' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'spk-kontraktor' => ['view', 'create', 'update', 'delete', 'unlock'],
             'spk-payment' => ['view', 'create', 'update'],
-            'asset-inventory' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner', 'approve_admin'],
+            'asset-inventory' => ['view', 'create', 'update', 'delete', 'unlock'],
             'master-material' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'material-request' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_owner', 'approve_admin'],
+            'material-request' => ['view', 'create', 'update', 'delete', 'unlock'],
             'material-usage' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'material-return' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_admin'],
-            'material-purchase' => ['view', 'create', 'update', 'delete', 'unlock', 'approve_manager', 'approve_owner', 'approve_finance'],
+            'material-return' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'material-purchase' => ['view', 'create', 'update', 'delete', 'unlock'],
             'site-material-stock' => ['view'],
             'keuangan' => $matrixActions,
             'bank-account-ledger' => ['view'],
-            'refund-spr' => ['view', 'create', 'update', 'delete', 'approve_manager', 'approve_owner', 'approve_finance'],
+            'refund-spr' => ['view', 'create', 'update', 'delete'],
             'hpp' => ['view', 'create', 'update', 'delete'],
             'laporan' => ['view'],
         ];
@@ -184,6 +206,10 @@ class RolePermissionSeeder extends Seeder
             }
         }
         $permissions = array_values(array_unique($permissions));
+        $deprecatedApprovalPermissions = ['approve_manager', 'approve_owner', 'approve_finance', 'approve_admin'];
+        Permission::query()
+            ->whereIn('name', $deprecatedApprovalPermissions)
+            ->delete();
         $ownerBlockedPrefixes = [
             'marketing.lead-source.',
             'marketing-lead-source.',
@@ -196,7 +222,21 @@ class RolePermissionSeeder extends Seeder
             'marketing.target-commission.',
             'marketing-target.',
         ];
-        $ownerPermissions = array_values(array_filter($permissions, fn (string $permission) => ! collect($ownerBlockedPrefixes)->contains(fn (string $prefix) => str_starts_with($permission, $prefix))));
+        $ownerAllowedWritePermissions = [
+            'roles.manage',
+            'approval.settings',
+        ];
+        $ownerPermissions = array_values(array_filter($permissions, function (string $permission) use ($ownerAllowedWritePermissions, $ownerBlockedPrefixes) {
+            if (in_array($permission, $ownerAllowedWritePermissions, true)) {
+                return true;
+            }
+
+            if (str_ends_with($permission, '.create') || str_ends_with($permission, '.update') || str_ends_with($permission, '.delete') || str_ends_with($permission, '.unlock') || str_ends_with($permission, '.manage')) {
+                return false;
+            }
+
+            return ! collect($ownerBlockedPrefixes)->contains(fn (string $prefix) => str_starts_with($permission, $prefix));
+        }));
 
         foreach ($permissions as $permission) {
             Permission::findOrCreate($permission, 'web');
@@ -231,6 +271,38 @@ class RolePermissionSeeder extends Seeder
                 'customer.view',
                 'customer.create',
                 'customer.update',
+                'customer.follow-up',
+                'booking.view',
+                'booking.create',
+                'booking.update',
+                'spr-payment.view',
+                'spr-payment.create',
+                'spr-payment.update',
+                'kpr.view',
+                'kpr.create',
+                'kpr.update',
+                'kpr-akad.view',
+                'kpr-akad.create',
+                'kpr-akad.update',
+                'handover-customer.view',
+                'handover-customer.create',
+                'handover-customer.update',
+                'unit-stock.view',
+                'pricelist.view',
+                'payment-simulation.view',
+                'refund-spr.view',
+                'marketing.lead-source.manage',
+                'marketing.lead-report.view',
+                'marketing.pipeline.view',
+                'marketing.pipeline-report.view',
+                'marketing.campaign.manage',
+                'marketing.reminder.manage',
+                'marketing.document-review.manage',
+                'marketing.lead-distribution.manage',
+                'marketing.activity.view',
+                'marketing.target-commission.manage',
+                'marketing.leaderboard.view',
+                'marketing.receivable.view',
                 'dokumen-legalitas.view',
                 'dokumen-legalitas.create',
                 'dokumen-legalitas.update',
@@ -238,7 +310,32 @@ class RolePermissionSeeder extends Seeder
                 'dokumen-customer.create',
                 'dokumen-customer.update',
                 'progress.view',
+                'site-schedule.view',
+                'site-report.view',
+                'quality-inspection.view',
+                'field-supervision.view',
+                'spk-kontraktor.view',
+                'spk-payment.view',
+                'kpr.view',
+                'kpr-akad.view',
+                'handover-customer.view',
+                'master-material.view',
+                'material-request.view',
+                'material-purchase.view',
+                'material-usage.view',
+                'material-return.view',
+                'site-material-stock.view',
+                'asset-inventory.view',
                 'keuangan.view',
+                'keuangan.create',
+                'bank-account-ledger.view',
+                'buku-besar.view',
+                'neraca-saldo.view',
+                'laba-rugi.view',
+                'neraca.view',
+                'arus-kas.view',
+                'piutang.view',
+                'hutang.view',
                 'hpp.view',
                 'laporan.view',
                 'master-bank.manage',
@@ -248,7 +345,6 @@ class RolePermissionSeeder extends Seeder
             'manajer_pimpro' => [
                 'dashboard.view',
                 'approval.view',
-                'approval.manage',
                 'cabang.view',
                 'perumahan.view',
                 'perumahan.create',
@@ -263,6 +359,7 @@ class RolePermissionSeeder extends Seeder
                 'progress.view',
                 'progress.create',
                 'progress.update',
+                'asset-inventory.view',
                 'keuangan.view',
                 'hpp.view',
                 'laporan.view',

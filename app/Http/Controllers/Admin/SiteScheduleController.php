@@ -75,8 +75,8 @@ class SiteScheduleController extends Controller
                     'updated_by_name' => $row->updater?->name ?? '-',
                     'terlambat' => $row->status !== 'selesai' && $row->tanggal_target?->isPast(),
                     'record_status' => $row->record_status ?? 'draft',
-                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'manajer_pimpro', 'owner', 'super_admin']),
-                    'can_unlock' => (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin']),
+                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+                    'can_unlock' => $this->currentUserCanManageLockedRecords(),
                     'can_edit' => ($row->record_status ?? 'draft') !== 'locked',
                     'can_delete' => ($row->record_status ?? 'draft') !== 'locked',
                 ]),
@@ -123,14 +123,14 @@ class SiteScheduleController extends Controller
 
     public function lock(string $id): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci jadwal.');
 
         return $this->traitLock($id);
     }
 
     public function unlock(string $id): RedirectResponse
     {
-        abort_unless(auth()->user()?->hasAnyRole(['owner', 'super_admin']), 403, 'Hanya owner yang dapat membuka lock jadwal.');
+        abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock jadwal.');
 
         return $this->traitUnlock($id);
     }

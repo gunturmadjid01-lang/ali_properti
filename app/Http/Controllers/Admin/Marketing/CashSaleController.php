@@ -223,8 +223,8 @@ class CashSaleController extends Controller
             'created_by' => $sale->handler?->name ?? '-',
             'record_status' => $sale->record_status ?? 'draft',
             'record_status_label' => ($sale->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-            'can_lock' => ($sale->record_status ?? 'draft') !== 'locked',
-            'can_unlock' => (bool) request()->user()?->hasAnyRole(['owner', 'super_admin']) && ($sale->record_status ?? 'draft') === 'locked',
+            'can_lock' => ($sale->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+            'can_unlock' => $this->currentUserCanManageLockedRecords() && ($sale->record_status ?? 'draft') === 'locked',
             'can_handover' => $sale->status_pembayaran === CashSale::STATUS_LUNAS,
             'payments' => $sale->payments->sortByDesc('tanggal_pembayaran')->values()->map(fn (CashSalePayment $payment) => [
                 'id' => $payment->id,

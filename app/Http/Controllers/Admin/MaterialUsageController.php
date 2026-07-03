@@ -32,6 +32,13 @@ class MaterialUsageController extends Controller
         return Inertia::render('Admin/MaterialUsage/Index', [
             'title' => 'Pemakaian Material',
             'baseUrl' => route('admin.material-usage.index', absolute: false),
+            'permissions' => [
+                'canCreate' => (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
+                'canUpdate' => (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
+                'canDelete' => (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
+                'canLock' => (bool) auth()->check(),
+                'canUnlock' => $this->currentUserCanManageLockedRecords(),
+            ],
             'filters' => [
                 'search' => $search,
                 'perumahan_id' => $perumahanId,
@@ -83,10 +90,10 @@ class MaterialUsageController extends Controller
                     'keterangan' => $row->keterangan,
                     'foto_url' => $row->foto ? route('media', ['path' => $row->foto], false) : null,
                     'record_status' => $row->record_status ?? 'draft',
-                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked',
-                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked',
-                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
-                    'can_unlock' => (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin']),
+                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
+                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
+                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+                    'can_unlock' => $this->currentUserCanManageLockedRecords(),
                     'created_by_name' => $row->creator?->name ?? '-',
                     'updated_by_name' => $row->updater?->name ?? '-',
                 ]),
@@ -199,10 +206,18 @@ class MaterialUsageController extends Controller
 
     private function ensureProgressMatches(array $validated): void
     {
-        $progress = ProgressPembangunan::query()->findOrFail($validated['progress_pembangunan_id']);
+        $progress = ProgressPembangunan::query()
+            ->with(['detailRumah:id,perumahan_id', 'siteSchedule:id,perumahan_id,detail_rumah_id,tahapan_pembangunan_id'])
+            ->findOrFail($validated['progress_pembangunan_id']);
 
         abort_unless($progress->approval_status === 'approved', 422, 'Pemakaian material hanya dapat dikaitkan ke progress yang sudah disetujui.');
-        abort_unless((int) $progress->detail_rumah_id === (int) ($validated['detail_rumah_id'] ?? 0), 422, 'Progress tidak sesuai dengan unit yang dipilih.');
+        $progressPerumahanId = (string) ($progress->detailRumah?->perumahan_id ?? $progress->siteSchedule?->perumahan_id ?? '');
+        abort_unless($progressPerumahanId === (string) $validated['perumahan_id'], 422, 'Progress tidak sesuai dengan perumahan yang dipilih.');
+        if (! empty($progress->detail_rumah_id)) {
+            abort_unless((string) $progress->detail_rumah_id === (string) ($validated['detail_rumah_id'] ?? ''), 422, 'Progress tidak sesuai dengan unit yang dipilih.');
+        } elseif (! empty($validated['detail_rumah_id'])) {
+            abort_unless(false, 422, 'Progress kawasan tidak boleh dipasangkan ke unit rumah.');
+        }
         abort_unless((int) $progress->tahapan_pembangunan_id === (int) $validated['tahapan_pembangunan_id'], 422, 'Progress tidak sesuai dengan tahapan yang dipilih.');
     }
 
@@ -213,14 +228,19 @@ class MaterialUsageController extends Controller
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
             'detailRumahs' => DetailRumah::query()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}", 'perumahan_id' => (string) $row->perumahan_id])->values(),
-            'tahapanPembangunans' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'unit')->orderBy('urutan')->get(['id', 'nama_tahapan'])
-                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan])->values(),
-            'progressPembangunans' => ProgressPembangunan::query()->where('approval_status', 'approved')->latest('tanggal')->get(['id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'tanggal', 'nama_progress', 'persentase'])
+            'tahapanPembangunansUnit' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'unit')->orderBy('urutan')->get(['id', 'nama_tahapan', 'bobot_persen'])
+                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)'])->values(),
+            'tahapanPembangunansKawasan' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'kawasan')->orderBy('urutan')->get(['id', 'nama_tahapan', 'bobot_persen'])
+                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)'])->values(),
+            'progressPembangunans' => ProgressPembangunan::query()->with(['detailRumah:id,perumahan_id', 'siteSchedule:id,perumahan_id,detail_rumah_id,tahapan_pembangunan_id'])
+                ->where('approval_status', 'approved')->latest('tanggal')->get(['id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'site_schedule_id', 'tanggal', 'nama_progress', 'persentase'])
                 ->map(fn ($row) => [
                     'value' => (string) $row->id,
                     'label' => ($row->nama_progress ?: 'Progress').' - '.optional($row->tanggal)->format('Y-m-d')." - {$row->persentase}%",
+                    'perumahan_id' => (string) ($row->detailRumah?->perumahan_id ?? $row->siteSchedule?->perumahan_id ?? ''),
                     'detail_rumah_id' => (string) $row->detail_rumah_id,
                     'tahapan_pembangunan_id' => (string) $row->tahapan_pembangunan_id,
+                    'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),
                 ])->values(),
             'siteStocks' => SiteMaterialStock::query()->with(['barangMaterial:id,nama_barang,satuan', 'gudang:id,nama_gudang'])->where('qty_available', '>', 0)->get()
                 ->map(fn ($row) => [

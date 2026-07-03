@@ -65,8 +65,8 @@ export default function Payment({ title, description, baseUrl, pageUrl, rows, fi
                                     <div className="grid gap-1">
                                         <p className="text-xs font-extrabold uppercase tracking-wider text-ink-soft">{row.nomor_spk}</p>
                                         <h3 className="text-xl font-extrabold">{row.judul_pekerjaan}</h3>
-                                        <p className="font-semibold">{row.kontraktor} — {row.perumahan} / {row.unit}</p>
-                                        <p className="text-sm text-ink-soft">Total SPK {money(row.nilai_kontrak)} · {row.status} · {row.record_status_label}</p>
+                                        <p className="font-semibold">{row.kontraktor} - {row.perumahan} / {row.unit}</p>
+                                        <p className="text-sm text-ink-soft">Total SPK {money(row.nilai_kontrak)} | {row.status} | {row.record_status_label}</p>
                                         <p className={`text-sm font-bold ${row.hpp_plan_exists ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}`}>
                                             {row.hpp_plan_exists ? `Rencana HPP ${row.hpp_plan_label}: ${money(row.hpp_plan_total)}` : `Rencana HPP ${row.hpp_plan_label} belum diisi.`}
                                         </p>
@@ -78,9 +78,9 @@ export default function Payment({ title, description, baseUrl, pageUrl, rows, fi
                                     {row.payments.map((payment) => (
                                         <div className="flex flex-col gap-3 rounded-lg border border-silver-deep/60 p-4 dark:border-white/10 lg:flex-row lg:items-center lg:justify-between" key={payment.id}>
                                             <div>
-                                                <p className="font-extrabold">Termin {payment.termin_ke} — {money(payment.nominal)}</p>
+                                                <p className="font-extrabold">Termin {payment.termin_ke} - {money(payment.nominal)}</p>
                                                 <p className="text-sm text-ink-soft">
-                                                    Jatuh tempo {payment.tanggal_jatuh_tempo || '-'} · Bayar {payment.tanggal_pembayaran || '-'} · {payment.status_label}
+                                                    Jatuh tempo {payment.tanggal_jatuh_tempo || '-'} | Bayar {payment.tanggal_pembayaran || '-'} | {payment.status_label}
                                                 </p>
                                                 {payment.opname && <p className="text-sm font-semibold">Opname: {payment.opname}</p>}
                                             </div>
@@ -136,7 +136,7 @@ export default function Payment({ title, description, baseUrl, pageUrl, rows, fi
                             <p className="font-extrabold">Rincian Termin</p>
                             {detail.payments.map((payment) => (
                                 <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10" key={payment.id}>
-                                    <p className="font-extrabold">Termin {payment.termin_ke} — {money(payment.nominal)}</p>
+                                    <p className="font-extrabold">Termin {payment.termin_ke} - {money(payment.nominal)}</p>
                                     <p>Jatuh tempo: {payment.tanggal_jatuh_tempo || '-'}</p>
                                     <p>Tanggal bayar: {payment.tanggal_pembayaran || '-'}</p>
                                     <p>Status: {payment.status_label}</p>

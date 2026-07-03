@@ -1,6 +1,6 @@
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import { CheckCircle2, Edit3, Eye, LoaderCircle, LockKeyhole, Save, Search, Trash2, Unlock, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
 import { Button, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
@@ -30,16 +30,19 @@ function money(value) {
     }).format(Number(value ?? 0));
 }
 
-export default function Index({ title, description, baseUrl, rows, filters = {}, options }) {
+export default function Index({ title, description, baseUrl, rows, filters = {}, options, permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [filterPerumahan, setFilterPerumahan] = useState(filters.perumahan_id ?? '');
     const [filterUnit, setFilterUnit] = useState(filters.detail_rumah_id ?? '');
     const [filterTahapan, setFilterTahapan] = useState(filters.tahapan_pembangunan_id ?? '');
     const [editing, setEditing] = useState(null);
     const [detail, setDetail] = useState(null);
-    const { auth } = usePage().props;
-    const roles = auth?.user?.roles ?? [];
-    const canManageLock = roles.some((role) => ['owner', 'super_admin'].includes(role));
+    const canCreate = permissions.canCreate ?? false;
+    const canUpdate = permissions.canUpdate ?? false;
+    const canDelete = permissions.canDelete ?? false;
+    const canApprove = permissions.canApprove ?? false;
+    const canLock = permissions.canLock ?? false;
+    const canUnlock = permissions.canUnlock ?? false;
     const form = useForm({
         perumahan_id: '',
         detail_rumah_id: '',
@@ -59,8 +62,21 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
 
         return options.detailRumahs.filter((item) => item.perumahan_id === String(form.data.perumahan_id));
     }, [form.data.perumahan_id, options.detailRumahs]);
+    const tahapanPembangunansUnit = options.tahapanPembangunansUnit ?? options.tahapanPembangunans ?? [];
+    const tahapanPembangunansKawasan = options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? [];
+    const tahapanPembangunans = useMemo(
+        () => (form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan),
+        [form.data.detail_rumah_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+    );
     const scheduleOptions = useMemo(() => (options.siteSchedules ?? []).filter((item) => {
-        if (form.data.detail_rumah_id && item.detail_rumah_id !== String(form.data.detail_rumah_id)) {
+        if (form.data.perumahan_id && item.perumahan_id !== String(form.data.perumahan_id)) {
+            return false;
+        }
+        if (form.data.detail_rumah_id) {
+            if (item.detail_rumah_id !== String(form.data.detail_rumah_id)) {
+                return false;
+            }
+        } else if (item.detail_rumah_id) {
             return false;
         }
         if (form.data.tahapan_pembangunan_id && item.tahapan_pembangunan_id !== String(form.data.tahapan_pembangunan_id)) {
@@ -68,6 +84,20 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
         }
         return true;
     }), [form.data.detail_rumah_id, form.data.tahapan_pembangunan_id, options.siteSchedules]);
+
+    useEffect(() => {
+        if (!form.data.tahapan_pembangunan_id) {
+            return;
+        }
+
+        const valid = tahapanPembangunans.some((option) => option.value === String(form.data.tahapan_pembangunan_id));
+
+        if (!valid) {
+            form.setData('tahapan_pembangunan_id', '');
+            form.setData('site_schedule_id', '');
+            form.setData('nama_progress', '');
+        }
+    }, [form, form.data.tahapan_pembangunan_id, tahapanPembangunans]);
 
     const resetForm = () => {
         setEditing(null);
@@ -132,115 +162,129 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                     <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">{description}</p>
                 </section>
 
-                <Form
-                    collapsible
-                    title="Tambah Progress Pembangunan"
-                    description="Pengawas mengisi progress lapangan dan bukti foto. Manager lalu menyetujui sebelum progress dihitung ke unit."
-                    onSubmit={submit}
-                    actions={(
-                        <>
-                            {editing && (
-                                <Button type="button" variant="outline" onClick={resetForm}>
-                                    <X size={17} />
-                                    Batal Edit
+                {canCreate ? (
+                    <Form
+                        collapsible
+                        title="Tambah Progress Pembangunan"
+                        description="Pengawas mengisi progress lapangan dan bukti foto. Manajer lalu menyetujui sebelum progress dihitung ke unit."
+                        onSubmit={submit}
+                        actions={(
+                            <>
+                                {editing && canUpdate && (
+                                    <Button type="button" variant="outline" onClick={resetForm}>
+                                        <X size={17} />
+                                        Batal Edit
+                                    </Button>
+                                )}
+                                <Button type="submit" disabled={form.processing}>
+                                    {form.processing ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}
+                                    {editing ? 'Simpan Perubahan' : 'Kirim Progress'}
                                 </Button>
-                            )}
-                            <Button type="submit" disabled={form.processing}>
-                            {form.processing ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}
-                                {editing ? 'Simpan Perubahan' : 'Kirim Progress'}
-                            </Button>
-                        </>
-                    )}
-                >
-                    <FormErrorSummary errors={form.errors} />
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Perumahan</span>
-                            <Dropdown
-                                value={form.data.perumahan_id}
-                                label="Pilih Perumahan"
-                                options={options.perumahans}
-                                onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '' })}
-                            />
+                            </>
+                        )}
+                    >
+                        <FormErrorSummary errors={form.errors} />
+                        <div className="grid gap-4 md:grid-cols-3">
+                            <div className="grid gap-2">
+                                <span className="text-sm font-extrabold">Perumahan</span>
+                                <Dropdown
+                                    value={form.data.perumahan_id}
+                                    label="Pilih Perumahan"
+                                    options={options.perumahans}
+                                    onChange={(value) => form.setData({
+                                        ...form.data,
+                                        perumahan_id: value,
+                                        detail_rumah_id: '',
+                                        tahapan_pembangunan_id: '',
+                                        site_schedule_id: '',
+                                        nama_progress: '',
+                                    })}
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <span className="text-sm font-extrabold">Unit Rumah</span>
+                                <Dropdown
+                                    value={form.data.detail_rumah_id}
+                                    label="Pilih Unit"
+                                    options={detailRumahOptions}
+                                    onChange={(value, selected) => form.setData({
+                                        ...form.data,
+                                        detail_rumah_id: value,
+                                        perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id,
+                                        tahapan_pembangunan_id: '',
+                                        site_schedule_id: '',
+                                        nama_progress: '',
+                                    })}
+                                />
+                            </div>
+                            <div className="grid gap-2">
+                                <span className="text-sm font-extrabold">Tahapan Pembangunan</span>
+                                <Dropdown
+                                    value={form.data.tahapan_pembangunan_id}
+                                    label={form.data.detail_rumah_id ? 'Pilih Tahapan Rumah' : 'Pilih Tahapan Kawasan'}
+                                    options={tahapanPembangunans}
+                                    onChange={(value) => form.setData({ ...form.data, tahapan_pembangunan_id: value, site_schedule_id: '', nama_progress: '' })}
+                                />
+                            </div>
                         </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Unit Rumah</span>
-                            <Dropdown
-                                value={form.data.detail_rumah_id}
-                                label="Pilih Unit"
-                                options={detailRumahOptions}
-                                onChange={(value, selected) => form.setData({
-                                    ...form.data,
-                                    detail_rumah_id: value,
-                                    perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id,
-                                    site_schedule_id: '',
-                                    nama_progress: '',
-                                })}
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Tahapan Pembangunan</span>
-                            <Dropdown
-                                value={form.data.tahapan_pembangunan_id}
-                                label="Pilih Tahapan"
-                                options={options.tahapanPembangunans}
-                                onChange={(value) => form.setData({ ...form.data, tahapan_pembangunan_id: value, site_schedule_id: '', nama_progress: '' })}
-                            />
-                        </div>
-                    </div>
 
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Nama Progress</span>
-                            <Dropdown
-                                label={form.data.detail_rumah_id && form.data.tahapan_pembangunan_id ? 'Pilih dari Jadwal Lapangan' : 'Pilih unit dan tahapan dulu'}
-                                value={form.data.site_schedule_id}
-                                options={scheduleOptions}
-                                disabled={!form.data.detail_rumah_id || !form.data.tahapan_pembangunan_id}
-                                onChange={(value, selected) => form.setData({
-                                    ...form.data,
-                                    site_schedule_id: value,
-                                    nama_progress: selected?.nama_pekerjaan ?? '',
-                                })}
+                        <div className="grid gap-4 md:grid-cols-3">
+                            <div className="grid gap-2">
+                                <span className="text-sm font-extrabold">Nama Progress</span>
+                                <Dropdown
+                                    label={form.data.tahapan_pembangunan_id ? 'Pilih dari Jadwal Lapangan' : 'Pilih perumahan dan tahapan dulu'}
+                                    value={form.data.site_schedule_id}
+                                    options={scheduleOptions}
+                                    disabled={!form.data.perumahan_id || !form.data.tahapan_pembangunan_id}
+                                    onChange={(value, selected) => form.setData({
+                                        ...form.data,
+                                        site_schedule_id: value,
+                                        nama_progress: selected?.nama_pekerjaan ?? '',
+                                    })}
+                                />
+                                {form.errors.site_schedule_id && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.site_schedule_id}</span>}
+                                {form.errors.nama_progress && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.nama_progress}</span>}
+                            </div>
+                            <Input
+                                label="Tanggal"
+                                type="date"
+                                value={form.data.tanggal}
+                                error={form.errors.tanggal}
+                                onChange={(event) => form.setData('tanggal', event.target.value)}
                             />
-                            {form.errors.site_schedule_id && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.site_schedule_id}</span>}
-                            {form.errors.nama_progress && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.nama_progress}</span>}
-                        </div>
-                        <Input
-                            label="Tanggal"
-                            type="date"
-                            value={form.data.tanggal}
-                            error={form.errors.tanggal}
-                            onChange={(event) => form.setData('tanggal', event.target.value)}
-                        />
-                        <Input
-                            label="Progress (%)"
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={form.data.persentase}
-                            error={form.errors.persentase}
-                            onChange={(event) => form.setData('persentase', event.target.value)}
-                        />
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Bukti Foto</span>
-                            <input
-                                type="file"
-                                accept="image/*"
-                                className="min-h-11 w-full rounded-lg border border-silver-deep/70 bg-white/85 px-4 py-2.5 text-sm font-semibold text-ink outline-none file:mr-4 file:rounded-md file:border-0 file:bg-ink file:px-4 file:py-2 file:text-sm file:font-bold file:text-white dark:border-white/10 dark:bg-white/8 dark:text-white"
-                                onChange={(event) => form.setData('foto', event.target.files?.[0] ?? null)}
+                            <Input
+                                label="Progress (%)"
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={form.data.persentase}
+                                error={form.errors.persentase}
+                                onChange={(event) => form.setData('persentase', event.target.value)}
                             />
-                            {form.errors.foto && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.foto}</span>}
+                            <div className="grid gap-2">
+                                <span className="text-sm font-extrabold">Bukti Foto</span>
+                                <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="min-h-11 w-full rounded-lg border border-silver-deep/70 bg-white/85 px-4 py-2.5 text-sm font-semibold text-ink outline-none file:mr-4 file:rounded-md file:border-0 file:bg-ink file:px-4 file:py-2 file:text-sm file:font-bold file:text-white dark:border-white/10 dark:bg-white/8 dark:text-white"
+                                    onChange={(event) => form.setData('foto', event.target.files?.[0] ?? null)}
+                                />
+                                {form.errors.foto && <span className="text-xs font-bold text-red-600 dark:text-red-300">{form.errors.foto}</span>}
+                            </div>
                         </div>
-                    </div>
 
-                    <Textarea
-                        label="Keterangan"
-                        value={form.data.keterangan}
-                        error={form.errors.keterangan}
-                        onChange={(event) => form.setData('keterangan', event.target.value)}
-                    />
-                </Form>
+                        <Textarea
+                            label="Keterangan"
+                            value={form.data.keterangan}
+                            error={form.errors.keterangan}
+                            onChange={(event) => form.setData('keterangan', event.target.value)}
+                        />
+                    </Form>
+                ) : (
+                    <section className="rounded-lg border border-dashed border-silver-deep/70 bg-silver-soft/40 p-6 text-sm text-ink-soft dark:border-white/10 dark:bg-white/5">
+                        Form progress disembunyikan karena role aktif tidak memiliki izin create progress pembangunan.
+                    </section>
+                )}
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form
@@ -292,31 +336,31 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
                                                 <Button type="button" size="sm" variant="outline" onClick={() => setDetail(row)}><Eye size={15} /> Detail</Button>
-                                                {row.can_edit && row.approval_status !== 'approved' && (
+                                                {canUpdate && row.can_edit && row.approval_status !== 'approved' && (
                                                     <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}>
                                                         <Edit3 size={15} />
                                                         Edit
                                                     </Button>
                                                 )}
-                                                {row.can_delete && row.approval_status !== 'approved' && (
+                                                {canDelete && row.can_delete && row.approval_status !== 'approved' && (
                                                     <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => destroyRow(row)}>
                                                         <Trash2 size={15} />
                                                         Hapus
                                                     </Button>
                                                 )}
-                                                {row.can_unlock && row.record_status === 'locked' && (
+                                                {canUnlock && row.can_unlock && row.record_status === 'locked' && (
                                                     <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}>
                                                         <Unlock size={15} />
                                                         Unlock
                                                     </Button>
                                                 )}
-                                                {row.can_lock && (
+                                                {canLock && row.can_lock && (
                                                     <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}>
                                                         <LockKeyhole size={15} />
                                                         Lock
                                                     </Button>
                                                 )}
-                                                {row.can_approve && row.approval_status === 'menunggu_approval_manager' && (
+                                                {canApprove && row.can_approve && row.approval_status === 'menunggu_approval_manager' && (
                                                     <Button type="button" size="sm" variant="outline" onClick={() => approveRow(row)}>
                                                         <CheckCircle2 size={15} />
                                                         Approve

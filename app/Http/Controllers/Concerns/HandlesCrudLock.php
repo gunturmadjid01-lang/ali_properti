@@ -12,12 +12,14 @@ trait HandlesCrudLock
         abort_if(
             ($model->record_status ?? 'draft') === 'locked' && ! $this->currentUserCanManageLockedRecords(),
             403,
-            'Data sudah di-lock. Hanya owner yang dapat mengubah atau membuka lock data ini.'
+            'Data sudah di-lock. Hanya user yang diberi akses unlock yang dapat mengubah atau membuka lock data ini.'
         );
     }
 
     public function lock(string $id): RedirectResponse
     {
+        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci data.');
+
         $model = $this->lockableQuery()->findOrFail($id);
 
         $data = [
@@ -37,7 +39,7 @@ trait HandlesCrudLock
 
     public function unlock(string $id): RedirectResponse
     {
-        abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya owner yang dapat membuka lock data.');
+        abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock data.');
 
         $model = $this->lockableQuery()->findOrFail($id);
 
@@ -65,6 +67,23 @@ trait HandlesCrudLock
 
     protected function currentUserCanManageLockedRecords(): bool
     {
-        return (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin']);
+        $user = auth()->user();
+
+        if (! $user) {
+            return false;
+        }
+
+        if ($user->hasAnyRole(['super_admin'])) {
+            return true;
+        }
+
+        return $user->getAllPermissions()->contains(function ($permission): bool {
+            $name = (string) $permission->name;
+
+            return str_ends_with($name, '.unlock')
+                || str_ends_with($name, '-unlock')
+                || str_ends_with($name, '.manage')
+                || str_ends_with($name, '-manage');
+        });
     }
 }

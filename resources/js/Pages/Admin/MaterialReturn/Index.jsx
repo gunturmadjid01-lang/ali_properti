@@ -1,4 +1,4 @@
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import { CheckCircle2, Lock, MinusCircle, PlusCircle, RotateCcw, Search, Unlock, XCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button, Dropdown, Form, Input, Textarea } from '../../../Components/UI';
@@ -6,10 +6,12 @@ import AdminLayout from '../../../Layouts/AdminLayout';
 
 const itemTemplate = () => ({ site_material_stock_id: '', qty: '' });
 
-export default function Index({ title, baseUrl, rows = { data: [], links: [] }, filters = {}, siteStocks = [], canCreate = false }) {
+export default function Index({ title, baseUrl, rows = { data: [], links: [] }, filters = {}, siteStocks = [], permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
-    const roles = usePage().props.auth?.user?.roles ?? [];
-    const canManageLock = roles.some((role) => ['owner', 'super_admin'].includes(role));
+    const canCreate = permissions.canCreate ?? false;
+    const canReceive = permissions.canReceive ?? false;
+    const canLock = permissions.canLock ?? false;
+    const canUnlock = permissions.canUnlock ?? false;
     const form = useForm({ tanggal: new Date().toISOString().slice(0, 10), gudang_id: '', perumahan_id: '', detail_rumah_id: '', tahapan_pembangunan_id: '', keterangan: '', items: [itemTemplate()] });
 
     const availableStocks = useMemo(() => siteStocks.filter((row) => (
@@ -71,9 +73,9 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                             <td className="px-5 py-4">{row.items_text}</td><td className="px-5 py-4 font-bold">{row.status}</td>
                             <td className="min-w-44 px-5 py-4 text-xs"><span className="font-bold">Dibuat:</span> {row.created_by_name}<br /><span className="font-bold">Diubah:</span> {row.updated_by_name}<br /><span className="font-bold">Diterima:</span> {row.received_by_name}</td><td className="px-5 py-4">{row.record_status}</td>
                             <td className="px-5 py-4"><div className="flex gap-2">
-                                {row.can_receive && row.status === 'diajukan' && <Button type="button" size="sm" onClick={() => router.post(`${baseUrl}/${row.id}/receive`, {}, { preserveScroll: true })}><CheckCircle2 size={14} /> Terima Gudang</Button>}
-                                {row.can_receive && row.status === 'diajukan' && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => router.post(`${baseUrl}/${row.id}/reject`, {}, { preserveScroll: true })}><XCircle size={14} /> Tolak</Button>}
-                                {canManageLock && (row.record_status === 'locked' ? <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`)}><Unlock size={14} /></Button> : <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`)}><Lock size={14} /></Button>)}
+                                {canReceive && row.can_receive && row.status === 'diajukan' && <Button type="button" size="sm" onClick={() => router.post(`${baseUrl}/${row.id}/receive`, {}, { preserveScroll: true })}><CheckCircle2 size={14} /> Terima Gudang</Button>}
+                                {canReceive && row.can_receive && row.status === 'diajukan' && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => router.post(`${baseUrl}/${row.id}/reject`, {}, { preserveScroll: true })}><XCircle size={14} /> Tolak</Button>}
+                                {canUnlock && row.record_status === 'locked' ? <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`)}><Unlock size={14} /></Button> : canLock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`)}><Lock size={14} /></Button>}
                             </div></td>
                         </tr>)}{rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={8}>Belum ada pengembalian material dari lokasi.</td></tr>}</tbody>
                     </table></div>

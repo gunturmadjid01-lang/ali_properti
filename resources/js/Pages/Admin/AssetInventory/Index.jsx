@@ -58,7 +58,7 @@ export default function Index({ title, description, baseUrl, assets = { data: []
                 </section>
 
                 <div className="flex flex-wrap gap-2">
-                    {[['assets', 'Master Aset'], ['requests', 'Pengajuan Alat'], ['usage', 'Log Pemakaian'], ['maintenance', 'Servis']].map(([value, label]) => (
+                    {[['assets', 'Master Aset'], [(permissions.canUseAsset || permissions.canApprove || permissions.canManageAssets) ? 'requests' : null, 'Pengajuan Alat'], [(permissions.canUseAsset || permissions.canManageAssets) ? 'usage' : null, 'Log Pemakaian'], [permissions.canManageAssets ? 'maintenance' : null, 'Servis']].filter(([value]) => Boolean(value)).map(([value, label]) => (
                         <Button key={value} type="button" variant={tab === value ? 'primary' : 'outline'} onClick={() => setTab(value)}>{label}</Button>
                     ))}
                 </div>
@@ -84,7 +84,7 @@ export default function Index({ title, description, baseUrl, assets = { data: []
                     </Form>
                 )}
 
-                {tab === 'requests' && (
+                {tab === 'requests' && permissions.canUseAsset && (
                     <Form collapsible title="Pengajuan Pemakaian Alat" description="Pengawas/admin mengajukan alat untuk pekerjaan lapangan." onSubmit={(event) => submitSimple(event, requestForm, `${baseUrl}/requests`, () => requestForm.reset())} actions={<Button type="submit" disabled={requestForm.processing}><ClipboardList size={16} /> Ajukan Alat</Button>}>
                         <div className="grid gap-4 md:grid-cols-3">
                             <div className="grid gap-2"><span className="text-sm font-extrabold">Aset</span><Dropdown label="Pilih Aset" value={requestForm.data.office_asset_id} options={options.assets ?? []} onChange={(value) => requestForm.setData('office_asset_id', value)} /></div>
@@ -99,7 +99,13 @@ export default function Index({ title, description, baseUrl, assets = { data: []
                     </Form>
                 )}
 
-                {tab === 'usage' && (
+                {tab === 'requests' && !permissions.canUseAsset && (
+                    <div className="rounded-lg border border-silver-deep/70 bg-silver-soft/50 p-6 text-sm font-semibold text-ink-soft dark:border-white/10 dark:bg-white/5 dark:text-white/60">
+                        Anda hanya memiliki akses lihat inventaris aset. Pengajuan pemakaian alat hanya muncul untuk role yang punya izin penggunaan aset.
+                    </div>
+                )}
+
+                {tab === 'usage' && permissions.canUseAsset && (
                     <Form collapsible title="Log Pemakaian Aset" description="Catat siapa yang pakai, durasi, hour meter, kilometer, dan BBM." onSubmit={(event) => submitSimple(event, usageForm, `${baseUrl}/usage`, () => usageForm.reset())} actions={<Button type="submit" disabled={usageForm.processing}><Fuel size={16} /> Simpan Log</Button>}>
                         <div className="grid gap-4 md:grid-cols-4">
                             <div className="grid gap-2"><span className="text-sm font-extrabold">Pengajuan</span><Dropdown label="Opsional" value={usageForm.data.asset_usage_request_id} options={options.approvedRequests ?? []} onChange={(value, selected) => usageForm.setData({ ...usageForm.data, asset_usage_request_id: value, office_asset_id: selected?.office_asset_id ?? usageForm.data.office_asset_id, lokasi: selected?.lokasi ?? usageForm.data.lokasi })} /></div>
@@ -118,6 +124,12 @@ export default function Index({ title, description, baseUrl, assets = { data: []
                         <div className="grid gap-4 md:grid-cols-2"><Input label="Kondisi Sebelum" value={usageForm.data.kondisi_sebelum} onChange={(event) => usageForm.setData('kondisi_sebelum', event.target.value)} /><Input label="Kondisi Sesudah" value={usageForm.data.kondisi_sesudah} onChange={(event) => usageForm.setData('kondisi_sesudah', event.target.value)} /></div>
                         <Textarea label="Pekerjaan" value={usageForm.data.pekerjaan} onChange={(event) => usageForm.setData('pekerjaan', event.target.value)} />
                     </Form>
+                )}
+
+                {tab === 'usage' && !permissions.canUseAsset && (
+                    <div className="rounded-lg border border-silver-deep/70 bg-silver-soft/50 p-6 text-sm font-semibold text-ink-soft dark:border-white/10 dark:bg-white/5 dark:text-white/60">
+                        Anda hanya memiliki akses lihat inventaris aset. Log pemakaian alat hanya muncul untuk role yang punya izin penggunaan aset.
+                    </div>
                 )}
 
                 {tab === 'maintenance' && permissions.canManageAssets && (

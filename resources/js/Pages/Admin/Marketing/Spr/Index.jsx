@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../../Components/UI';
 import DetailModal from '../../../../Components/UI/DetailModal';
 import AdminLayout from '../../../../Layouts/AdminLayout';
+import { useResourcePermissions } from '../../../../Utils/permissions';
 
 function money(value) {
     return new Intl.NumberFormat('id-ID', {
@@ -767,8 +768,11 @@ function EditSprModal({ open, onClose, baseUrl, row, customers, units, options, 
 }
 
 export default function Index({ title, description, baseUrl, rows, filters = {}, customers = [], units = [], bankKreditOptions = [], dokumenOptions = [], options = {}, permissions = {} }) {
+    const resourcePermissions = useResourcePermissions('booking', baseUrl);
     const [search, setSearch] = useState(filters.search ?? '');
     const [detailRow, setDetailRow] = useState(null);
+    const canCreate = resourcePermissions.canCreate;
+    const canUpdate = resourcePermissions.canUpdate;
 
     const submitSearch = (event) => {
         event.preventDefault();
@@ -826,9 +830,11 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                             <h2 className="mt-1 text-xl font-extrabold text-ink dark:text-white">{title}</h2>
                             <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-soft dark:text-white/60">{description}</p>
                         </div>
-                        <Button type="button" onClick={() => router.visit(`${baseUrl}/create`, { preserveScroll: true })}>
-                            <FilePlus2 size={18} /> Buat SPR
-                        </Button>
+                        {canCreate && (
+                            <Button type="button" onClick={() => router.visit(`${baseUrl}/create`, { preserveScroll: true })}>
+                                <FilePlus2 size={18} /> Buat SPR
+                            </Button>
+                        )}
                     </div>
                 </section>
 
@@ -867,7 +873,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                                 <Button size="sm" type="button" variant="outline" onClick={() => setDetailRow(row)}>
                                                     <Eye size={15} /> Detail
                                                 </Button>
-                                        {row.record_status === 'locked' ? (
+                                        {canUpdate && (row.record_status === 'locked' ? (
                                             row.can_unlock && <Button size="sm" type="button" variant="outline" onClick={() => unlockRow(row)}>
                                                 <Unlock size={15} /> Unlock
                                             </Button>
@@ -876,17 +882,17 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                                 {row.can_lock && <Button size="sm" type="button" variant="outline" onClick={() => lockRow(row)}>
                                                     <Lock size={15} /> Lock
                                                 </Button>}
-                                                {row.status === 'menunggu_manager' || row.status === 'menunggu_owner' ? (
+                                                {canUpdate && (row.status === 'menunggu_manager' || row.status === 'menunggu_owner') ? (
                                                     <Button size="sm" type="button" variant="outline" onClick={() => editRowHandler(row)}>
                                                         <Edit3 size={15} /> Edit
                                                     </Button>
-                                                ) : (
+                                                ) : canUpdate ? (
                                                     <Button size="sm" type="button" variant="outline" disabled>
                                                         <Edit3 size={15} /> Edit
                                                     </Button>
-                                                )}
+                                                ) : null}
                                             </>
-                                        )}
+                                        ))} 
                                                 {canApprove(row) && (
                                                     <>
                                                         <Button size="sm" type="button" onClick={() => approve(row)}>

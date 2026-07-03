@@ -177,6 +177,7 @@ class KprMilestoneController extends Controller
     public function lock(Request $request, string $type, string $id): RedirectResponse
     {
         $type = $this->validatedType($type);
+        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci data.');
         $this->milestoneQueryFor($request, $type)->findOrFail($id)->update([
             'record_status' => 'locked',
             'locked_at' => now(),
@@ -190,7 +191,7 @@ class KprMilestoneController extends Controller
     {
         $type = $this->validatedType($type);
         $user = request()->user();
-        abort_unless($user === null || $user->hasAnyRole(['owner', 'super_admin']), 403, 'Hanya owner yang dapat membuka lock.');
+        abort_unless($this->canManageMilestoneLock($type), 403, 'Hanya user yang diberi akses yang dapat membuka lock.');
         KprMilestone::query()->where('jenis', $type)->findOrFail($id)->update([
             'record_status' => 'draft',
             'locked_at' => null,
@@ -275,8 +276,8 @@ class KprMilestoneController extends Controller
                 'pihak_terkait' => $milestone->pihak_terkait,
                 'catatan' => $milestone->catatan,
                 'record_status' => $milestone->record_status,
-                'can_lock' => $milestone->record_status !== 'locked',
-                'can_unlock' => (bool) request()->user()?->hasAnyRole(['owner', 'super_admin']) && $milestone->record_status === 'locked',
+                'can_lock' => $milestone->record_status !== 'locked' && (bool) auth()->check(),
+                'can_unlock' => $milestone->record_status === 'locked' && $this->canManageMilestoneLock($type),
                 'created_by' => $milestone->creator?->name ?? '-',
                 'updated_by' => $milestone->updater?->name ?? '-',
                 'locked_by' => $milestone->locker?->name ?? '-',
@@ -340,6 +341,19 @@ class KprMilestoneController extends Controller
         abort_unless(in_array($type, [KprMilestone::AKAD, KprMilestone::SERAH_TERIMA], true), 404);
 
         return $type;
+    }
+
+    protected function canManageMilestoneLock(string $type): bool
+    {
+        $user = auth()->user();
+        $permissions = $type === KprMilestone::AKAD
+            ? ['kpr-akad.unlock', 'kpr-akad.manage']
+            : ['handover-customer.unlock', 'handover-customer.manage'];
+
+        return (bool) $user && (
+            $user->hasAnyRole(['super_admin'])
+            || collect($permissions)->contains(fn (string $permission) => $user->can($permission))
+        );
     }
 
     protected function shouldScopeToCurrentMarketing(Request $request): bool

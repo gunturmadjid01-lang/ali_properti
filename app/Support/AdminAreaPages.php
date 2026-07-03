@@ -49,7 +49,7 @@ class AdminAreaPages
             'admin' => [
                 'title' => 'Area Admin',
                 'description' => 'Panel kerja admin untuk transaksi, pembayaran, operasional, keuangan, dan laporan.',
-                'allowed_roles' => ['owner', 'admin_keuangan', 'manajer_pimpro'],
+                'allowed_roles' => ['owner', 'admin', 'admin_keuangan', 'manajer_pimpro'],
                 'points' => [
                     'Transaksi dan pembayaran',
                     'Keuangan pemasukan dan pengeluaran',
@@ -68,7 +68,7 @@ class AdminAreaPages
             'teknik' => [
                 'title' => 'Area Teknik',
                 'description' => 'Kontrol input SPK, progres pembangunan, pembayaran kontraktor, dan status bangunan.',
-                'allowed_roles' => ['teknik', 'pengawas', 'owner'],
+                'allowed_roles' => ['teknik', 'pengawas', 'admin', 'owner'],
                 'points' => [
                     'Input SPK',
                     'Proses bangun',
@@ -86,7 +86,7 @@ class AdminAreaPages
             'admin-proyek' => [
                 'title' => 'Area Admin Proyek',
                 'description' => 'Fokus pada draft pengeluaran, monitoring pembelian barang, dan status bangunan proyek.',
-                'allowed_roles' => ['manajer_pimpro', 'owner'],
+                'allowed_roles' => ['manajer_pimpro', 'admin', 'owner'],
                 'points' => [
                     'Draft pengeluaran',
                     'Item pengeluaran dan data reject',
@@ -105,7 +105,7 @@ class AdminAreaPages
             'keuangan' => [
                 'title' => 'Area Keuangan',
                 'description' => 'Panel operasional untuk transaksi keuangan, bank, tipe post, dan pengendalian HPP.',
-                'allowed_roles' => ['admin_keuangan', 'owner', 'manajer_pimpro'],
+                'allowed_roles' => ['admin_keuangan', 'admin', 'owner', 'manajer_pimpro'],
                 'points' => [
                     'Transaksi pemasukan dan pengeluaran',
                     'Master bank',
@@ -124,7 +124,7 @@ class AdminAreaPages
             'konsumen' => [
                 'title' => 'Area Konsumen',
                 'description' => 'Ruang kerja untuk data calon konsumen, follow up, booking, dan dokumen customer.',
-                'allowed_roles' => ['admin_konsumen', 'marketing', 'owner'],
+                'allowed_roles' => ['admin_konsumen', 'marketing', 'admin', 'owner'],
                 'points' => [
                     'Data calon konsumen',
                     'Jejak follow up',
@@ -140,7 +140,7 @@ class AdminAreaPages
             'gudang' => [
                 'title' => 'Area Gudang',
                 'description' => 'Panel material untuk stok, permintaan barang, dan pergerakan logistik proyek.',
-                'allowed_roles' => ['user_area_gudang', 'admin_keuangan', 'owner'],
+                'allowed_roles' => ['user_area_gudang', 'admin_keuangan', 'admin', 'owner'],
                 'points' => [
                     'Barang material',
                     'Stok gudang',
@@ -157,7 +157,7 @@ class AdminAreaPages
             'kpr' => [
                 'title' => 'Area KPR',
                 'description' => 'Panel administrasi pembiayaan rumah untuk pengajuan bank dan dokumen pendukung.',
-                'allowed_roles' => ['admin_kpr', 'owner'],
+                'allowed_roles' => ['admin_kpr', 'admin', 'owner'],
                 'points' => [
                     'Pengajuan KPR',
                     'Kelengkapan dokumen',
@@ -173,7 +173,7 @@ class AdminAreaPages
             'legal' => [
                 'title' => 'Area Legal',
                 'description' => 'Panel pengelolaan dokumen legalitas proyek dan legalitas unit rumah.',
-                'allowed_roles' => ['bag_legal', 'owner'],
+                'allowed_roles' => ['bag_legal', 'admin', 'owner'],
                 'points' => [
                     'Dokumen legalitas perumahan',
                     'Dokumen legalitas rumah',
@@ -188,7 +188,7 @@ class AdminAreaPages
             'laporan' => [
                 'title' => 'Area Laporan',
                 'description' => 'Ringkasan lintas divisi untuk melihat performa proyek, customer, keuangan, dan logistik.',
-                'allowed_roles' => ['owner', 'manajer_pimpro', 'admin_keuangan', 'supervisor_marketing', 'teknik'],
+                'allowed_roles' => ['owner', 'admin', 'manajer_pimpro', 'admin_keuangan', 'supervisor_marketing', 'teknik'],
                 'points' => [
                     'Laporan proyek',
                     'Laporan keuangan',

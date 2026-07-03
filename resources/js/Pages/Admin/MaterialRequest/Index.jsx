@@ -1,5 +1,5 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { Edit3, Lock, MinusCircle, PlusCircle, Save, Search, Send, Trash2, Unlock, X } from 'lucide-react';
+import { CheckCircle2, Edit3, Lock, MinusCircle, PlusCircle, Save, Search, Send, Trash2, Unlock, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button, Dropdown, Form, Input, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
@@ -8,9 +8,16 @@ function itemTemplate() {
     return { barang_material_id: '', qty: '', satuan: '', catatan: '' };
 }
 
-export default function Index({ title, baseUrl, rows = { data: [], links: [] }, filters = {}, options = {}, canCreate = false }) {
+export default function Index({ title, baseUrl, rows = { data: [], links: [] }, filters = {}, options = {}, canCreate = false, permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [editing, setEditing] = useState(null);
+    const canUpdate = permissions.canUpdate ?? false;
+    const canDelete = permissions.canDelete ?? false;
+    const canApproveGudang = permissions.canApproveGudang ?? false;
+    const canApproveOwner = permissions.canApproveOwner ?? false;
+    const canLock = permissions.canLock ?? false;
+    const canUnlock = permissions.canUnlock ?? false;
+    const canIssue = permissions.canIssue ?? false;
     const form = useForm({
         tanggal: new Date().toISOString().slice(0, 10),
         gudang_id: '',
@@ -146,13 +153,13 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                                         <td className="px-5 py-4 font-bold">{row.status}</td>
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
-                                                {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>}
-                                                {row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm(`Hapus ${row.kode_request}?`) && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={15} /> Hapus</Button>}
-                                                {row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}><Lock size={15} /> Lock</Button>}
-                                                {row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>}
-                                                {row.can_approve_gudang && !row.approved_at_gudang && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/approve`, {}, { preserveScroll: true })}>Approve Gudang</Button>}
-                                                {row.can_approve_owner && !row.approved_at_owner && <Button type="button" size="sm" onClick={() => router.post(`${baseUrl}/${row.id}/approve-owner`, {}, { preserveScroll: true })}>Approve Owner</Button>}
-                                                {row.can_issue && <Button type="button" size="sm" onClick={() => window.confirm(`Kirim barang untuk ${row.kode_request}?`) && router.post(`${baseUrl}/${row.id}/issue`, {}, { preserveScroll: true })}><Send size={15} /> Kirim Barang</Button>}
+                                                {canUpdate && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>}
+                                                {canDelete && row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm(`Hapus ${row.kode_request}?`) && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={15} /> Hapus</Button>}
+                                                {canLock && row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}><Lock size={15} /> Lock</Button>}
+                                                {canUnlock && row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>}
+                                                {canApproveGudang && row.can_approve_gudang && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/approve`, {}, { preserveScroll: true })}><CheckCircle2 size={15} /> Approve Gudang</Button>}
+                                                {canApproveOwner && row.can_approve_owner && <Button type="button" size="sm" onClick={() => router.post(`${baseUrl}/${row.id}/approve-owner`, {}, { preserveScroll: true })}><CheckCircle2 size={15} /> Approve Owner</Button>}
+                                                {canIssue && row.can_issue && <Button type="button" size="sm" onClick={() => window.confirm(`Kirim barang untuk ${row.kode_request}?`) && router.post(`${baseUrl}/${row.id}/issue`, {}, { preserveScroll: true })}><Send size={15} /> Kirim Barang</Button>}
                                             </div>
                                         </td>
                                     </tr>

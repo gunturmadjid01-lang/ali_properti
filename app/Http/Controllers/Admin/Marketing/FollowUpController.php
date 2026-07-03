@@ -66,8 +66,8 @@ class FollowUpController extends Controller
                 'record_status_label' => ($followUp->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
                 'can_edit' => ($followUp->record_status ?? 'draft') !== 'locked',
                 'can_delete' => ($followUp->record_status ?? 'draft') !== 'locked',
-                'can_lock' => ($followUp->record_status ?? 'draft') !== 'locked',
-                'can_unlock' => (bool) $request->user()?->hasAnyRole(['owner', 'super_admin']) && ($followUp->record_status ?? 'draft') === 'locked',
+                'can_lock' => ($followUp->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+                'can_unlock' => $this->currentUserCanManageLockedRecords() && ($followUp->record_status ?? 'draft') === 'locked',
             ]);
 
         return Inertia::render('Admin/Marketing/FollowUp/Index', [

@@ -13,7 +13,7 @@ class FieldDefect extends Model
 
     protected $fillable = [
         'kode_defect', 'tanggal', 'perumahan_id', 'detail_rumah_id', 'tahapan_pembangunan_id',
-        'quality_inspection_id', 'kategori', 'prioritas', 'temuan', 'instruksi_perbaikan',
+        'progress_pembangunan_id', 'quality_inspection_id', 'kategori', 'prioritas', 'temuan', 'instruksi_perbaikan',
         'target_selesai', 'tanggal_selesai', 'status', 'foto', 'approval_status',
         'approved_by', 'approved_at', 'record_status', 'locked_at', 'locked_by', 'created_by', 'updated_by',
     ];

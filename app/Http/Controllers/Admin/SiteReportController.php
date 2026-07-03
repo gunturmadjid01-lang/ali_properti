@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\BuildsFieldOptions;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\UsesApprovalSettings;
 use App\Http\Controllers\Controller;
 use App\Models\ProgressPembangunan;
 use App\Models\SiteReport;
 use App\Models\SiteSchedule;
+use App\Models\TahapanPembangunan;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,7 +19,7 @@ use Inertia\Response;
 
 class SiteReportController extends Controller
 {
-    use BuildsFieldOptions, HandlesCrudLock {
+    use BuildsFieldOptions, HandlesCrudLock, UsesApprovalSettings {
         HandlesCrudLock::lock as protected traitLock;
         HandlesCrudLock::unlock as protected traitUnlock;
     }
@@ -33,6 +35,13 @@ class SiteReportController extends Controller
             'baseUrl' => route('admin.site-report.index', absolute: false),
             'filters' => ['search' => $search, 'perumahan_id' => $perumahanId, 'detail_rumah_id' => $detailRumahId],
             'options' => $this->options(),
+            'permissions' => [
+                'canCreate' => (bool) auth()->user()?->can('site-report.create') || auth()->user()?->can('site-report.manage'),
+                'canUpdate' => (bool) auth()->user()?->can('site-report.update') || auth()->user()?->can('site-report.manage'),
+                'canDelete' => (bool) auth()->user()?->can('site-report.delete') || auth()->user()?->can('site-report.manage'),
+                'canLock' => (bool) auth()->check(),
+                'canUnlock' => $this->currentUserCanManageLockedRecords(),
+            ],
             'rows' => SiteReport::query()
                 ->with([
                     'perumahan:id,nama_perusahaan',
@@ -84,11 +93,11 @@ class SiteReportController extends Controller
                     'approved_by_name' => $row->approvedBy?->name ?? '-',
                     'lampiran_url' => $row->lampiran ? route('media', ['path' => $row->lampiran], false) : null,
                     'approval_status' => $row->approval_status,
-                    'can_approve' => $row->approval_status !== 'approved' && $this->canApproveFieldData(),
-                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'manajer_pimpro', 'owner', 'super_admin']),
-                    'can_unlock' => (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin']),
-                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked',
-                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked',
+                    'can_approve' => ($row->record_status ?? 'draft') === 'locked' && $this->requiresApprovalFor('site-report') && $row->approval_status !== 'approved' && $this->canApproveFor('site-report'),
+                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+                    'can_unlock' => $this->currentUserCanManageLockedRecords(),
+                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && ((bool) auth()->user()?->can('site-report.update') || auth()->user()?->can('site-report.manage')),
+                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && ((bool) auth()->user()?->can('site-report.delete') || auth()->user()?->can('site-report.manage')),
                     'record_status' => $row->record_status ?? 'draft',
                 ]),
         ]);
@@ -118,21 +127,30 @@ class SiteReportController extends Controller
             'lampiran' => ['nullable', 'file', 'max:6144'],
         ]);
 
+        $approvalRequired = $this->requiresApprovalFor('site-report');
+
         SiteReport::query()->create([
             ...$this->normalizePayload(collect($validated)->except('lampiran')->all()),
             'kode_laporan' => 'LAP-'.now()->format('Ymd-His').'-'.random_int(10, 99),
             'lampiran' => $request->file('lampiran')?->store('laporan-lapangan', 'public'),
+            'approval_status' => $approvalRequired ? 'menunggu_approval_manager' : 'approved',
+            'approved_by' => $approvalRequired ? null : auth()->id(),
+            'approved_at' => $approvalRequired ? null : now(),
             'created_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);
 
-        return back()->with('success', 'Laporan lapangan berhasil dibuat dan menunggu review manager.');
+        return back()->with('success', $approvalRequired
+            ? 'Laporan lapangan berhasil dibuat dan menunggu review manajer.'
+            : 'Laporan lapangan berhasil disimpan dan langsung aktif.');
     }
 
     public function approve(string $id): RedirectResponse
     {
-        abort_unless($this->canApproveFieldData(), 403, 'Hanya manager atau owner yang dapat menyetujui laporan.');
+        abort_unless($this->requiresApprovalFor('site-report'), 422, 'Laporan ini tidak memerlukan approval.');
+        abort_unless($this->canApproveFor('site-report'), 403, 'Anda tidak memiliki izin approval laporan.');
         $row = SiteReport::query()->findOrFail($id);
+        abort_unless(($row->record_status ?? 'draft') === 'locked', 422, 'Laporan harus di-lock terlebih dahulu.');
         if ($row->approval_status === 'approved') {
             return back()->with('success', 'Laporan lapangan sudah disetujui sebelumnya.');
         }
@@ -144,14 +162,14 @@ class SiteReportController extends Controller
 
     public function lock(string $id): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci laporan.');
 
         return $this->traitLock($id);
     }
 
     public function unlock(string $id): RedirectResponse
     {
-        abort_unless(auth()->user()?->hasAnyRole(['owner', 'super_admin']), 403, 'Hanya owner yang dapat membuka lock laporan.');
+        abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock laporan.');
 
         return $this->traitUnlock($id);
     }
@@ -171,16 +189,20 @@ class SiteReportController extends Controller
             $lampiran = $request->file('lampiran')->store('laporan-lapangan', 'public');
         }
 
+        $approvalRequired = $this->requiresApprovalFor('site-report');
+
         $row->update([
             ...$this->normalizePayload(collect($validated)->except('lampiran')->all()),
             'lampiran' => $lampiran,
-            'approval_status' => 'menunggu_approval_manager',
-            'approved_by' => null,
-            'approved_at' => null,
+            'approval_status' => $approvalRequired ? 'menunggu_approval_manager' : 'approved',
+            'approved_by' => $approvalRequired ? null : auth()->id(),
+            'approved_at' => $approvalRequired ? null : now(),
             'updated_by' => auth()->id(),
         ]);
 
-        return back()->with('success', 'Laporan lapangan berhasil diperbarui.');
+        return back()->with('success', $approvalRequired
+            ? 'Laporan lapangan berhasil diperbarui dan menunggu review manajer.'
+            : 'Laporan lapangan berhasil diperbarui dan langsung aktif.');
     }
 
     public function destroy(string $id): RedirectResponse
@@ -204,13 +226,33 @@ class SiteReportController extends Controller
     private function options(): array
     {
         $options = $this->fieldOptions();
+        $options['tahapanPembangunansUnit'] = TahapanPembangunan::query()
+            ->where('status', 'aktif')
+            ->where('konteks', 'unit')
+            ->orderBy('urutan')
+            ->get(['id', 'nama_tahapan', 'bobot_persen'])
+            ->map(fn (TahapanPembangunan $row) => [
+                'value' => (string) $row->id,
+                'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)',
+            ])
+            ->values();
+        $options['tahapanPembangunansKawasan'] = TahapanPembangunan::query()
+            ->where('status', 'aktif')
+            ->where('konteks', 'kawasan')
+            ->orderBy('urutan')
+            ->get(['id', 'nama_tahapan', 'bobot_persen'])
+            ->map(fn (TahapanPembangunan $row) => [
+                'value' => (string) $row->id,
+                'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)',
+            ])
+            ->values();
         $options['siteSchedules'] = SiteSchedule::query()
-            ->whereNotNull('detail_rumah_id')
+            ->with(['perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah'])
             ->orderBy('tanggal_target')
             ->get(['id', 'perumahan_id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'nama_pekerjaan', 'target_progress', 'realisasi_progress'])
             ->map(fn (SiteSchedule $row) => [
                 'value' => (string) $row->id,
-                'label' => $row->nama_pekerjaan.' ('.$row->realisasi_progress.'/'.$row->target_progress.'%)',
+                'label' => ($row->detailRumah ? trim($row->detailRumah->kode_nlok.' '.$row->detailRumah->nomor_rumah) : 'Kawasan').': '.$row->nama_pekerjaan.' ('.$row->realisasi_progress.'/'.$row->target_progress.'%)',
                 'perumahan_id' => (string) $row->perumahan_id,
                 'detail_rumah_id' => (string) $row->detail_rumah_id,
                 'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
@@ -218,14 +260,17 @@ class SiteReportController extends Controller
             ])
             ->values();
         $options['progressPembangunans'] = ProgressPembangunan::query()
-            ->with('detailRumah:id,perumahan_id')
+            ->with([
+                'detailRumah:id,perumahan_id',
+                'siteSchedule:id,perumahan_id,detail_rumah_id,tahapan_pembangunan_id,nama_pekerjaan',
+            ])
             ->where('approval_status', 'approved')
             ->latest('tanggal')
             ->get(['id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'site_schedule_id', 'nama_progress', 'persentase'])
             ->map(fn (ProgressPembangunan $row) => [
                 'value' => (string) $row->id,
                 'label' => $row->nama_progress.' - '.$row->persentase.'%',
-                'perumahan_id' => (string) ($row->detailRumah?->perumahan_id ?? ''),
+                'perumahan_id' => (string) ($row->detailRumah?->perumahan_id ?? $row->siteSchedule?->perumahan_id ?? ''),
                 'detail_rumah_id' => (string) $row->detail_rumah_id,
                 'tahapan_pembangunan_id' => (string) $row->tahapan_pembangunan_id,
                 'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),

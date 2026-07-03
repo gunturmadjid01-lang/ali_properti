@@ -34,12 +34,24 @@ function FieldInput({ field, value, error, options, form, filteredUnits }) {
     const fieldLabel = field.name === 'jumlah_periode'
         ? `Jumlah ${form.data.tipe_upah === 'mingguan' ? 'Minggu' : form.data.tipe_upah === 'bulanan' ? 'Bulan' : 'Hari'}`
         : field.label;
+    const tahapanOptions = form.data.detail_rumah_id
+        ? (options.tahapanPembangunansUnit ?? options.tahapanPembangunans ?? [])
+        : (options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? []);
 
     if (field.name === 'detail_rumah_id') {
         return (
             <div className="grid gap-2">
                 <span className="text-sm font-extrabold">{field.label}</span>
-                <Dropdown label="Pilih Unit" value={value} options={filteredUnits} onChange={(next) => form.setData(field.name, next)} />
+                <Dropdown label="Pilih Unit" value={value} options={filteredUnits} onChange={(next, selected) => {
+                    form.setData({
+                        ...form.data,
+                        detail_rumah_id: next,
+                        perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id,
+                        tahapan_pembangunan_id: '',
+                        site_schedule_id: '',
+                        progress_pembangunan_id: '',
+                    });
+                }} />
                 {error && <span className="text-xs font-bold text-red-600">{error}</span>}
             </div>
         );
@@ -49,9 +61,45 @@ function FieldInput({ field, value, error, options, form, filteredUnits }) {
         return (
             <div className="grid gap-2">
                 <span className="text-sm font-extrabold">{field.label}</span>
-                <Dropdown label={field.label} value={value} options={options[field.optionsKey] ?? []} disabled={field.name === 'spk_kontraktor_id' && form.data.sumber_tenaga_kerja !== 'kontraktor'} onChange={(next, selected) => {
+                <Dropdown
+                    label={field.name === 'tahapan_pembangunan_id'
+                        ? (form.data.detail_rumah_id ? 'Pilih Tahapan Rumah' : 'Pilih Tahapan Kawasan')
+                        : field.label}
+                    value={value}
+                    options={field.name === 'tahapan_pembangunan_id' ? tahapanOptions : (options[field.optionsKey] ?? [])}
+                    disabled={field.name === 'spk_kontraktor_id' && form.data.sumber_tenaga_kerja !== 'kontraktor'}
+                    onChange={(next, selected) => {
                     if (field.name === 'perumahan_id') {
-                        form.setData({ ...form.data, perumahan_id: next, detail_rumah_id: '' });
+                        form.setData({
+                            ...form.data,
+                            perumahan_id: next,
+                            detail_rumah_id: '',
+                            tahapan_pembangunan_id: '',
+                            site_schedule_id: '',
+                            progress_pembangunan_id: '',
+                        });
+                        return;
+                    }
+                    if (field.name === 'site_schedule_id') {
+                        form.setData({
+                            ...form.data,
+                            site_schedule_id: next,
+                            perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id,
+                            detail_rumah_id: selected?.detail_rumah_id ?? form.data.detail_rumah_id,
+                            tahapan_pembangunan_id: selected?.tahapan_pembangunan_id ?? form.data.tahapan_pembangunan_id,
+                            progress_pembangunan_id: '',
+                        });
+                        return;
+                    }
+                    if (field.name === 'progress_pembangunan_id') {
+                        form.setData({
+                            ...form.data,
+                            progress_pembangunan_id: next,
+                            site_schedule_id: selected?.site_schedule_id ?? form.data.site_schedule_id,
+                            perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id,
+                            detail_rumah_id: selected?.detail_rumah_id ?? form.data.detail_rumah_id,
+                            tahapan_pembangunan_id: selected?.tahapan_pembangunan_id ?? form.data.tahapan_pembangunan_id,
+                        });
                         return;
                     }
                     if (field.name === 'spk_kontraktor_id') {
@@ -68,7 +116,8 @@ function FieldInput({ field, value, error, options, form, filteredUnits }) {
                         return;
                     }
                     form.setData(field.name, next);
-                }} />
+                    }}
+                />
                 {error && <span className="text-xs font-bold text-red-600">{error}</span>}
             </div>
         );
@@ -146,6 +195,24 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
 
     const filteredFormUnits = useMemo(() => (options.detailRumahs ?? []).filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, options.detailRumahs]);
     const filteredFilterUnits = useMemo(() => (options.detailRumahs ?? []).filter((row) => !filterPerumahan || row.perumahan_id === String(filterPerumahan)), [filterPerumahan, options.detailRumahs]);
+    const filteredSchedules = useMemo(() => (options.siteSchedules ?? []).filter((row) => {
+        if (form.data.perumahan_id && row.perumahan_id !== String(form.data.perumahan_id)) {
+            return false;
+        }
+        if (form.data.detail_rumah_id && row.detail_rumah_id !== String(form.data.detail_rumah_id)) {
+            return false;
+        }
+        return true;
+    }), [form.data.detail_rumah_id, form.data.perumahan_id, options.siteSchedules]);
+    const filteredProgress = useMemo(() => (options.progressPembangunans ?? []).filter((row) => {
+        if (form.data.perumahan_id && row.perumahan_id && row.perumahan_id !== String(form.data.perumahan_id)) {
+            return false;
+        }
+        if (form.data.detail_rumah_id && row.detail_rumah_id !== String(form.data.detail_rumah_id)) {
+            return false;
+        }
+        return true;
+    }), [form.data.detail_rumah_id, form.data.perumahan_id, options.progressPembangunans]);
     const calculatedWage = useMemo(() => {
         if (section !== 'tenaga-kerja-alat') return 0;
         const mandor = Number(form.data.mandor || 0);
@@ -219,6 +286,13 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
         router.get(baseUrl, { search, perumahan_id: filterPerumahan, detail_rumah_id: filterUnit }, { preserveState: true, replace: true, preserveScroll: true });
     };
 
+    const canCreate = config.canCreate ?? false;
+    const canUpdate = config.canUpdate ?? false;
+    const canDelete = config.canDelete ?? false;
+    const canApprove = config.canApprove ?? false;
+    const canLock = config.canLock ?? false;
+    const canUnlock = config.canUnlock ?? false;
+
     return (
         <>
             <Head title={title} />
@@ -229,18 +303,30 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
                     <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">Data ini tersambung ke unit, progress, SPK, dan approval lapangan sesuai kebutuhan menu.</p>
                 </section>
 
+                {canCreate && (
                 <Form
                     collapsible
                     title={editing ? `Edit ${editing.kode}` : `Input ${title}`}
-                    description="Isi data lapangan sesuai kejadian/realisasi, lalu manager atau owner dapat melakukan approval bila dibutuhkan."
+                    description="Isi data lapangan sesuai kejadian/realisasi, lalu manajer atau owner dapat melakukan approval bila dibutuhkan."
                     onSubmit={submit}
-                    actions={<>{editing && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}<Button type="submit" disabled={form.processing}><FileText size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan'}</Button></>}
+                    actions={<>{editing && canUpdate && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}<Button type="submit" disabled={form.processing}><FileText size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan'}</Button></>}
                 >
                     <ErrorSummary errors={form.errors} />
                     <div className="grid gap-4 md:grid-cols-3">
                         {fields.filter((field) => fieldIsVisible(field, form.data)).map((field) => (
                             <div className={field.type === 'textarea' ? 'md:col-span-3' : ''} key={field.name}>
-                                <FieldInput field={field} value={form.data[field.name] ?? ''} error={form.errors[field.name]} options={options} form={form} filteredUnits={filteredFormUnits} />
+                                <FieldInput
+                                    field={field}
+                                    value={form.data[field.name] ?? ''}
+                                    error={form.errors[field.name]}
+                                    options={{
+                                        ...options,
+                                        siteSchedules: filteredSchedules,
+                                        progressPembangunans: filteredProgress,
+                                    }}
+                                    form={form}
+                                    filteredUnits={filteredFormUnits}
+                                />
                             </div>
                         ))}
                         {config.photo && (
@@ -252,6 +338,7 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
                         )}
                     </div>
                 </Form>
+                )}
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form className="grid gap-3 p-5 lg:grid-cols-[1.2fr_1fr_1fr_auto]" onSubmit={searchRows}>
@@ -280,11 +367,11 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
                                             <div className="flex flex-wrap gap-2">
                                                 <Button type="button" size="sm" variant="outline" onClick={() => setDetail(row)}><Eye size={14} /> Detail</Button>
                                                 {row.foto_url && <Button as="a" href={row.foto_url} target="_blank" size="sm" variant="outline">Foto</Button>}
-                                                {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Edit</Button>}
-                                                {row.can_approve && row.approval_status !== 'approved' && <Button type="button" size="sm" onClick={() => router.post(`${baseUrl}/${row.id}/approve`, {}, { preserveScroll: true })}><CheckCircle2 size={14} /></Button>}
-                                                {row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus data ini?') && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>}
-                                                {row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={14} /> Lock</Button>}
-                                                {row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={14} /> Unlock</Button>}
+                                                {canUpdate && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Edit</Button>}
+                                                {canApprove && row.can_approve && row.approval_status !== 'approved' && <Button type="button" size="sm" onClick={() => router.post(`${baseUrl}/${row.id}/approve`, {}, { preserveScroll: true })}><CheckCircle2 size={14} /></Button>}
+                                                {canDelete && row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus data ini?') && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>}
+                                                {canLock && row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={14} /> Lock</Button>}
+                                                {canUnlock && row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={14} /> Unlock</Button>}
                                             </div>
                                         </td>
                                     </tr>

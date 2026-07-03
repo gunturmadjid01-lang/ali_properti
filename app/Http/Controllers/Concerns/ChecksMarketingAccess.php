@@ -18,7 +18,7 @@ trait ChecksMarketingAccess
             return true;
         }
 
-        if (! empty($defaultRoles) && $user->hasAnyRole($defaultRoles)) {
+        if (! empty($defaultRoles) && $user->hasAnyRole($this->normalizedRoles($defaultRoles))) {
             return true;
         }
 
@@ -49,5 +49,24 @@ trait ChecksMarketingAccess
     protected function abortUnlessMarketingAccess(Request $request, array $defaultRoles, ?string $permission = null, int $status = 403, string $message = 'Akses ditolak.'): void
     {
         abort_unless($this->hasMarketingAccess($request, $defaultRoles, $permission), $status, $message);
+    }
+
+    protected function normalizedRoles(array $roles): array
+    {
+        $expanded = [];
+
+        foreach ($roles as $role) {
+            $expanded[] = $role;
+
+            if ($role === 'manager') {
+                $expanded[] = 'manajer_pimpro';
+            }
+
+            if ($role === 'manajer_pimpro') {
+                $expanded[] = 'manager';
+            }
+        }
+
+        return array_values(array_unique($expanded));
     }
 }

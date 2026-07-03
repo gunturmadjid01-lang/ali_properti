@@ -197,34 +197,64 @@ export default function UnitDetail({
     const profileAccordion = {
         title: 'Profile Unit',
         content: (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 lg:grid-cols-2">
                 {[
-                    ['Perumahan', perumahan.nama_perusahaan],
-                    ['Cabang', perumahan.cabang ?? '-'],
-                    ['Alamat', perumahan.alamat ?? '-'],
-                    ['Blok', `${rumah.kode_nlok ?? '-'} / ${rumah.nomor_rumah ?? '-'}`],
-                    ['Tipe', rumah.tipe_rumah ?? '-'],
-                    ['Model Unit', rumah.model_unit ?? '-'],
-                    ['Luas Tanah', rumah.luas_tanah ?? '-'],
-                    ['Luas Bangunan', rumah.luas_bangunan ?? '-'],
-                    ['Harga Jual', money(rumah.harga_jual)],
-                    ['Status Bangun', rumah.status_pembangunan ?? '-'],
-                    ['Progress Terakhir', `${rumah.progress_terakhir ?? 0}%`],
-                    ['Status Penjualan', rumah.status_penjualan ?? '-'],
-                    ['Dibuat Oleh', rumah.created_by ?? '-'],
-                    ['Diupdate Oleh', rumah.updated_by ?? '-'],
-                    ['Tanggal Mulai', rumah.tanggal_mulai_bangun ?? '-'],
-                    ['Tanggal Selesai', rumah.tanggal_selesai_bangun ?? '-'],
-                ].map(([label, value]) => (
-                    <div className="rounded-lg border border-silver-deep/50 bg-silver-soft/50 p-4 dark:border-white/10 dark:bg-white/5" key={label}>
-                        <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-soft">{label}</p>
-                        <p className="mt-1 text-sm font-bold text-ink dark:text-white">{value}</p>
+                    {
+                        title: 'Identitas Unit',
+                        items: [
+                            ['Perumahan', perumahan.nama_perusahaan],
+                            ['Cabang', perumahan.cabang ?? '-'],
+                            ['Blok / Nomor', `${rumah.kode_nlok ?? '-'} / ${rumah.nomor_rumah ?? '-'}`],
+                            ['Model Unit', rumah.model_unit ?? '-'],
+                        ],
+                    },
+                    {
+                        title: 'Lokasi & Ukuran',
+                        items: [
+                            ['Alamat', perumahan.alamat ?? '-'],
+                            ['Tipe', rumah.tipe_rumah ?? '-'],
+                            ['Luas Tanah', rumah.luas_tanah ?? '-'],
+                            ['Luas Bangunan', rumah.luas_bangunan ?? '-'],
+                        ],
+                    },
+                    {
+                        title: 'Status Bangunan',
+                        items: [
+                            ['Status Bangun', rumah.status_pembangunan ?? '-'],
+                            ['Progress Terakhir', `${rumah.progress_terakhir ?? 0}%`],
+                            ['Status Penjualan', rumah.status_penjualan ?? '-'],
+                            ['Harga Jual', money(rumah.harga_jual)],
+                        ],
+                    },
+                    {
+                        title: 'Audit & Catatan',
+                        items: [
+                            ['Dibuat Oleh', rumah.created_by ?? '-'],
+                            ['Diupdate Oleh', rumah.updated_by ?? '-'],
+                            ['Tanggal Mulai', rumah.tanggal_mulai_bangun ?? '-'],
+                            ['Tanggal Selesai', rumah.tanggal_selesai_bangun ?? '-'],
+                        ],
+                        note: rumah.catatan ?? '-',
+                    },
+                ].map((group) => (
+                    <div className="rounded-lg border border-silver-deep/50 bg-silver-soft/40 p-4 dark:border-white/10 dark:bg-white/5" key={group.title}>
+                        <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-soft">{group.title}</p>
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            {group.items.map(([label, value]) => (
+                                <div className="rounded-lg bg-white/70 px-4 py-3 dark:bg-white/5" key={label}>
+                                    <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-ink-soft">{label}</p>
+                                    <p className="mt-1 text-sm font-bold text-ink dark:text-white">{value}</p>
+                                </div>
+                            ))}
+                        </div>
+                        {group.note && (
+                            <div className="mt-3 rounded-lg bg-white/70 px-4 py-3 dark:bg-white/5">
+                                <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-ink-soft">Catatan</p>
+                                <p className="mt-1 whitespace-pre-line text-sm font-semibold text-ink dark:text-white">{group.note}</p>
+                            </div>
+                        )}
                     </div>
                 ))}
-                <div className="rounded-lg border border-silver-deep/50 bg-silver-soft/50 p-4 md:col-span-2 xl:col-span-3 dark:border-white/10 dark:bg-white/5">
-                    <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-soft">Catatan</p>
-                    <p className="mt-1 whitespace-pre-line text-sm font-semibold text-ink dark:text-white">{rumah.catatan ?? '-'}</p>
-                </div>
             </div>
         ),
     };

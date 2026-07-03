@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Accordion from '../../../Components/UI/Accordion';
 import { Button, CurrencyInput, Dropdown, Form, Input, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
+import { useResourcePermissions } from '../../../Utils/permissions';
 
 function money(value) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value ?? 0));
@@ -72,12 +73,16 @@ function Pagination({ links = [] }) {
 }
 
 export default function Index({ title, description, baseUrl, rows, filters = {}, options, permissions = {} }) {
+    const resourcePermissions = useResourcePermissions('detail-rumah', baseUrl);
     const [search, setSearch] = useState(filters.search ?? '');
     const [block, setBlock] = useState(filters.block ?? '');
     const [type, setType] = useState(filters.type ?? '');
     const [perPage, setPerPage] = useState(filters.per_page ?? '10');
     const [editing, setEditing] = useState(null);
     const hppGroups = options.kelompokHpps ?? [];
+    const canCreateUnit = resourcePermissions.canCreate;
+    const canUpdateUnit = resourcePermissions.canUpdate;
+    const canDeleteUnit = resourcePermissions.canDelete;
     const form = useForm({
         perumahan_id: '',
         kode_nlok: '',
@@ -222,155 +227,157 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                     <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">{description}</p>
                 </section>
 
-                <Form
-                    collapsible
-                    title={editing ? 'Edit Kapling / Unit Rumah' : 'Tambah Kapling / Unit Rumah'}
-                    description={editing ? 'Edit data satu unit rumah. Jika sudah locked, admin tidak bisa mengubah data.' : 'Pilih blok, isi nomor mulai dan jumlah unit. Sistem akan membuat unit berurutan otomatis.'}
-                    onSubmit={submit}
-                    actions={(
-                        <>
-                            {editing && <Button type="button" variant="outline" onClick={resetForm}><X size={17} /> Batal Edit</Button>}
-                            <Button type="submit" disabled={form.processing}>
-                                {form.processing ? <LoaderCircle className="animate-spin" size={17} /> : <PlusCircle size={17} />}
-                                {form.processing ? 'Menyimpan...' : (editing ? 'Simpan Perubahan' : 'Tambah Unit')}
-                            </Button>
-                        </>
-                    )}
-                >
-                    <FormErrorSummary errors={form.errors} />
-                    <Accordion
-                        defaultOpen={0}
-                        items={[
-                            {
-                                title: 'Identitas Unit',
-                                content: (
-                                    <div className="grid gap-4 md:grid-cols-5">
-                                        <div className="grid gap-2">
-                                            <span className="text-sm font-extrabold">Perumahan</span>
-                                            <Dropdown value={form.data.perumahan_id} label="Pilih Perumahan" options={options.perumahans} onChange={(value) => form.setData('perumahan_id', value)} />
-                                            {form.errors.perumahan_id && <span className="text-xs font-bold text-red-600">{form.errors.perumahan_id}</span>}
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <span className="text-sm font-extrabold">Blok</span>
-                                            <Dropdown value={form.data.kode_nlok} label="Pilih Blok" options={options.blokOptions} onChange={(value) => form.setData('kode_nlok', value)} />
-                                            {form.errors.kode_nlok && <span className="text-xs font-bold text-red-600">{form.errors.kode_nlok}</span>}
-                                        </div>
-                                        <Input label={editing ? 'Nomor Rumah' : 'Nomor Mulai'} value={form.data.nomor_rumah} error={form.errors.nomor_rumah} onChange={(event) => form.setData('nomor_rumah', event.target.value)} />
-                                        {!editing && <Input label="Jumlah Unit Dibuat" type="number" value={form.data.jumlah_unit} error={form.errors.jumlah_unit} onChange={(event) => form.setData('jumlah_unit', event.target.value)} />}
-                                        <Input label="Luas Tanah" value={form.data.luas_tanah} error={form.errors.luas_tanah} onChange={(event) => form.setData('luas_tanah', event.target.value)} />
-                                    </div>
-                                ),
-                            },
-                            {
-                                title: 'Spesifikasi Rumah',
-                                content: form.data.status_pembangunan === 'kapling' ? (
-                                    <p className="text-sm font-bold text-ink-soft">Spesifikasi rumah akan muncul setelah status pembangunan bukan Kapling.</p>
-                                ) : (
-                                    <div className="grid gap-4 md:grid-cols-4">
-                                        <Input label="Tipe Rumah" value={form.data.tipe_rumah} error={form.errors.tipe_rumah} onChange={(event) => form.setData('tipe_rumah', event.target.value)} />
-                                        <Input label="Model Unit" value={form.data.model_unit} error={form.errors.model_unit} onChange={(event) => form.setData('model_unit', event.target.value)} />
-                                        <Input label="Luas Bangunan" value={form.data.luas_bangunan} error={form.errors.luas_bangunan} onChange={(event) => form.setData('luas_bangunan', event.target.value)} />
-                                        <Input label="Jumlah Lantai" type="number" value={form.data.jumlah_lantai} error={form.errors.jumlah_lantai} onChange={(event) => form.setData('jumlah_lantai', event.target.value)} />
-                                        <Input label="Kamar Tidur" type="number" value={form.data.kamar_tidur} error={form.errors.kamar_tidur} onChange={(event) => form.setData('kamar_tidur', event.target.value)} />
-                                        <Input label="Kamar Mandi" type="number" value={form.data.kamar_mandi} error={form.errors.kamar_mandi} onChange={(event) => form.setData('kamar_mandi', event.target.value)} />
-                                        <Input label="Daya Listrik" value={form.data.daya_listrik} error={form.errors.daya_listrik} onChange={(event) => form.setData('daya_listrik', event.target.value)} />
-                                        <Input label="Sumber Air" value={form.data.sumber_air} error={form.errors.sumber_air} onChange={(event) => form.setData('sumber_air', event.target.value)} />
-                                        <Input label="Carport" value={form.data.carport} error={form.errors.carport} onChange={(event) => form.setData('carport', event.target.value)} />
-                                        <div className="grid gap-2">
-                                            <span className="text-sm font-extrabold">Arah Hadap</span>
-                                            <Dropdown value={form.data.arah_hadap} label="Pilih Arah" options={options.arahHadap} onChange={(value) => form.setData('arah_hadap', value)} />
-                                        </div>
-                                        <div className="grid gap-2">
-                                            <span className="text-sm font-extrabold">Posisi Unit</span>
-                                            <Dropdown value={form.data.posisi_unit} label="Pilih Posisi" options={options.posisiUnit} onChange={(value) => form.setData('posisi_unit', value)} />
-                                        </div>
-                                        <div className="md:col-span-4">
-                                            <Textarea label="Spesifikasi Bangunan" value={form.data.spesifikasi} error={form.errors.spesifikasi} onChange={(event) => form.setData('spesifikasi', event.target.value)} />
-                                        </div>
-                                    </div>
-                                ),
-                            },
-                            {
-                                title: 'Harga & Status Jual',
-                                content: (
-                                    <div className="grid gap-4 md:grid-cols-4">
-                                        <CurrencyInput label="Harga Jual Dasar" value={form.data.harga_jual} error={form.errors.harga_jual} onChange={(value) => form.setData('harga_jual', value)} />
-                                        <div className="grid gap-2">
-                                            <span className="text-sm font-extrabold">Status Penjualan</span>
-                                            <Dropdown value={form.data.status_penjualan} options={options.statusPenjualan} onChange={(value) => form.setData('status_penjualan', value)} />
-                                        </div>
-                                    </div>
-                                ),
-                            },
-                            {
-                                title: 'Pembangunan & Catatan',
-                                content: (
-                                    <div className="grid gap-4 md:grid-cols-4">
-                                        <div className="grid gap-2">
-                                            <span className="text-sm font-extrabold">Status Pembangunan</span>
-                                            <Dropdown value={form.data.status_pembangunan} options={options.statusPembangunan} onChange={(value) => form.setData('status_pembangunan', value)} />
-                                        </div>
-                                        <Input label="Progress Awal %" type="number" value={form.data.progress_terakhir} error={form.errors.progress_terakhir} onChange={(event) => form.setData('progress_terakhir', event.target.value)} />
-                                        <Input label="Tanggal Mulai" type="date" value={form.data.tanggal_mulai_bangun} onChange={(event) => form.setData('tanggal_mulai_bangun', event.target.value)} />
-                                        <Input label="Tanggal Selesai" type="date" value={form.data.tanggal_selesai_bangun} onChange={(event) => form.setData('tanggal_selesai_bangun', event.target.value)} />
-                                        <div className="md:col-span-4">
-                                            <Textarea label="Catatan Unit" value={form.data.catatan} error={form.errors.catatan} onChange={(event) => form.setData('catatan', event.target.value)} />
-                                        </div>
-                                    </div>
-                                ),
-                            },
-                            {
-                                title: 'HPP Unit Rumah',
-                                content: (
-                                    <div className="grid gap-4">
-                                        <div className="grid gap-3 md:grid-cols-3">
-                                            <div className="rounded-lg bg-silver-soft p-4 dark:bg-white/8">
-                                                <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft">Total HPP</p>
-                                                <p className="mt-1 text-xl font-extrabold">{money(hppTotal)}</p>
+                {canCreateUnit && (
+                    <Form
+                        collapsible
+                        title={editing ? 'Edit Kapling / Unit Rumah' : 'Tambah Kapling / Unit Rumah'}
+                        description={editing ? 'Edit data satu unit rumah. Jika sudah locked, admin tidak bisa mengubah data.' : 'Pilih blok, isi nomor mulai dan jumlah unit. Sistem akan membuat unit berurutan otomatis.'}
+                        onSubmit={submit}
+                        actions={(
+                            <>
+                                {editing && canUpdateUnit && <Button type="button" variant="outline" onClick={resetForm}><X size={17} /> Batal Edit</Button>}
+                                <Button type="submit" disabled={form.processing}>
+                                    {form.processing ? <LoaderCircle className="animate-spin" size={17} /> : <PlusCircle size={17} />}
+                                    {form.processing ? 'Menyimpan...' : (editing ? 'Simpan Perubahan' : 'Tambah Unit')}
+                                </Button>
+                            </>
+                        )}
+                    >
+                        <FormErrorSummary errors={form.errors} />
+                        <Accordion
+                            defaultOpen={0}
+                            items={[
+                                {
+                                    title: 'Identitas Unit',
+                                    content: (
+                                        <div className="grid gap-4 md:grid-cols-5">
+                                            <div className="grid gap-2">
+                                                <span className="text-sm font-extrabold">Perumahan</span>
+                                                <Dropdown value={form.data.perumahan_id} label="Pilih Perumahan" options={options.perumahans} onChange={(value) => form.setData('perumahan_id', value)} />
+                                                {form.errors.perumahan_id && <span className="text-xs font-bold text-red-600">{form.errors.perumahan_id}</span>}
                                             </div>
-                                            <div className="rounded-lg bg-silver-soft p-4 dark:bg-white/8 md:col-span-2">
-                                                <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft">Petunjuk</p>
-                                                <p className="mt-1 text-sm font-semibold text-ink-soft">Isi volume dan harga satuan untuk tiap kelompok HPP. Data ini akan tersimpan bersama unit rumah, termasuk saat membuat banyak unit sekaligus.</p>
+                                            <div className="grid gap-2">
+                                                <span className="text-sm font-extrabold">Blok</span>
+                                                <Dropdown value={form.data.kode_nlok} label="Pilih Blok" options={options.blokOptions} onChange={(value) => form.setData('kode_nlok', value)} />
+                                                {form.errors.kode_nlok && <span className="text-xs font-bold text-red-600">{form.errors.kode_nlok}</span>}
+                                            </div>
+                                            <Input label={editing ? 'Nomor Rumah' : 'Nomor Mulai'} value={form.data.nomor_rumah} error={form.errors.nomor_rumah} onChange={(event) => form.setData('nomor_rumah', event.target.value)} />
+                                            {!editing && <Input label="Jumlah Unit Dibuat" type="number" value={form.data.jumlah_unit} error={form.errors.jumlah_unit} onChange={(event) => form.setData('jumlah_unit', event.target.value)} />}
+                                            <Input label="Luas Tanah" value={form.data.luas_tanah} error={form.errors.luas_tanah} onChange={(event) => form.setData('luas_tanah', event.target.value)} />
+                                        </div>
+                                    ),
+                                },
+                                {
+                                    title: 'Spesifikasi Rumah',
+                                    content: form.data.status_pembangunan === 'kapling' ? (
+                                        <p className="text-sm font-bold text-ink-soft">Spesifikasi rumah akan muncul setelah status pembangunan bukan Kapling.</p>
+                                    ) : (
+                                        <div className="grid gap-4 md:grid-cols-4">
+                                            <Input label="Tipe Rumah" value={form.data.tipe_rumah} error={form.errors.tipe_rumah} onChange={(event) => form.setData('tipe_rumah', event.target.value)} />
+                                            <Input label="Model Unit" value={form.data.model_unit} error={form.errors.model_unit} onChange={(event) => form.setData('model_unit', event.target.value)} />
+                                            <Input label="Luas Bangunan" value={form.data.luas_bangunan} error={form.errors.luas_bangunan} onChange={(event) => form.setData('luas_bangunan', event.target.value)} />
+                                            <Input label="Jumlah Lantai" type="number" value={form.data.jumlah_lantai} error={form.errors.jumlah_lantai} onChange={(event) => form.setData('jumlah_lantai', event.target.value)} />
+                                            <Input label="Kamar Tidur" type="number" value={form.data.kamar_tidur} error={form.errors.kamar_tidur} onChange={(event) => form.setData('kamar_tidur', event.target.value)} />
+                                            <Input label="Kamar Mandi" type="number" value={form.data.kamar_mandi} error={form.errors.kamar_mandi} onChange={(event) => form.setData('kamar_mandi', event.target.value)} />
+                                            <Input label="Daya Listrik" value={form.data.daya_listrik} error={form.errors.daya_listrik} onChange={(event) => form.setData('daya_listrik', event.target.value)} />
+                                            <Input label="Sumber Air" value={form.data.sumber_air} error={form.errors.sumber_air} onChange={(event) => form.setData('sumber_air', event.target.value)} />
+                                            <Input label="Carport" value={form.data.carport} error={form.errors.carport} onChange={(event) => form.setData('carport', event.target.value)} />
+                                            <div className="grid gap-2">
+                                                <span className="text-sm font-extrabold">Arah Hadap</span>
+                                                <Dropdown value={form.data.arah_hadap} label="Pilih Arah" options={options.arahHadap} onChange={(value) => form.setData('arah_hadap', value)} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <span className="text-sm font-extrabold">Posisi Unit</span>
+                                                <Dropdown value={form.data.posisi_unit} label="Pilih Posisi" options={options.posisiUnit} onChange={(value) => form.setData('posisi_unit', value)} />
+                                            </div>
+                                            <div className="md:col-span-4">
+                                                <Textarea label="Spesifikasi Bangunan" value={form.data.spesifikasi} error={form.errors.spesifikasi} onChange={(event) => form.setData('spesifikasi', event.target.value)} />
                                             </div>
                                         </div>
-                                        <div className="grid gap-3">
-                                            {form.data.hpp_items.map((item, index) => (
-                                                <div className="grid gap-3 rounded-lg border border-silver-deep/50 bg-silver-soft/40 p-4 dark:border-white/10 dark:bg-white/5 lg:grid-cols-[1.2fr_0.5fr_0.5fr_0.7fr]" key={item.kelompok_hpp_id || index}>
-                                                    <div className="grid gap-1">
-                                                        <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft">Kelompok HPP</p>
-                                                        <div className="rounded-lg border border-silver-deep/60 bg-white px-4 py-3 text-sm font-extrabold text-ink dark:border-white/10 dark:bg-white/8 dark:text-white">
-                                                            <p>{item.kelompok_hpp_nama}</p>
-                                                            <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">{item.kategori}</p>
-                                                        </div>
-                                                    </div>
-                                                    <Input
-                                                        label="Volume"
-                                                        type="number"
-                                                        value={item.volume}
-                                                        error={form.errors[`hpp_items.${index}.volume`]}
-                                                        onChange={(event) => form.setData('hpp_items', form.data.hpp_items.map((row, rowIndex) => (rowIndex === index ? { ...row, volume: event.target.value } : row)))}
-                                                    />
-                                                    <Input
-                                                        label="Satuan"
-                                                        value={item.satuan}
-                                                        error={form.errors[`hpp_items.${index}.satuan`]}
-                                                        onChange={(event) => form.setData('hpp_items', form.data.hpp_items.map((row, rowIndex) => (rowIndex === index ? { ...row, satuan: event.target.value } : row)))}
-                                                    />
-                                                    <CurrencyInput
-                                                        label="Harga Satuan"
-                                                        value={item.harga_satuan}
-                                                        error={form.errors[`hpp_items.${index}.harga_satuan`]}
-                                                        onChange={(value) => form.setData('hpp_items', form.data.hpp_items.map((row, rowIndex) => (rowIndex === index ? { ...row, harga_satuan: value } : row)))}
-                                                    />
+                                    ),
+                                },
+                                {
+                                    title: 'Harga & Status Jual',
+                                    content: (
+                                        <div className="grid gap-4 md:grid-cols-4">
+                                            <CurrencyInput label="Harga Jual Dasar" value={form.data.harga_jual} error={form.errors.harga_jual} onChange={(value) => form.setData('harga_jual', value)} />
+                                            <div className="grid gap-2">
+                                                <span className="text-sm font-extrabold">Status Penjualan</span>
+                                                <Dropdown value={form.data.status_penjualan} options={options.statusPenjualan} onChange={(value) => form.setData('status_penjualan', value)} />
+                                            </div>
+                                        </div>
+                                    ),
+                                },
+                                {
+                                    title: 'Pembangunan & Catatan',
+                                    content: (
+                                        <div className="grid gap-4 md:grid-cols-4">
+                                            <div className="grid gap-2">
+                                                <span className="text-sm font-extrabold">Status Pembangunan</span>
+                                                <Dropdown value={form.data.status_pembangunan} options={options.statusPembangunan} onChange={(value) => form.setData('status_pembangunan', value)} />
+                                            </div>
+                                            <Input label="Progress Awal %" type="number" value={form.data.progress_terakhir} error={form.errors.progress_terakhir} onChange={(event) => form.setData('progress_terakhir', event.target.value)} />
+                                            <Input label="Tanggal Mulai" type="date" value={form.data.tanggal_mulai_bangun} onChange={(event) => form.setData('tanggal_mulai_bangun', event.target.value)} />
+                                            <Input label="Tanggal Selesai" type="date" value={form.data.tanggal_selesai_bangun} onChange={(event) => form.setData('tanggal_selesai_bangun', event.target.value)} />
+                                            <div className="md:col-span-4">
+                                                <Textarea label="Catatan Unit" value={form.data.catatan} error={form.errors.catatan} onChange={(event) => form.setData('catatan', event.target.value)} />
+                                            </div>
+                                        </div>
+                                    ),
+                                },
+                                {
+                                    title: 'HPP Unit Rumah',
+                                    content: (
+                                        <div className="grid gap-4">
+                                            <div className="grid gap-3 md:grid-cols-3">
+                                                <div className="rounded-lg bg-silver-soft p-4 dark:bg-white/8">
+                                                    <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft">Total HPP</p>
+                                                    <p className="mt-1 text-xl font-extrabold">{money(hppTotal)}</p>
                                                 </div>
-                                            ))}
+                                                <div className="rounded-lg bg-silver-soft p-4 dark:bg-white/8 md:col-span-2">
+                                                    <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft">Petunjuk</p>
+                                                    <p className="mt-1 text-sm font-semibold text-ink-soft">Isi volume dan harga satuan untuk tiap kelompok HPP. Data ini akan tersimpan bersama unit rumah, termasuk saat membuat banyak unit sekaligus.</p>
+                                                </div>
+                                            </div>
+                                            <div className="grid gap-3">
+                                                {form.data.hpp_items.map((item, index) => (
+                                                    <div className="grid gap-3 rounded-lg border border-silver-deep/50 bg-silver-soft/40 p-4 dark:border-white/10 dark:bg-white/5 lg:grid-cols-[1.2fr_0.5fr_0.5fr_0.7fr]" key={item.kelompok_hpp_id || index}>
+                                                        <div className="grid gap-1">
+                                                            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft">Kelompok HPP</p>
+                                                            <div className="rounded-lg border border-silver-deep/60 bg-white px-4 py-3 text-sm font-extrabold text-ink dark:border-white/10 dark:bg-white/8 dark:text-white">
+                                                                <p>{item.kelompok_hpp_nama}</p>
+                                                                <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">{item.kategori}</p>
+                                                            </div>
+                                                        </div>
+                                                        <Input
+                                                            label="Volume"
+                                                            type="number"
+                                                            value={item.volume}
+                                                            error={form.errors[`hpp_items.${index}.volume`]}
+                                                            onChange={(event) => form.setData('hpp_items', form.data.hpp_items.map((row, rowIndex) => (rowIndex === index ? { ...row, volume: event.target.value } : row)))}
+                                                        />
+                                                        <Input
+                                                            label="Satuan"
+                                                            value={item.satuan}
+                                                            error={form.errors[`hpp_items.${index}.satuan`]}
+                                                            onChange={(event) => form.setData('hpp_items', form.data.hpp_items.map((row, rowIndex) => (rowIndex === index ? { ...row, satuan: event.target.value } : row)))}
+                                                        />
+                                                        <CurrencyInput
+                                                            label="Harga Satuan"
+                                                            value={item.harga_satuan}
+                                                            error={form.errors[`hpp_items.${index}.harga_satuan`]}
+                                                            onChange={(value) => form.setData('hpp_items', form.data.hpp_items.map((row, rowIndex) => (rowIndex === index ? { ...row, harga_satuan: value } : row)))}
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
-                                    </div>
-                                ),
-                            },
-                        ]}
-                    />
-                </Form>
+                                    ),
+                                },
+                            ]}
+                        />
+                    </Form>
+                )}
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form className="grid gap-3 p-5 lg:grid-cols-[1.4fr_1fr_1fr_0.8fr_auto_auto] lg:items-end" onSubmit={submitFilters}>
@@ -416,12 +423,12 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-5 py-4 font-semibold">{row.status}</td>
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
-                                                {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>}
+                                                {canUpdateUnit && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>}
                                                 <Button as={Link} href={row.detail_url} size="sm" variant="outline">
                                                     <Eye size={15} /> Detail
                                                 </Button>
-                                                {row.can_edit && <Button as={Link} href={row.hpp_url} size="sm" variant="outline"><Edit3 size={15} /> Edit HPP</Button>}
-                                                {row.can_delete && <Button type="button" size="sm" variant="outline" onClick={() => destroyRow(row)}><Trash2 size={15} /> Hapus</Button>}
+                                                {canUpdateUnit && row.can_edit && <Button as={Link} href={row.hpp_url} size="sm" variant="outline"><Edit3 size={15} /> Edit HPP</Button>}
+                                                {canDeleteUnit && row.can_delete && <Button type="button" size="sm" variant="outline" onClick={() => destroyRow(row)}><Trash2 size={15} /> Hapus</Button>}
                                                 {row.record_status === 'locked' ? (
                                                     permissions.canManageLocked && <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>
                                                 ) : (

@@ -35,6 +35,16 @@ class MaterialRequestController extends Controller
         return Inertia::render('Admin/MaterialRequest/Index', [
             'title' => 'Permintaan Barang',
             'baseUrl' => route('admin.material-request.index', absolute: false),
+            'permissions' => [
+                'canCreate' => $this->canCreateRequest(),
+                'canUpdate' => $this->canUpdateRequest(),
+                'canDelete' => $this->canDeleteRequest(),
+                'canApproveGudang' => $this->canApproveGudang(),
+                'canApproveOwner' => $this->canApproveOwner(),
+                'canLock' => $this->canLockRequest(),
+                'canUnlock' => $this->canManageLock(),
+                'canIssue' => (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'owner', 'super_admin']),
+            ],
             'rows' => MaterialRequest::query()
                 ->with([
                     'gudang:id,nama_gudang',
@@ -83,25 +93,25 @@ class MaterialRequestController extends Controller
                         'catatan' => $detail->catatan,
                     ])->values(),
                     'keterangan' => $row->keterangan,
-                    'can_approve_gudang' => $this->canApproveGudang(),
-                    'can_approve_owner' => $this->canApproveOwner(),
-                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
+                    'can_approve_gudang' => ($row->record_status ?? 'draft') === 'locked' && $this->canApproveGudang() && ($row->approved_at_gudang === null),
+                    'can_approve_owner' => ($row->record_status ?? 'draft') === 'locked' && $this->canApproveOwner() && ($row->approved_at_owner === null),
+                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canLockRequest(),
                     'can_unlock' => $this->canManageLock(),
-                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && ! $row->issued_at,
-                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && ! $row->issued_at,
+                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && ! $row->issued_at && $this->canUpdateRequest(),
+                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && ! $row->issued_at && $this->canDeleteRequest(),
                     'can_issue' => $this->canIssueMaterial($row),
                     'record_status' => $row->record_status ?? 'draft',
                     'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
                 ]),
             'filters' => ['search' => $search],
             'options' => $this->options(),
-            'canCreate' => (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
+            'canCreate' => $this->canCreateRequest(),
         ]);
     }
 
     public function store(Request $request, AppNotificationService $notifications): RedirectResponse
     {
-        $this->authorizePengawasOnly();
+        abort_unless($this->canCreateRequest(), 403, 'Hanya pengawas yang dapat membuat permintaan barang.');
         $validated = $request->validate([
             'tanggal' => ['required', 'date'],
             'gudang_id' => ['nullable', 'exists:gudangs,id'],
@@ -157,6 +167,7 @@ class MaterialRequestController extends Controller
         abort_unless($this->canApproveGudang(), 403, 'Hanya gudang yang dapat menyetujui permintaan barang.');
 
         $request = MaterialRequest::query()->findOrFail($id);
+        abort_unless(($request->record_status ?? 'draft') === 'locked', 422, 'Permintaan barang harus di-lock terlebih dahulu.');
         $result = $workflow->approveGudang($request);
 
         if ($result->approved_at_owner && ! $result->issued_at) {
@@ -170,7 +181,7 @@ class MaterialRequestController extends Controller
 
     public function update(Request $request, string $id): RedirectResponse
     {
-        $this->authorizePengawasOnly();
+        abort_unless($this->canUpdateRequest(), 403, 'Hanya pengawas yang dapat mengubah permintaan barang.');
         $materialRequest = MaterialRequest::query()->with('details')->findOrFail($id);
         $this->abortIfLocked($materialRequest);
         abort_if($materialRequest->issued_at, 422, 'Permintaan yang sudah dikeluarkan dari gudang tidak dapat diedit.');
@@ -208,7 +219,7 @@ class MaterialRequestController extends Controller
 
     public function destroy(string $id): RedirectResponse
     {
-        $this->authorizePengawasOnly();
+        abort_unless($this->canDeleteRequest(), 403, 'Hanya pengawas yang dapat menghapus permintaan barang.');
         $materialRequest = MaterialRequest::query()->findOrFail($id);
         $this->abortIfLocked($materialRequest);
         abort_if($materialRequest->issued_at, 422, 'Permintaan yang sudah dikeluarkan dari gudang tidak dapat dihapus.');
@@ -222,6 +233,7 @@ class MaterialRequestController extends Controller
         abort_unless($this->canApproveOwner(), 403, 'Hanya owner yang dapat memberi persetujuan akhir.');
 
         $request = MaterialRequest::query()->findOrFail($id);
+        abort_unless(($request->record_status ?? 'draft') === 'locked', 422, 'Permintaan barang harus di-lock terlebih dahulu.');
         $result = $workflow->approveOwner($request);
 
         if ($result->approved_at_gudang && ! $result->issued_at) {
@@ -254,14 +266,14 @@ class MaterialRequestController extends Controller
 
     public function lock(string $id): RedirectResponse
     {
-        abort_unless(auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']), 403, 'Hanya pengawas atau owner yang dapat mengunci permintaan.');
+        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci permintaan.');
 
         return $this->traitLock($id);
     }
 
     public function unlock(string $id): RedirectResponse
     {
-        abort_unless($this->canManageLock(), 403, 'Hanya owner yang dapat membuka lock permintaan.');
+        abort_unless($this->canManageLock(), 403, 'Hanya user yang diberi akses yang dapat membuka lock permintaan.');
 
         return $this->traitUnlock($id);
     }
@@ -289,11 +301,24 @@ class MaterialRequestController extends Controller
         ];
     }
 
-    protected function authorizePengawasOnly(): void
+    protected function canCreateRequest(): bool
     {
-        $user = auth()->user();
+        return (bool) auth()->user()?->can('material-request.create');
+    }
 
-        abort_unless($user?->hasAnyRole(['pengawas', 'owner', 'super_admin']), 403, 'Hanya pengawas yang dapat membuat permintaan barang.');
+    protected function canUpdateRequest(): bool
+    {
+        return (bool) auth()->user()?->can('material-request.update');
+    }
+
+    protected function canDeleteRequest(): bool
+    {
+        return (bool) auth()->user()?->can('material-request.delete');
+    }
+
+    protected function canLockRequest(): bool
+    {
+        return (bool) auth()->check();
     }
 
     private function validatePayload(Request $request): array
@@ -316,7 +341,7 @@ class MaterialRequestController extends Controller
 
     protected function canApproveGudang(): bool
     {
-        return (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'super_admin']);
+        return (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'owner', 'super_admin']);
     }
 
     protected function canApproveOwner(): bool
@@ -326,7 +351,13 @@ class MaterialRequestController extends Controller
 
     protected function canManageLock(): bool
     {
-        return (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin']);
+        $user = auth()->user();
+
+        return (bool) $user && (
+            $user->hasAnyRole(['super_admin'])
+            || $user->can('material-request.unlock')
+            || $user->can('material-request.manage')
+        );
     }
 
     protected function canIssueMaterial(MaterialRequest $row): bool

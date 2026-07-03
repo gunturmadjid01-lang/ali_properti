@@ -56,7 +56,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
         nilai_kontrak_dasar: '',
         nilai_kontrak: '',
         metode_pembayaran: 'cash',
-        approval_role: 'manager',
+        approval_role: 'manajer',
         lingkup_pekerjaan: '',
         catatan: '',
         status: 'draft',
@@ -158,7 +158,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
             nilai_kontrak_dasar: row.nilai_kontrak_dasar ?? '',
             nilai_kontrak: row.nilai_kontrak ?? '',
             metode_pembayaran: row.metode_pembayaran ?? 'cash',
-            approval_role: row.approval_role ?? 'manager',
+            approval_role: row.approval_role ?? 'manajer',
             lingkup_pekerjaan: row.lingkup_pekerjaan ?? '',
             catatan: row.catatan ?? '',
             status: row.status ?? 'draft',
@@ -382,12 +382,12 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                         <td className="px-5 py-4 font-extrabold">{money(row.total_penambahan)}</td>
                                         <td className="px-5 py-4 font-extrabold">{money(row.nilai_kontrak)}</td>
                                         <td className="px-5 py-4 font-bold">{row.metode_pembayaran === 'cash' ? 'Cash / Sekaligus' : 'Cicil / Termin'}</td>
-                                        <td className="px-5 py-4 font-bold">{row.approval_role === 'admin' ? 'Admin' : 'Manager'}</td>
+                                        <td className="px-5 py-4 font-bold">{row.approval_role === 'admin' ? 'Admin' : 'Manajer'}</td>
                                         {showPaymentSchedule && <td className="px-5 py-4">
                                             <div className="grid min-w-[320px] gap-2">
                                                 {row.payments.map((payment) => (
                                                     <div className="rounded-lg border border-silver-deep/60 p-2 dark:border-white/10" key={`${row.id}-${payment.termin_ke}`}>
-                                                        <p className="font-extrabold">Termin {payment.termin_ke}: {money(payment.nominal)}</p>
+                                                    <p className="font-extrabold">Termin {payment.termin_ke} - {money(payment.nominal)}</p>
                                                         <p className="text-xs font-bold text-ink-soft">Jatuh tempo: {payment.tanggal_jatuh_tempo ?? '-'} | Bayar: {payment.tanggal_pembayaran ?? '-'} | {payment.status_label}</p>
                                                         {(approvalOnly || paymentOnly || disbursementOnly) && <p className={`text-xs font-bold ${row.hpp_plan_exists ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}`}>
                                                             {row.hpp_plan_exists ? `Rencana HPP ${row.hpp_plan_label}: ${money(row.hpp_plan_total)}` : `Peringatan: rencana HPP ${row.hpp_plan_label} belum diisi.`}
@@ -395,7 +395,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                                         {payment.opname && <p className="text-xs font-bold text-ink-soft">Opname: {payment.opname}</p>}
                                                         {(approvalOnly || paymentOnly || disbursementOnly) && <div className="mt-2 flex flex-wrap gap-2">
                                                             {paymentOnly && permissions.canRequestPayment && payment.status === 'menunggu_pengajuan' && <Button type="button" size="sm" variant="outline" onClick={() => postPaymentAction(row, payment, 'request')}>Ajukan Pembayaran</Button>}
-                                                            {(approvalOnly || disbursementOnly) && permissions.canApprovePayment && payment.status === 'menunggu_approval_manager' && <Button type="button" size="sm" variant="outline" onClick={() => postPaymentAction(row, payment, 'approve')}>Setujui Pencairan</Button>}
+                                                            {(approvalOnly || disbursementOnly) && permissions.canApprovePayment && ['menunggu_approval_manager', 'menunggu_approval_manajer'].includes(payment.status) && <Button type="button" size="sm" variant="outline" onClick={() => postPaymentAction(row, payment, 'approve')}>Setujui Pencairan</Button>}
                                                             {paymentOnly && permissions.canReleasePayment && payment.status === 'menunggu_pembayaran_keuangan' && <Button type="button" size="sm" onClick={() => postPaymentAction(row, payment, 'release')}>Bayar oleh Keuangan</Button>}
                                                         </div>}
                                                     </div>
@@ -444,7 +444,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                             <p><b>Total tambahan:</b> {money(paymentDetail.total_penambahan)}</p>
                             <p><b>Total SPK:</b> {money(paymentDetail.nilai_kontrak)}</p>
                             <p><b>Metode pembayaran:</b> {paymentDetail.metode_pembayaran === 'cash' ? 'Cash / Sekaligus' : 'Cicil / Termin'}</p>
-                            <p><b>Approval:</b> {paymentDetail.approval_role === 'admin' ? 'Admin' : 'Manager'}</p>
+                            <p><b>Approval:</b> {paymentDetail.approval_role === 'admin' ? 'Admin' : 'Manajer'}</p>
                             <p><b>Status SPK:</b> {paymentDetail.status}</p>
                             <p><b>Status Dokumen:</b> {paymentDetail.record_status_label}</p>
                             <p><b>Rencana HPP:</b> {paymentDetail.hpp_plan_exists ? money(paymentDetail.hpp_plan_total) : `Belum diisi untuk ${paymentDetail.hpp_plan_label}`}</p>
@@ -459,7 +459,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                 {paymentDetail.additions.map((addition, index) => (
                                     <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10" key={addition.id ?? index}>
                                         <p className="font-extrabold">{addition.judul_penambahan}</p>
-                                        <p>{addition.volume} {addition.satuan || ''} × {money(addition.harga_satuan)} = {money(addition.total)}</p>
+                                        <p>{addition.volume} {addition.satuan || ''} x {money(addition.harga_satuan)} = {money(addition.total)}</p>
                                         <p className="text-ink-soft">{addition.deskripsi || addition.keterangan || '-'}</p>
                                     </div>
                                 ))}
@@ -469,7 +469,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                             <p className="font-extrabold">Rincian Pembayaran</p>
                             {paymentDetail.payments.map((payment) => (
                                 <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10" key={payment.id}>
-                                    <p className="font-extrabold">Termin {payment.termin_ke} — {money(payment.nominal)}</p>
+                                    <p className="font-extrabold">Termin {payment.termin_ke} - {money(payment.nominal)}</p>
                                     <p>Jatuh tempo: {payment.tanggal_jatuh_tempo ?? '-'}</p>
                                     <p>Tanggal bayar: {payment.tanggal_pembayaran ?? '-'}</p>
                                     <p>Status: {payment.status_label}</p>

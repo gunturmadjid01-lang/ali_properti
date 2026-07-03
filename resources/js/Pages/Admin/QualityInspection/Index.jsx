@@ -16,10 +16,22 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
     const form = useForm({ tanggal: new Date().toISOString().slice(0, 10), perumahan_id: '', detail_rumah_id: '', tahapan_pembangunan_id: '', site_schedule_id: '', progress_pembangunan_id: '', hasil: 'sesuai', item_pemeriksaan: '', temuan: '', tindakan_perbaikan: '', target_selesai: '', status: 'terbuka', foto: null });
     const perumahans = options.perumahans ?? [];
     const detailRumahs = options.detailRumahs ?? [];
-    const tahapanPembangunans = options.tahapanPembangunans ?? [];
+    const tahapanPembangunansUnit = options.tahapanPembangunansUnit ?? options.tahapanPembangunans ?? [];
+    const tahapanPembangunansKawasan = options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? [];
+    const resolveScopedValue = (selectedValue, fallbackValue) => ((selectedValue !== undefined && selectedValue !== null && selectedValue !== '') ? selectedValue : fallbackValue);
+    const tahapanPembangunans = useMemo(
+        () => (form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan),
+        [form.data.detail_rumah_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+    );
     const unitOptions = useMemo(() => detailRumahs.filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, detailRumahs]);
-    const scheduleOptions = useMemo(() => (options.siteSchedules ?? []).filter((row) => !form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id)), [form.data.detail_rumah_id, options.siteSchedules]);
-    const progressOptions = useMemo(() => (options.progressPembangunans ?? []).filter((row) => !form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id)), [form.data.detail_rumah_id, options.progressPembangunans]);
+    const scheduleOptions = useMemo(() => (options.siteSchedules ?? []).filter((row) => (
+        (!form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id))
+        && (!form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id))
+    )), [form.data.perumahan_id, form.data.detail_rumah_id, options.siteSchedules]);
+    const progressOptions = useMemo(() => (options.progressPembangunans ?? []).filter((row) => (
+        (!form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id))
+        && (!form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id))
+    )), [form.data.perumahan_id, form.data.detail_rumah_id, options.progressPembangunans]);
     const resetForm = () => {
         setEditing(null);
         form.reset();
@@ -54,13 +66,13 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                     {Object.keys(form.errors).length > 0 && <div className="rounded-lg bg-red-50 p-4 text-sm font-bold text-red-700">{Object.values(form.errors).map((error) => <p key={error}>{error}</p>)}</div>}
                     <div className="grid gap-4 md:grid-cols-4">
                         <Input label="Tanggal" type="date" value={form.data.tanggal} onChange={(event) => form.setData('tanggal', event.target.value)} />
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown label="Pilih Perumahan" value={form.data.perumahan_id} options={perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '', site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Unit</span><Dropdown label="Kawasan / Unit" value={form.data.detail_rumah_id} options={unitOptions} onChange={(value) => form.setData({ ...form.data, detail_rumah_id: value, site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown label="Pilih Tahapan" value={form.data.tahapan_pembangunan_id} options={tahapanPembangunans} onChange={(value) => form.setData('tahapan_pembangunan_id', value)} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown label="Pilih Perumahan" value={form.data.perumahan_id} options={perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '', tahapan_pembangunan_id: '', site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Unit</span><Dropdown label="Kawasan / Unit" value={form.data.detail_rumah_id} options={unitOptions} onChange={(value, selected) => form.setData({ ...form.data, detail_rumah_id: value, perumahan_id: resolveScopedValue(selected?.perumahan_id, form.data.perumahan_id), tahapan_pembangunan_id: '', site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown label={form.data.detail_rumah_id ? 'Pilih Tahapan Rumah' : 'Pilih Tahapan Kawasan'} value={form.data.tahapan_pembangunan_id} options={tahapanPembangunans} onChange={(value) => form.setData('tahapan_pembangunan_id', value)} /></div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Jadwal Lapangan Terkait</span><Dropdown label="Pilih Jadwal" value={form.data.site_schedule_id} options={scheduleOptions} onChange={(value, selected) => form.setData({ ...form.data, site_schedule_id: value, perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id, detail_rumah_id: selected?.detail_rumah_id ?? form.data.detail_rumah_id, tahapan_pembangunan_id: selected?.tahapan_pembangunan_id ?? form.data.tahapan_pembangunan_id, item_pemeriksaan: form.data.item_pemeriksaan || selected?.nama_pekerjaan || '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Progress Terkait</span><Dropdown label="Pilih Progress Approved" value={form.data.progress_pembangunan_id} options={progressOptions} onChange={(value, selected) => form.setData({ ...form.data, progress_pembangunan_id: value, site_schedule_id: selected?.site_schedule_id || form.data.site_schedule_id, perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id, detail_rumah_id: selected?.detail_rumah_id ?? form.data.detail_rumah_id, tahapan_pembangunan_id: selected?.tahapan_pembangunan_id ?? form.data.tahapan_pembangunan_id, item_pemeriksaan: form.data.item_pemeriksaan || selected?.nama_progress || '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Jadwal Lapangan Terkait</span><Dropdown label="Pilih Jadwal" value={form.data.site_schedule_id} options={scheduleOptions} onChange={(value, selected) => form.setData({ ...form.data, site_schedule_id: value, perumahan_id: resolveScopedValue(selected?.perumahan_id, form.data.perumahan_id), detail_rumah_id: resolveScopedValue(selected?.detail_rumah_id, form.data.detail_rumah_id), tahapan_pembangunan_id: resolveScopedValue(selected?.tahapan_pembangunan_id, form.data.tahapan_pembangunan_id), item_pemeriksaan: form.data.item_pemeriksaan || selected?.nama_pekerjaan || '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Progress Terkait</span><Dropdown label="Pilih Progress Approved" value={form.data.progress_pembangunan_id} options={progressOptions} onChange={(value, selected) => form.setData({ ...form.data, progress_pembangunan_id: value, site_schedule_id: resolveScopedValue(selected?.site_schedule_id, form.data.site_schedule_id), perumahan_id: resolveScopedValue(selected?.perumahan_id, form.data.perumahan_id), detail_rumah_id: resolveScopedValue(selected?.detail_rumah_id, form.data.detail_rumah_id), tahapan_pembangunan_id: resolveScopedValue(selected?.tahapan_pembangunan_id, form.data.tahapan_pembangunan_id), item_pemeriksaan: form.data.item_pemeriksaan || selected?.nama_progress || '' })} /></div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Hasil</span><Dropdown value={form.data.hasil} options={[{ value: 'sesuai', label: 'Sesuai' }, { value: 'defect', label: 'Defect / Rusak' }, { value: 'perlu_perbaikan', label: 'Perlu Perbaikan' }]} onChange={(value) => form.setData('hasil', value)} /></div>

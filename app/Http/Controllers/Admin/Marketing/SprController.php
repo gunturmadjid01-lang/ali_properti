@@ -64,7 +64,7 @@ class SprController extends Controller
 
         return Inertia::render('Admin/Marketing/Spr/Index', [
             'title' => 'SPR',
-            'description' => 'Buat Surat Pemesanan Rumah dan proses approval manager serta owner sebelum masuk KPR.',
+            'description' => 'Buat Surat Pemesanan Rumah dan proses approval manajer serta owner sebelum masuk KPR.',
             'baseUrl' => route('admin.marketing.spr.index', absolute: false),
             'rows' => $rows,
             'filters' => ['search' => $search],
@@ -85,6 +85,8 @@ class SprController extends Controller
 
     public function create(Request $request): Response
     {
+        abort_unless($request->user()?->can('booking.create') || $request->user()?->can('booking.manage'), 403, 'Anda tidak memiliki permission untuk membuat SPR.');
+
         return Inertia::render('Admin/Marketing/Spr/Form', [
             ...$this->formPayload(),
             'mode' => 'create',
@@ -97,6 +99,8 @@ class SprController extends Controller
 
     public function edit(Request $request, string $id): Response
     {
+        abort_unless($request->user()?->can('booking.update') || $request->user()?->can('booking.manage'), 403, 'Anda tidak memiliki permission untuk mengubah SPR.');
+
         $spr = Spr::query()
             ->with([
                 'costumer:id,nama,no_identitas,telepon',
@@ -121,6 +125,8 @@ class SprController extends Controller
 
     public function store(Request $request, MarketingLeadStatusService $leadStatus): RedirectResponse
     {
+        abort_unless($request->user()?->can('booking.create') || $request->user()?->can('booking.manage'), 403, 'Anda tidak memiliki permission untuk membuat SPR.');
+
         $validated = $request->validate([
             'costumer_id' => ['required', 'exists:costumers,id'],
             'detail_rumah_id' => ['required', 'exists:detail_rumahs,id'],
@@ -170,11 +176,13 @@ class SprController extends Controller
             $leadStatus->markSpr($spr, MarketingLeadStatusService::SPR);
         });
 
-        return back()->with('success', 'SPR berhasil dibuat dan menunggu approval manager.');
+        return back()->with('success', 'SPR berhasil dibuat dan menunggu approval manajer.');
     }
 
     public function update(Request $request, string $id): RedirectResponse
     {
+        abort_unless($request->user()?->can('booking.update') || $request->user()?->can('booking.manage'), 403, 'Anda tidak memiliki permission untuk mengubah SPR.');
+
         $validated = $request->validate([
             'costumer_id' => ['required', 'exists:costumers,id'],
             'detail_rumah_id' => ['required', 'exists:detail_rumahs,id'],
@@ -261,7 +269,7 @@ class SprController extends Controller
             abort_unless($user === null || $user->hasAnyRole(['owner', 'manajer_pimpro']), 403);
             $this->approveLevel($spr, 'manager', Spr::STATUS_MENUNGGU_OWNER, $user?->id);
 
-            return back()->with('success', 'SPR disetujui manager dan menunggu approval owner.');
+            return back()->with('success', 'SPR disetujui manajer dan menunggu approval owner.');
         }
 
         if ($spr->status === Spr::STATUS_MENUNGGU_OWNER) {
@@ -420,7 +428,7 @@ class SprController extends Controller
 
         return [
             'title' => 'SPR',
-            'description' => 'Buat Surat Pemesanan Rumah dan proses approval manager serta owner sebelum masuk KPR.',
+            'description' => 'Buat Surat Pemesanan Rumah dan proses approval manajer serta owner sebelum masuk KPR.',
             'baseUrl' => route('admin.marketing.spr.index', absolute: false),
             'row' => $row,
             'customers' => $this->customerOptions($spr),
@@ -487,8 +495,8 @@ class SprController extends Controller
             'updated_at' => optional($spr->updated_at)->format('d/m/Y H:i'),
             'record_status' => $spr->record_status ?? 'draft',
             'record_status_label' => ($spr->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-            'can_lock' => ($spr->record_status ?? 'draft') !== 'locked',
-            'can_unlock' => (bool) request()->user()?->hasAnyRole(['owner', 'super_admin']) && ($spr->record_status ?? 'draft') === 'locked',
+            'can_lock' => ($spr->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+            'can_unlock' => $this->currentUserCanManageLockedRecords() && ($spr->record_status ?? 'draft') === 'locked',
             'berkas_count' => $spr->berkasCostumers()->count(),
             'berkas' => $spr->berkasCostumers->map(fn (SprBerkasCostumer $berkas) => [
                 'id' => $berkas->id,
@@ -846,7 +854,7 @@ class SprController extends Controller
     protected function statusOptions(): array
     {
         return [
-            ['value' => Spr::STATUS_MENUNGGU_MANAGER, 'label' => 'Menunggu Manager'],
+            ['value' => Spr::STATUS_MENUNGGU_MANAGER, 'label' => 'Menunggu Manajer'],
             ['value' => Spr::STATUS_MENUNGGU_OWNER, 'label' => 'Menunggu Owner'],
             ['value' => Spr::STATUS_DISETUJUI, 'label' => 'Disetujui'],
             ['value' => Spr::STATUS_DITOLAK, 'label' => 'Ditolak'],

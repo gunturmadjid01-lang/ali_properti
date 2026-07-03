@@ -22,6 +22,7 @@ use App\Models\ProgressPembangunan;
 use App\Models\TransaksiLogistik;
 use App\Models\TahapanPembangunan;
 use App\Models\User;
+use App\Services\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -227,7 +228,7 @@ class PerumahanController extends Controller
                 'items_text' => $row->details->map(fn ($detail) => trim(($detail->barangMaterial?->nama_barang ?? '-').' x '.($detail->qty ?? 0).' '.($detail->satuan ?? '')))->join(', '),
                 'keterangan' => $row->keterangan,
                 'approved_by' => $row->approvedByGudang?->name ?? '-',
-                'can_approve' => (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin', 'user_area_gudang']),
+                'can_approve' => ($row->record_status ?? 'draft') === 'locked' && (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin', 'user_area_gudang']),
                 'approve_url' => route('admin.material-request.approve', $row->id, false),
             ])
             ->values();
@@ -476,29 +477,34 @@ class PerumahanController extends Controller
         ]);
     }
 
-    public function store(StorePerumahanRequest $request): RedirectResponse
+    public function store(StorePerumahanRequest $request, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
-        Perumahan::create(app(PerumahanPayload::class)->fromRequest($request));
+        $payload = app(PerumahanPayload::class)->fromRequest($request);
 
-        return back()->with('success', $this->title().' berhasil ditambahkan.');
+        return $approvalWorkflow->create('perumahan', $payload, function (array $payload): void {
+            Perumahan::create($payload);
+        });
     }
 
-    public function update(UpdatePerumahanRequest $request, string $id): RedirectResponse
+    public function update(UpdatePerumahanRequest $request, string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
         $row = Perumahan::query()->findOrFail($id);
         $this->abortIfLocked($row);
-        $row->update(app(PerumahanPayload::class)->fromRequest($request));
+        $payload = app(PerumahanPayload::class)->fromRequest($request);
 
-        return back()->with('success', $this->title().' berhasil diperbarui.');
+        return $approvalWorkflow->update('perumahan', $row, $payload, function (Perumahan $row, array $payload): void {
+            $row->update($payload);
+        });
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
         $row = Perumahan::query()->findOrFail($id);
         $this->abortIfLocked($row);
-        $row->delete();
 
-        return back()->with('success', $this->title().' berhasil dihapus.');
+        return $approvalWorkflow->delete('perumahan', $row, function (Perumahan $row): void {
+            $row->delete();
+        });
     }
 
     public function updateHpp(UpdatePerumahanHppRequest $request, string $id): RedirectResponse

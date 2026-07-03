@@ -92,7 +92,7 @@ class AssetInventoryController extends Controller
 
     public function requestAsset(Request $request): RedirectResponse
     {
-        abort_unless($this->canUseAsset(), 403, 'Hanya pengawas/admin/manager/owner yang dapat mengajukan alat.');
+        abort_unless($this->canUseAsset(), 403, 'Hanya pengawas/admin/manajer/owner yang dapat mengajukan alat.');
         $validated = $request->validate([
             'office_asset_id' => ['required', 'exists:office_assets,id'],
             'perumahan_id' => ['nullable', 'exists:perumahans,id'],
@@ -117,7 +117,7 @@ class AssetInventoryController extends Controller
 
     public function approveRequest(string $id): RedirectResponse
     {
-        abort_unless($this->canApprove(), 403, 'Hanya admin, manager, atau owner yang dapat approve.');
+        abort_unless($this->canApprove(), 403, 'Hanya admin, manajer, atau owner yang dapat approve.');
         $request = AssetUsageRequest::query()->with('asset')->findOrFail($id);
         abort_if($request->status !== 'diajukan', 422, 'Pengajuan ini sudah diproses.');
         abort_if($request->asset?->status !== 'tersedia', 422, 'Aset tidak tersedia.');
@@ -375,12 +375,21 @@ class AssetInventoryController extends Controller
 
     protected function authorizeViewer(): void
     {
-        abort_unless(auth()->user()?->hasAnyRole(['admin', 'pengawas', 'manajer_pimpro', 'owner', 'super_admin']), 403);
+        abort_unless(
+            auth()->user()?->can('asset-inventory.view')
+            || auth()->user()?->can('asset-inventory.request')
+            || auth()->user()?->can('asset-inventory.usage')
+            || auth()->user()?->hasAnyRole(['owner', 'super_admin']),
+            403,
+        );
     }
 
     protected function canManageAssets(): bool
     {
-        return (bool) auth()->user()?->hasAnyRole(['admin', 'owner', 'super_admin']);
+        return (bool) auth()->user()?->can('asset-inventory.create')
+            || auth()->user()?->can('asset-inventory.update')
+            || auth()->user()?->can('asset-inventory.delete')
+            || auth()->user()?->hasAnyRole(['owner', 'super_admin']);
     }
 
     protected function canApprove(): bool
@@ -390,7 +399,9 @@ class AssetInventoryController extends Controller
 
     protected function canUseAsset(): bool
     {
-        return (bool) auth()->user()?->hasAnyRole(['admin', 'pengawas', 'manajer_pimpro', 'owner', 'super_admin']);
+        return (bool) auth()->user()?->can('asset-inventory.request')
+            || auth()->user()?->can('asset-inventory.usage')
+            || auth()->user()?->hasAnyRole(['owner', 'super_admin']);
     }
 
     protected function canUnlock(): bool

@@ -56,7 +56,7 @@ class RolePermissionController extends Controller
     {
         $payload = $this->payload($request);
         $role = Role::create(collect($payload)->except('permission_ids')->toArray());
-        $role->syncPermissions($payload['permission_ids'] ?? []);
+        $this->syncRolePermissions($role, $payload['permission_ids'] ?? []);
 
         return back()->with('success', $this->title().' berhasil ditambahkan.');
     }
@@ -67,7 +67,7 @@ class RolePermissionController extends Controller
         $role = Role::query()->findOrFail($id);
         $this->abortIfLocked($role);
         $role->update(collect($payload)->except('permission_ids')->toArray());
-        $role->syncPermissions($payload['permission_ids'] ?? []);
+        $this->syncRolePermissions($role, $payload['permission_ids'] ?? []);
 
         return back()->with('success', $this->title().' berhasil diperbarui.');
     }
@@ -84,6 +84,15 @@ class RolePermissionController extends Controller
     protected function payload(FormRequest $request, ?Model $row = null): array
     {
         return app(RolePermissionPayload::class)->fromRequest($request);
+    }
+
+    protected function syncRolePermissions(Role $role, array $permissionIds): void
+    {
+        $permissions = Permission::query()
+            ->whereIn('id', collect($permissionIds)->map(fn ($id) => (int) $id)->filter()->values())
+            ->get();
+
+        $role->syncPermissions($permissions);
     }
 
     protected function modelClass(): string
@@ -229,11 +238,8 @@ class RolePermissionController extends Controller
             ['key' => 'create', 'label' => 'Tambah'],
             ['key' => 'update', 'label' => 'Edit'],
             ['key' => 'delete', 'label' => 'Hapus'],
+            ['key' => 'manage', 'label' => 'Manage'],
             ['key' => 'unlock', 'label' => 'Unlock'],
-            ['key' => 'approve_manager', 'label' => 'Approve Manager'],
-            ['key' => 'approve_owner', 'label' => 'Approve Owner'],
-            ['key' => 'approve_finance', 'label' => 'Approve Admin Keuangan'],
-            ['key' => 'approve_admin', 'label' => 'Approve Admin'],
         ];
 
         $module = fn (string $key, string $label, array $allowed = []) => [
@@ -269,9 +275,41 @@ class RolePermissionController extends Controller
                 ],
             ],
             [
+                'key' => 'approval',
+                'label' => 'Approval',
+                'modules' => [
+                    [
+                        'key' => 'approval-dashboard',
+                        'label' => 'Daftar Approval',
+                        'permissions' => [
+                            ['action' => 'view', 'label' => 'Buka', 'name' => 'approval.view'],
+                        ],
+                    ],
+                    [
+                        'key' => 'approval-settings',
+                        'label' => 'Setting Approval',
+                        'permissions' => [
+                            ['action' => 'manage', 'label' => 'Manage', 'name' => 'approval.settings'],
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'key' => 'project',
+                'label' => 'Proyek',
+                'modules' => [
+                    $module('progress', 'Progress Pembangunan'),
+                    $module('site-schedule', 'Jadwal Lapangan'),
+                    $module('site-report', 'Laporan Lapangan'),
+                    $module('quality-inspection', 'Kontrol Kualitas'),
+                    $module('field-supervision', 'Pengawasan Lapangan'),
+                ],
+            ],
+            [
                 'key' => 'project-finance',
                 'label' => 'Keuangan Proyek',
                 'modules' => [
+                    $module('spk-kontraktor', 'SPK Kontraktor'),
                     [
                         'key' => 'spk-payment',
                         'label' => 'Pembayaran SPK',
@@ -281,6 +319,74 @@ class RolePermissionController extends Controller
                             ['action' => 'update', 'label' => 'Catat Pembayaran', 'name' => 'spk-payment.update'],
                         ],
                     ],
+                    $module('kpr', 'KPR'),
+                    $module('kpr-akad', 'Akad KPR'),
+                    $module('handover-customer', 'Serah Terima'),
+                    $module('refund-spr', 'Refund SPR'),
+                ],
+            ],
+            [
+                'key' => 'sales',
+                'label' => 'Penjualan',
+                'modules' => [
+                    $module('customer', 'Data Customer'),
+                    $module('customer-follow-up', 'Follow Up Customer'),
+                    $module('booking', 'SPR'),
+                    $module('spr-payment', 'Pembayaran SPR'),
+                    $module('kpr', 'KPR'),
+                    $module('kpr-akad', 'Akad KPR'),
+                    $module('handover-customer', 'Serah Terima'),
+                    $module('unit-stock', 'Unit Available', ['view']),
+                    $module('pricelist', 'Pricelist Aktif', ['view']),
+                    $module('payment-simulation', 'Simulasi Pembayaran', ['view']),
+                    $module('refund-spr', 'Refund SPR'),
+                ],
+            ],
+            [
+                'key' => 'warehouse',
+                'label' => 'Gudang & Logistik',
+                'modules' => [
+                    $module('master-material', 'Master Material'),
+                    $module('site-material-stock', 'Stok Material', ['view']),
+                    $module('material-request', 'Permintaan Material'),
+                    $module('material-purchase', 'Permintaan Pembelian Gudang'),
+                    $module('material-usage', 'Pemakaian Material'),
+                    $module('material-return', 'Pengembalian Material'),
+                    $module('asset-inventory', 'Inventaris Aset', ['view', 'create', 'update', 'delete', 'unlock']),
+                ],
+            ],
+            [
+                'key' => 'finance',
+                'label' => 'Keuangan & Akuntansi',
+                'modules' => [
+                    $module('bank-account-ledger', 'Mutasi & Saldo Rekening', ['view']),
+                    $module('buku-besar', 'Buku Besar', ['view']),
+                    $module('neraca-saldo', 'Neraca Saldo', ['view']),
+                    $module('laba-rugi', 'Laba Rugi', ['view']),
+                    $module('neraca', 'Neraca', ['view']),
+                    $module('arus-kas', 'Arus Kas', ['view']),
+                    $module('piutang', 'Piutang Customer', ['view']),
+                    $module('hutang', 'Hutang Supplier & Kontraktor', ['view']),
+                ],
+            ],
+            [
+                'key' => 'marketing',
+                'label' => 'Marketing',
+                'modules' => [
+                    $module('marketing.lead-source', 'Sumber Lead', ['manage']),
+                    $module('marketing.lead-report', 'Laporan Lead', ['view']),
+                    $module('marketing.pipeline', 'Pipeline Semua Marketing', ['view']),
+                    $module('marketing.pipeline-report', 'Laporan Pipeline', ['view']),
+                    $module('marketing.campaign', 'Campaign & Promosi', ['manage']),
+                    $module('marketing.reminder', 'Reminder Follow Up', ['manage']),
+                    $module('marketing.document-review', 'Validasi Berkas', ['manage']),
+                    $module('marketing.lead-distribution', 'Distribusi Lead', ['manage']),
+                    $module('marketing.activity', 'Monitoring Aktivitas', ['view']),
+                    $module('marketing.target-commission', 'Target KPI & Komisi', ['manage']),
+                    $module('marketing.leaderboard', 'Leaderboard Sales', ['view']),
+                    $module('marketing.receivable', 'Tagihan & Kwitansi', ['view']),
+                    $module('marketing.template', 'Template Komunikasi', ['manage']),
+                    $module('marketing.performance', 'Dashboard Performa', ['view']),
                 ],
             ],
         ];

@@ -3,6 +3,7 @@ import { PlusCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../../../../Components/UI';
 import AdminLayout from '../../../../Layouts/AdminLayout';
+import { useResourcePermissions } from '../../../../Utils/permissions';
 import CabangPerusahaanForm from '../CabangPerusahaan/Form';
 import cabangPerusahaanRequest from '../CabangPerusahaan/request';
 import ManagementTableAccordion from '../Components/ManagementTableAccordion';
@@ -35,6 +36,18 @@ const sectionResources = {
     'role-permission': { FormComponent: RolePermissionForm, requestService: rolePermissionRequest },
 };
 
+const sectionPermissionKeys = {
+    'cabang-perusahaan': 'cabang',
+    perumahan: 'perumahan',
+    'master-bank': 'master-bank',
+    'dokumen-legalitas': 'dokumen-legalitas',
+    'dokumen-legalitas-rumah': 'dokumen-legalitas',
+    'kelompok-hpp': 'kelompok-hpp',
+    'tipe-post': 'tipe-post',
+    user: 'users',
+    'role-permission': 'roles',
+};
+
 function defaultValues(fields) {
     return fields.reduce((values, field) => {
         values[field.name] = field.type === 'checkboxes' ? [] : (field.defaultValue ?? '');
@@ -60,6 +73,10 @@ function ManagementSection({ section, overviewUrl }) {
     const form = useForm(defaults);
     const [selected, setSelected] = useState(null);
     const [formOpen, setFormOpen] = useState(false);
+    const resourcePermissions = useResourcePermissions(sectionPermissionKeys[section.key], section.baseUrl);
+    const permissions = section.readOnly
+        ? { ...resourcePermissions, canCreate: false, canUpdate: false, canDelete: false, canUnlock: false }
+        : resourcePermissions;
 
     const resetForm = () => {
         setSelected(null);
@@ -68,6 +85,10 @@ function ManagementSection({ section, overviewUrl }) {
     };
 
     const openCreate = () => {
+        if (!permissions.canCreate) {
+            return;
+        }
+
         resetForm();
         setFormOpen(true);
     };
@@ -78,6 +99,10 @@ function ManagementSection({ section, overviewUrl }) {
     };
 
     const editRow = (row) => {
+        if (!permissions.canUpdate) {
+            return;
+        }
+
         setSelected(row);
         form.clearErrors();
         form.setData(valuesFromRow(section.fields, row));
@@ -112,7 +137,7 @@ function ManagementSection({ section, overviewUrl }) {
                         </p>
                     )}
                 </div>
-                {!section.readOnly && (
+                {permissions.canCreate && (
                     <Button type="button" variant="outline" onClick={openCreate}>
                         <PlusCircle size={18} />
                         Data Baru
@@ -127,9 +152,9 @@ function ManagementSection({ section, overviewUrl }) {
                     rows={section.rows}
                     filters={section.filters}
                     defaultOpen={section.defaultOpen}
-                    permissions={section.readOnly ? { canUpdate: false, canDelete: false, canUnlock: false } : { canUpdate: true, canDelete: true }}
+                    permissions={permissions}
                     onEdit={editRow}
-                    onDelete={(row) => requestService.destroy({ baseUrl: section.baseUrl, row, label: section.title })}
+                    onDelete={(row) => permissions.canDelete && requestService.destroy({ baseUrl: section.baseUrl, row, label: section.title })}
                     onSearch={(search) => requestService.search({
                         baseUrl: overviewUrl,
                         search,
@@ -137,7 +162,7 @@ function ManagementSection({ section, overviewUrl }) {
                     })}
                 />
 
-                {!section.readOnly && (
+                {(permissions.canCreate || permissions.canUpdate) && (
                     <FormComponent
                         open={formOpen}
                         title={section.title}

@@ -115,7 +115,7 @@ function Dashboard({ data }) {
     </div>;
 }
 
-function ManualTransaction({ data, options }) {
+function ManualTransaction({ data, options, canCreate }) {
     const initialProperty = options.perumahans?.find((row) => row.value)?.value ?? '';
     const form = useForm({
         perumahan_id: initialProperty,
@@ -138,6 +138,8 @@ function ManualTransaction({ data, options }) {
 
     return <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
         <Card className="p-5">
+            {!canCreate && <p className="text-sm font-semibold text-ink-soft">Anda hanya dapat melihat data transaksi ini.</p>}
+            {canCreate && (
             <form className="grid gap-4" onSubmit={submit}>
                 <Dropdown
                     label="Perumahan"
@@ -159,6 +161,7 @@ function ManualTransaction({ data, options }) {
                 {Object.keys(form.errors).length > 0 && <div className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{Object.values(form.errors)[0]}</div>}
                 <Button disabled={form.processing}>Posting Transaksi</Button>
             </form>
+            )}
         </Card>
         <Table detailTitle="Detail Transaksi Kas/Bank" rows={data.rows ?? []} columns={[
             { key: 'date', label: 'Tanggal' },
@@ -184,7 +187,7 @@ const journalColumns = [
     { key: 'credit', label: 'Kredit', render: (row) => money(row.credit) },
 ];
 
-function AccountList({ data }) {
+function AccountList({ data, canWrite }) {
     const [editing, setEditing] = useState(null);
     const [open, setOpen] = useState(false);
     const initial = { kode_akun: '', nama_akun: '', kategori: 'aset', posisi_normal: 'debit', status: 'aktif' };
@@ -210,16 +213,16 @@ function AccountList({ data }) {
     };
 
     return <>
-        <div className="flex justify-end"><Button type="button" onClick={() => show()}><Plus size={16} /> Tambah Akun</Button></div>
+        {canWrite && <div className="flex justify-end"><Button type="button" onClick={() => show()}><Plus size={16} /> Tambah Akun</Button></div>}
         <Table detailTitle="Detail Akun" rows={data.rows ?? []} columns={[
             { key: 'kode_akun', label: 'Kode' },
             { key: 'nama_akun', label: 'Nama Akun' },
             { key: 'kategori', label: 'Kategori' },
             { key: 'posisi_normal', label: 'Saldo Normal' },
             { key: 'status', label: 'Status' },
-            { key: 'is_system', label: 'Akun Sistem', render: (row) => row.is_system ? 'Ya' : <Button size="sm" variant="outline" type="button" onClick={() => show(row)}>Edit</Button> },
+            { key: 'is_system', label: 'Akun Sistem', render: (row) => row.is_system ? 'Ya' : (canWrite ? <Button size="sm" variant="outline" type="button" onClick={() => show(row)}>Edit</Button> : '-') },
         ]} />
-        <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Akun' : 'Tambah Akun'} size="md">
+        {canWrite && <Modal open={open} onClose={() => setOpen(false)} title={editing ? 'Edit Akun' : 'Tambah Akun'} size="md">
             <form className="grid gap-4" onSubmit={submit}>
                 <Input label="Kode Akun" value={form.data.kode_akun} error={form.errors.kode_akun} onChange={(event) => form.setData('kode_akun', event.target.value)} />
                 <Input label="Nama Akun" value={form.data.nama_akun} error={form.errors.nama_akun} onChange={(event) => form.setData('nama_akun', event.target.value)} />
@@ -228,11 +231,11 @@ function AccountList({ data }) {
                 <Dropdown label="Status" value={form.data.status} options={[{ value: 'aktif', label: 'Aktif' }, { value: 'nonaktif', label: 'Nonaktif' }]} onChange={(value) => form.setData('status', value)} />
                 <div className="flex justify-end"><Button disabled={form.processing}>Simpan</Button></div>
             </form>
-        </Modal>
+        </Modal>}
     </>;
 }
 
-function JournalList({ data, options }) {
+function JournalList({ data, options, canCreate }) {
     const [open, setOpen] = useState(false);
     const form = useForm({
         tanggal: new Date().toISOString().slice(0, 10),
@@ -255,9 +258,9 @@ function JournalList({ data, options }) {
     };
 
     return <>
-        <div className="flex justify-end"><Button type="button" onClick={() => setOpen(true)}><Plus size={16} /> Jurnal Manual</Button></div>
+        {canCreate && <div className="flex justify-end"><Button type="button" onClick={() => setOpen(true)}><Plus size={16} /> Jurnal Manual</Button></div>}
         <Table detailTitle="Detail Jurnal" rows={data.rows ?? []} columns={journalColumns} />
-        <Modal open={open} onClose={() => setOpen(false)} title="Jurnal Umum Manual" size="xl">
+        {canCreate && <Modal open={open} onClose={() => setOpen(false)} title="Jurnal Umum Manual" size="xl">
             <form className="grid gap-4" onSubmit={submit}>
                 <div className="grid gap-4 md:grid-cols-2">
                     <Input label="Tanggal" type="date" value={form.data.tanggal} onChange={(event) => form.setData('tanggal', event.target.value)} />
@@ -278,7 +281,7 @@ function JournalList({ data, options }) {
                 </div>
                 <div className="flex justify-end"><Button disabled={form.processing || totals.debit <= 0 || totals.debit !== totals.credit}>Posting Jurnal</Button></div>
             </form>
-        </Modal>
+        </Modal>}
     </>;
 }
 
@@ -433,13 +436,15 @@ const icons = {
     hutang: TrendingDown,
 };
 
-export default function Index({ title, section, baseUrl, filters, options, data }) {
+export default function Index({ title, section, baseUrl, filters, options, data, permissions = {} }) {
     const Icon = icons[section] ?? WalletCards;
+    const canCreate = permissions.canCreate ?? false;
+    const canUpdate = permissions.canUpdate ?? false;
     const content = {
         dashboard: <Dashboard data={data} />,
-        'transaksi-kas-bank': <ManualTransaction data={data} options={options} />,
-        'daftar-akun': <AccountList data={data} />,
-        'jurnal-umum': <JournalList data={data} options={options} />,
+        'transaksi-kas-bank': <ManualTransaction data={data} options={options} canCreate={canCreate} />,
+        'daftar-akun': <AccountList data={data} canWrite={canCreate || canUpdate} />,
+        'jurnal-umum': <JournalList data={data} options={options} canCreate={canCreate} />,
         'buku-besar': <Ledger data={data} />,
         'neraca-saldo': <TrialBalance data={data} />,
         'laba-rugi': <ProfitLoss data={data} />,

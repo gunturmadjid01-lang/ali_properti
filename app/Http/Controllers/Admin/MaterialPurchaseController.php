@@ -33,6 +33,15 @@ class MaterialPurchaseController extends Controller
         return Inertia::render('Admin/MaterialPurchase/Index', [
             'title' => 'Pembelian Barang',
             'baseUrl' => route('admin.material-purchase.index', absolute: false),
+            'permissions' => [
+                'canCreate' => (bool) auth()->user()?->can('material-purchase.create') || auth()->user()?->can('material-purchase.manage'),
+                'canApprove' => (bool) auth()->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']),
+                'canRelease' => (bool) auth()->user()?->hasAnyRole(['keuangan', 'admin_keuangan', 'owner', 'super_admin']),
+                'canMarkPurchased' => (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'admin', 'super_admin']),
+                'canReceive' => (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'admin', 'super_admin']),
+                'canLock' => (bool) auth()->check(),
+                'canUnlock' => (bool) auth()->user()?->can('material-purchase.unlock'),
+            ],
             'rows' => MaterialPurchase::query()
                 ->with([
                     'gudang:id,nama_gudang',
@@ -111,7 +120,7 @@ class MaterialPurchaseController extends Controller
 
         $service->createPurchase($validated, purchaseRequest: $purchaseRequest);
 
-        return back()->with('success', 'Pembelian barang berhasil dibuat dan menunggu approval manager.');
+        return back()->with('success', 'Pembelian barang berhasil dibuat dan menunggu approval manajer.');
     }
 
     public function fromRequest(string $id, Request $request, MaterialPurchaseService $service): RedirectResponse

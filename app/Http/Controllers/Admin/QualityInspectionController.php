@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\BuildsFieldOptions;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\UsesApprovalSettings;
 use App\Http\Controllers\Controller;
 use App\Models\FieldDefect;
 use App\Models\ProgressPembangunan;
 use App\Models\QualityInspection;
 use App\Models\SiteSchedule;
+use App\Models\TahapanPembangunan;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,7 +20,7 @@ use Inertia\Response;
 
 class QualityInspectionController extends Controller
 {
-    use BuildsFieldOptions, HandlesCrudLock {
+    use BuildsFieldOptions, HandlesCrudLock, UsesApprovalSettings {
         HandlesCrudLock::lock as protected traitLock;
         HandlesCrudLock::unlock as protected traitUnlock;
     }
@@ -79,9 +81,9 @@ class QualityInspectionController extends Controller
                     'created_by_name' => $row->creator?->name ?? '-',
                     'updated_by_name' => $row->updater?->name ?? '-',
                     'approved_by_name' => $row->approvedBy?->name ?? '-',
-                    'can_approve' => $row->approval_status !== 'approved' && $this->canApproveFieldData(),
-                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'manajer_pimpro', 'owner', 'super_admin']),
-                    'can_unlock' => (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin']),
+                    'can_approve' => ($row->record_status ?? 'draft') === 'locked' && $this->requiresApprovalFor('quality-inspection') && $row->approval_status !== 'approved' && $this->canApproveFor('quality-inspection'),
+                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+                    'can_unlock' => $this->currentUserCanManageLockedRecords(),
                     'can_edit' => ($row->record_status ?? 'draft') !== 'locked',
                     'can_delete' => ($row->record_status ?? 'draft') !== 'locked',
                     'record_status' => $row->record_status ?? 'draft',
@@ -108,22 +110,33 @@ class QualityInspectionController extends Controller
             'foto' => ['nullable', 'image', 'max:4096'],
         ]);
 
+        $approvalRequired = $this->requiresApprovalFor('quality-inspection');
+
         $inspection = QualityInspection::query()->create([
             ...$this->normalizePayload(collect($validated)->except('foto')->all()),
             'kode_inspeksi' => 'QC-'.now()->format('Ymd-His').'-'.random_int(10, 99),
             'foto' => $request->file('foto')?->store('kontrol-kualitas', 'public'),
+            'approval_status' => $approvalRequired ? 'menunggu_approval_manager' : 'approved',
+            'approved_by' => $approvalRequired ? null : auth()->id(),
+            'approved_at' => $approvalRequired ? null : now(),
             'created_by' => auth()->id(),
             'updated_by' => auth()->id(),
         ]);
-        $this->syncDefectFromInspection($inspection);
+        if (! $approvalRequired) {
+            $this->syncDefectFromInspection($inspection);
+        }
 
-        return back()->with('success', 'Hasil kontrol kualitas berhasil disimpan.');
+        return back()->with('success', $approvalRequired
+            ? 'Hasil kontrol kualitas berhasil disimpan dan menunggu approval.'
+            : 'Hasil kontrol kualitas berhasil disimpan dan langsung aktif.');
     }
 
     public function approve(string $id): RedirectResponse
     {
-        abort_unless($this->canApproveFieldData(), 403, 'Hanya manager atau owner yang dapat menyetujui inspeksi.');
+        abort_unless($this->requiresApprovalFor('quality-inspection'), 422, 'Kontrol kualitas ini tidak memerlukan approval.');
+        abort_unless($this->canApproveFor('quality-inspection'), 403, 'Anda tidak memiliki izin approval inspeksi.');
         $row = QualityInspection::query()->findOrFail($id);
+        abort_unless(($row->record_status ?? 'draft') === 'locked', 422, 'Kontrol kualitas harus di-lock terlebih dahulu.');
         if ($row->approval_status === 'approved') {
             return back()->with('success', 'Kontrol kualitas sudah disetujui sebelumnya.');
         }
@@ -136,14 +149,14 @@ class QualityInspectionController extends Controller
 
     public function lock(string $id): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci inspeksi.');
 
         return $this->traitLock($id);
     }
 
     public function unlock(string $id): RedirectResponse
     {
-        abort_unless(auth()->user()?->hasAnyRole(['owner', 'super_admin']), 403, 'Hanya owner yang dapat membuka lock inspeksi.');
+        abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock inspeksi.');
 
         return $this->traitUnlock($id);
     }
@@ -163,17 +176,23 @@ class QualityInspectionController extends Controller
             $foto = $request->file('foto')->store('kontrol-kualitas', 'public');
         }
 
+        $approvalRequired = $this->requiresApprovalFor('quality-inspection');
+
         $row->update([
             ...$this->normalizePayload(collect($validated)->except('foto')->all()),
             'foto' => $foto,
-            'approval_status' => 'menunggu_approval_manager',
-            'approved_by' => null,
-            'approved_at' => null,
+            'approval_status' => $approvalRequired ? 'menunggu_approval_manager' : 'approved',
+            'approved_by' => $approvalRequired ? null : auth()->id(),
+            'approved_at' => $approvalRequired ? null : now(),
             'updated_by' => auth()->id(),
         ]);
-        $this->syncDefectFromInspection($row->fresh());
+        if (! $approvalRequired) {
+            $this->syncDefectFromInspection($row->fresh());
+        }
 
-        return back()->with('success', 'Kontrol kualitas berhasil diperbarui.');
+        return back()->with('success', $approvalRequired
+            ? 'Kontrol kualitas berhasil diperbarui dan menunggu approval.'
+            : 'Kontrol kualitas berhasil diperbarui dan langsung aktif.');
     }
 
     public function destroy(string $id): RedirectResponse
@@ -208,6 +227,7 @@ class QualityInspectionController extends Controller
                 'perumahan_id' => $inspection->perumahan_id,
                 'detail_rumah_id' => $inspection->detail_rumah_id,
                 'tahapan_pembangunan_id' => $inspection->tahapan_pembangunan_id,
+                'progress_pembangunan_id' => $inspection->progress_pembangunan_id,
                 'kategori' => 'pekerjaan',
                 'prioritas' => $inspection->hasil === 'defect' ? 'high' : 'medium',
                 'temuan' => $inspection->temuan ?: $inspection->item_pemeriksaan,
@@ -231,13 +251,33 @@ class QualityInspectionController extends Controller
     private function options(): array
     {
         $options = $this->fieldOptions();
+        $options['tahapanPembangunansUnit'] = TahapanPembangunan::query()
+            ->where('status', 'aktif')
+            ->where('konteks', 'unit')
+            ->orderBy('urutan')
+            ->get(['id', 'nama_tahapan', 'bobot_persen'])
+            ->map(fn (TahapanPembangunan $row) => [
+                'value' => (string) $row->id,
+                'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)',
+            ])
+            ->values();
+        $options['tahapanPembangunansKawasan'] = TahapanPembangunan::query()
+            ->where('status', 'aktif')
+            ->where('konteks', 'kawasan')
+            ->orderBy('urutan')
+            ->get(['id', 'nama_tahapan', 'bobot_persen'])
+            ->map(fn (TahapanPembangunan $row) => [
+                'value' => (string) $row->id,
+                'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)',
+            ])
+            ->values();
         $options['siteSchedules'] = SiteSchedule::query()
-            ->whereNotNull('detail_rumah_id')
+            ->with(['perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah'])
             ->orderBy('tanggal_target')
             ->get(['id', 'perumahan_id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'nama_pekerjaan', 'target_progress', 'realisasi_progress'])
             ->map(fn (SiteSchedule $row) => [
                 'value' => (string) $row->id,
-                'label' => $row->nama_pekerjaan.' ('.$row->realisasi_progress.'/'.$row->target_progress.'%)',
+                'label' => ($row->detailRumah ? trim($row->detailRumah->kode_nlok.' '.$row->detailRumah->nomor_rumah) : 'Kawasan').': '.$row->nama_pekerjaan.' ('.$row->realisasi_progress.'/'.$row->target_progress.'%)',
                 'perumahan_id' => (string) $row->perumahan_id,
                 'detail_rumah_id' => (string) $row->detail_rumah_id,
                 'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
@@ -245,14 +285,17 @@ class QualityInspectionController extends Controller
             ])
             ->values();
         $options['progressPembangunans'] = ProgressPembangunan::query()
-            ->with('detailRumah:id,perumahan_id')
+            ->with([
+                'detailRumah:id,perumahan_id',
+                'siteSchedule:id,perumahan_id,detail_rumah_id,tahapan_pembangunan_id,nama_pekerjaan',
+            ])
             ->where('approval_status', 'approved')
             ->latest('tanggal')
             ->get(['id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'site_schedule_id', 'nama_progress', 'persentase'])
             ->map(fn (ProgressPembangunan $row) => [
                 'value' => (string) $row->id,
                 'label' => $row->nama_progress.' - '.$row->persentase.'%',
-                'perumahan_id' => (string) ($row->detailRumah?->perumahan_id ?? ''),
+                'perumahan_id' => (string) ($row->detailRumah?->perumahan_id ?? $row->siteSchedule?->perumahan_id ?? ''),
                 'detail_rumah_id' => (string) $row->detail_rumah_id,
                 'tahapan_pembangunan_id' => (string) $row->tahapan_pembangunan_id,
                 'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),

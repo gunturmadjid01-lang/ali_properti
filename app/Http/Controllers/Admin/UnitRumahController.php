@@ -146,6 +146,8 @@ class UnitRumahController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        abort_unless(auth()->user()?->can('detail-rumah.create') || auth()->user()?->can('detail-rumah.manage'), 403, 'Anda tidak memiliki permission untuk menambah unit rumah.');
+
         $payload = $this->normalizePayload($this->payload($request, bulk: true));
         $hppItems = $payload['hpp_items'] ?? [];
         unset($payload['hpp_items']);
@@ -187,6 +189,8 @@ class UnitRumahController extends Controller
 
     public function update(Request $request, string $id): RedirectResponse
     {
+        abort_unless(auth()->user()?->can('detail-rumah.update') || auth()->user()?->can('detail-rumah.manage'), 403, 'Anda tidak memiliki permission untuk mengubah unit rumah.');
+
         $row = DetailRumah::query()->findOrFail($id);
         $this->abortIfLocked($row);
 
@@ -218,6 +222,8 @@ class UnitRumahController extends Controller
 
     public function destroy(string $id): RedirectResponse
     {
+        abort_unless(auth()->user()?->can('detail-rumah.delete') || auth()->user()?->can('detail-rumah.manage'), 403, 'Anda tidak memiliki permission untuk menghapus unit rumah.');
+
         $row = DetailRumah::query()->findOrFail($id);
         $this->abortIfLocked($row);
 
@@ -228,6 +234,8 @@ class UnitRumahController extends Controller
 
     public function updateHpp(UpdatePerumahanHppRequest $request, string $id, ?string $itemId = null): RedirectResponse
     {
+        abort_unless(auth()->user()?->can('detail-rumah.update') || auth()->user()?->can('detail-rumah.manage'), 403, 'Anda tidak memiliki permission untuk mengubah HPP unit rumah.');
+
         $rumah = DetailRumah::query()->findOrFail($id);
         $this->abortIfLocked($rumah);
 

@@ -13,13 +13,18 @@ function ErrorSummary({ errors }) {
     return <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm font-bold text-red-700">{messages.map((message) => <p key={message}>{message}</p>)}</div>;
 }
 
-export default function Index({ title, baseUrl, rows = { data: [], links: [] }, filters = {}, options = {}, siteStockRows = [] }) {
+export default function Index({ title, baseUrl, rows = { data: [], links: [] }, filters = {}, options = {}, siteStockRows = [], permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [filterPerumahan, setFilterPerumahan] = useState(filters.perumahan_id ?? '');
     const [filterUnit, setFilterUnit] = useState(filters.detail_rumah_id ?? '');
     const [filterTahapan, setFilterTahapan] = useState(filters.tahapan_pembangunan_id ?? '');
     const [editing, setEditing] = useState(null);
     const [detail, setDetail] = useState(null);
+    const canCreate = permissions.canCreate ?? false;
+    const canUpdate = permissions.canUpdate ?? false;
+    const canDelete = permissions.canDelete ?? false;
+    const canLock = permissions.canLock ?? false;
+    const canUnlock = permissions.canUnlock ?? false;
     const form = useForm({
         tanggal: new Date().toISOString().slice(0, 10),
         perumahan_id: '',
@@ -31,12 +36,20 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
         items: [itemTemplate()],
     });
 
+    const tahapanPembangunansUnit = options.tahapanPembangunansUnit ?? options.tahapanPembangunans ?? [];
+    const tahapanPembangunansKawasan = options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? [];
+    const resolveScopedValue = (selectedValue, fallbackValue) => ((selectedValue !== undefined && selectedValue !== null && selectedValue !== '') ? selectedValue : fallbackValue);
+    const tahapanPembangunans = useMemo(
+        () => (form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan),
+        [form.data.detail_rumah_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+    );
     const unitOptions = useMemo(() => (options.detailRumahs ?? []).filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, options.detailRumahs]);
     const filterUnitOptions = useMemo(() => (options.detailRumahs ?? []).filter((row) => !filterPerumahan || row.perumahan_id === String(filterPerumahan)), [filterPerumahan, options.detailRumahs]);
     const progressOptions = useMemo(() => (options.progressPembangunans ?? []).filter((row) => (
-        (!form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id))
+        (!form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id))
+        && (!form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id))
         && (!form.data.tahapan_pembangunan_id || row.tahapan_pembangunan_id === String(form.data.tahapan_pembangunan_id))
-    )), [form.data.detail_rumah_id, form.data.tahapan_pembangunan_id, options.progressPembangunans]);
+    )), [form.data.perumahan_id, form.data.detail_rumah_id, form.data.tahapan_pembangunan_id, options.progressPembangunans]);
     const stockOptions = useMemo(() => (options.siteStocks ?? []).filter((row) => (
         (!form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id))
         && (!form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id))
@@ -105,16 +118,17 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                <Form collapsible title={editing ? `Edit ${editing.kode_pemakaian}` : 'Catat Pemakaian Material'} description="Pemakaian wajib dihubungkan ke progress yang telah disetujui agar konsumsi material dan pekerjaan fisik dapat dibandingkan." onSubmit={submit} actions={<>{editing && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}<Button type="submit" disabled={form.processing}><PackageCheck size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan Pemakaian'}</Button></>}>
+                {canCreate ? (
+                <Form collapsible title={editing ? `Edit ${editing.kode_pemakaian}` : 'Catat Pemakaian Material'} description="Pemakaian wajib dihubungkan ke progress yang telah disetujui agar konsumsi material dan pekerjaan fisik dapat dibandingkan." onSubmit={submit} actions={<>{editing && canUpdate && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}<Button type="submit" disabled={form.processing}><PackageCheck size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan Pemakaian'}</Button></>}>
                     <ErrorSummary errors={form.errors} />
                     <div className="grid gap-4 md:grid-cols-4">
                         <Input label="Tanggal" type="date" value={form.data.tanggal} onChange={(event) => form.setData('tanggal', event.target.value)} />
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown label="Pilih Perumahan" value={form.data.perumahan_id} options={options.perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '', progress_pembangunan_id: '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Unit</span><Dropdown label="Pilih Unit" value={form.data.detail_rumah_id} options={unitOptions} onChange={(value) => form.setData({ ...form.data, detail_rumah_id: value, progress_pembangunan_id: '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown label="Pilih Tahapan" value={form.data.tahapan_pembangunan_id} options={options.tahapanPembangunans} onChange={(value) => form.setData({ ...form.data, tahapan_pembangunan_id: value, progress_pembangunan_id: '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown label="Pilih Perumahan" value={form.data.perumahan_id} options={options.perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '', tahapan_pembangunan_id: '', progress_pembangunan_id: '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Unit</span><Dropdown label="Kawasan / Pilih Unit" value={form.data.detail_rumah_id} options={unitOptions} onChange={(value, selected) => form.setData({ ...form.data, detail_rumah_id: value, perumahan_id: resolveScopedValue(selected?.perumahan_id, form.data.perumahan_id), tahapan_pembangunan_id: '', progress_pembangunan_id: '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown label={form.data.detail_rumah_id ? 'Pilih Tahapan Rumah' : 'Pilih Tahapan Kawasan'} value={form.data.tahapan_pembangunan_id} options={tahapanPembangunans} onChange={(value) => form.setData({ ...form.data, tahapan_pembangunan_id: value, progress_pembangunan_id: '' })} /></div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Progress Disetujui</span><Dropdown label="Pilih Progress" value={form.data.progress_pembangunan_id} options={progressOptions} onChange={(value) => form.setData('progress_pembangunan_id', value)} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Progress Disetujui</span><Dropdown label="Pilih Progress" value={form.data.progress_pembangunan_id} options={progressOptions} onChange={(value, selected) => form.setData({ ...form.data, progress_pembangunan_id: value, perumahan_id: resolveScopedValue(selected?.perumahan_id, form.data.perumahan_id), detail_rumah_id: resolveScopedValue(selected?.detail_rumah_id, form.data.detail_rumah_id), tahapan_pembangunan_id: resolveScopedValue(selected?.tahapan_pembangunan_id, form.data.tahapan_pembangunan_id) })} /></div>
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Bukti Pemakaian</span><input type="file" accept="image/*" className="min-h-11 rounded-lg border border-silver-deep/70 p-2" onChange={(event) => form.setData('foto', event.target.files?.[0] ?? null)} /></div>
                     </div>
                     <div className="grid gap-3">
@@ -129,6 +143,11 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                     </div>
                     <Textarea label="Catatan Pemakaian / Pekerjaan" value={form.data.keterangan} onChange={(event) => form.setData('keterangan', event.target.value)} />
                 </Form>
+                ) : (
+                    <section className="rounded-lg border border-dashed border-silver-deep/70 bg-silver-soft/40 p-6 text-sm text-ink-soft dark:border-white/10 dark:bg-white/5">
+                        Form pemakaian material disembunyikan karena role aktif tidak memiliki izin create pemakaian material.
+                    </section>
+                )}
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <div className="border-b border-silver-deep/60 p-5">
@@ -169,7 +188,7 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                         </div>
                         <div className="grid gap-2">
                             <span className="text-sm font-extrabold">Filter Tahapan</span>
-                            <Dropdown label="Semua Tahapan" value={filterTahapan} options={options.tahapanPembangunans} onChange={setFilterTahapan} />
+                            <Dropdown label="Semua Tahapan" value={filterTahapan} options={[{ value: '', label: 'Semua Tahapan' }, ...tahapanPembangunansUnit, ...tahapanPembangunansKawasan]} onChange={setFilterTahapan} />
                         </div>
                         <div className="flex items-end"><Button type="submit"><Search size={16} /> Cari</Button></div>
                     </form>
@@ -187,10 +206,10 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                                     <td className="px-5 py-4 font-bold">{row.record_status}</td>
                                     <td className="px-5 py-4"><div className="flex gap-2">
                                         <Button type="button" size="sm" variant="outline" onClick={() => setDetail(row)}><Eye size={14} /> Detail</Button>
-                                        {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Edit</Button>}
-                                        {row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus catatan pemakaian?') && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>}
-                                        {row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={14} /> Lock</Button>}
-                                        {row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={14} /> Unlock</Button>}
+                                        {canUpdate && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Edit</Button>}
+                                        {canDelete && row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus catatan pemakaian?') && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>}
+                                        {canLock && row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={14} /> Lock</Button>}
+                                        {canUnlock && row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={14} /> Unlock</Button>}
                                     </div></td>
                                 </tr>)}
                             </tbody>

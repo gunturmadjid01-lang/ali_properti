@@ -10,11 +10,8 @@ const actionOrder = [
     'create',
     'update',
     'delete',
+    'manage',
     'unlock',
-    'approve_manager',
-    'approve_owner',
-    'approve_finance',
-    'approve_admin',
 ];
 
 const actionLabels = {
@@ -22,11 +19,8 @@ const actionLabels = {
     create: 'Tambah',
     update: 'Edit',
     delete: 'Hapus',
+    manage: 'Manage',
     unlock: 'Unlock',
-    approve_manager: 'Approve Manager',
-    approve_owner: 'Approve Owner',
-    approve_finance: 'Approve Admin Keuangan',
-    approve_admin: 'Approve Admin',
 };
 
 export default function Index({ title, description, baseUrl, options = {} }) {

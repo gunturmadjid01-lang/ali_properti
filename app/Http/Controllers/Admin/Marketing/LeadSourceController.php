@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Http\Controllers\Controller;
 use App\Models\MarketingLeadSource;
+use App\Services\ApprovalWorkflowService;
 use App\Support\CodeGenerator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -21,7 +22,7 @@ class LeadSourceController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->abortUnlessMarketingAccess($request, ['manager', 'supervisor_marketing'], 'marketing.lead-source.manage');
+        $this->abortUnlessMarketingAccess($request, ['manajer_pimpro', 'supervisor_marketing'], 'marketing.lead-source.manage');
         $search = trim((string) $request->query('search', ''));
         $canManage = $this->hasAnyMarketingPermission($request, [
             'marketing.lead-source.manage',
@@ -61,8 +62,8 @@ class LeadSourceController extends Controller
                 'updated_by_name' => $source->updater?->name ?? '-',
                 'can_edit' => ($source->record_status ?? 'draft') !== 'locked' && $this->hasAnyMarketingPermission($request, ['marketing.lead-source.update', 'marketing-lead-source.update', 'marketing.lead-source.manage']),
                 'can_delete' => ($source->record_status ?? 'draft') !== 'locked' && $this->hasAnyMarketingPermission($request, ['marketing.lead-source.delete', 'marketing-lead-source.delete', 'marketing.lead-source.manage']),
-                'can_lock' => ($source->record_status ?? 'draft') !== 'locked',
-                'can_unlock' => (($source->record_status ?? 'draft') === 'locked') && ($this->hasAnyMarketingPermission($request, ['marketing.lead-source.unlock', 'marketing-lead-source.unlock', 'marketing.lead-source.manage']) || auth()->user()?->hasAnyRole(['owner', 'super_admin'])),
+                'can_lock' => (bool) auth()->check() && ($source->record_status ?? 'draft') !== 'locked',
+                'can_unlock' => (($source->record_status ?? 'draft') === 'locked') && $this->currentUserCanManageLockedRecords(),
             ]);
 
         return Inertia::render('Admin/Marketing/LeadSource/Index', [
@@ -75,7 +76,7 @@ class LeadSourceController extends Controller
                 'canCreate' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.create', 'marketing-lead-source.create']),
                 'canUpdate' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.update', 'marketing-lead-source.update']),
                 'canDelete' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.delete', 'marketing-lead-source.delete']),
-                'canUnlock' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.unlock', 'marketing-lead-source.unlock']) || auth()->user()?->hasAnyRole(['owner', 'super_admin']),
+                'canUnlock' => $canManage || $this->currentUserCanManageLockedRecords(),
             ],
             'options' => [
                 'kategoriOptions' => $this->kategoriOptions(),
@@ -84,37 +85,40 @@ class LeadSourceController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
-        $this->abortUnlessMarketingAccess($request, ['manager', 'supervisor_marketing'], 'marketing.lead-source.manage');
+        $this->abortUnlessMarketingAccess($request, ['manajer_pimpro', 'supervisor_marketing'], 'marketing.lead-source.manage');
         $validated = $this->validatePayload($request);
 
-        MarketingLeadSource::query()->create([
+        return $approvalWorkflow->create('marketing-lead-source', [
             ...$validated,
             'kode_sumber' => CodeGenerator::next(MarketingLeadSource::class, 'kode_sumber', 'LEAD'),
-        ]);
-
-        return back()->with('success', 'Sumber lead berhasil ditambahkan.');
+        ], function (array $payload): void {
+            MarketingLeadSource::query()->create($payload);
+        });
     }
 
-    public function update(Request $request, string $id): RedirectResponse
+    public function update(Request $request, string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
-        $this->abortUnlessMarketingAccess($request, ['manager', 'supervisor_marketing'], 'marketing.lead-source.manage');
+        $this->abortUnlessMarketingAccess($request, ['manajer_pimpro', 'supervisor_marketing'], 'marketing.lead-source.manage');
         $source = MarketingLeadSource::query()->findOrFail($id);
         $this->abortIfLocked($source);
-        $source->update($this->validatePayload($request));
+        $payload = $this->validatePayload($request);
 
-        return back()->with('success', 'Sumber lead berhasil diperbarui.');
+        return $approvalWorkflow->update('marketing-lead-source', $source, $payload, function (MarketingLeadSource $row, array $payload): void {
+            $row->update($payload);
+        });
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
-        $this->abortUnlessMarketingAccess(request(), ['manager', 'supervisor_marketing'], 'marketing.lead-source.manage');
+        $this->abortUnlessMarketingAccess(request(), ['manajer_pimpro', 'supervisor_marketing'], 'marketing.lead-source.manage');
         $source = MarketingLeadSource::query()->findOrFail($id);
         $this->abortIfLocked($source);
-        $source->delete();
 
-        return back()->with('success', 'Sumber lead berhasil dihapus.');
+        return $approvalWorkflow->delete('marketing-lead-source', $source, function (MarketingLeadSource $row): void {
+            $row->delete();
+        });
     }
 
     protected function modelClass(): string

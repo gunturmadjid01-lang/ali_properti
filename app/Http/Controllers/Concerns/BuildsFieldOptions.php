@@ -22,6 +22,10 @@ trait BuildsFieldOptions
                 ])->values(),
             'tahapanPembangunans' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'unit')->orderBy('urutan')->get(['id', 'nama_tahapan'])
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan])->values(),
+            'tahapanPembangunansUnit' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'unit')->orderBy('urutan')->get(['id', 'nama_tahapan', 'bobot_persen'])
+                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)', 'bobot_persen' => $row->bobot_persen])->values(),
+            'tahapanPembangunansKawasan' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'kawasan')->orderBy('urutan')->get(['id', 'nama_tahapan', 'bobot_persen'])
+                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)', 'bobot_persen' => $row->bobot_persen])->values(),
         ];
     }
 

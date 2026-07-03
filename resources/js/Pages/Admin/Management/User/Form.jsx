@@ -8,7 +8,7 @@ export default function UserForm({ open, title, fields, options, form, selected,
             open={open}
             onClose={onClose}
             title={selected ? `Edit ${title}` : `Tambah ${title}`}
-            description="Kelola akun pengguna, kantor cabang, password, dan role."
+            description="Kelola akun pengguna, kantor cabang, password, role, dan penugasan properti."
             onSubmit={onSubmit}
             contentClassName="md:grid-cols-2"
             size="xl"

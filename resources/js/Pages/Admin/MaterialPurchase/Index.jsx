@@ -12,10 +12,17 @@ function itemTemplate() {
     return { barang_material_id: '', qty: '', satuan: '', harga_satuan: '' };
 }
 
-export default function Index({ title, baseUrl, rows, filters = {}, options, selectedRequest = null }) {
+export default function Index({ title, baseUrl, rows, filters = {}, options, selectedRequest = null, permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [releaseRow, setReleaseRow] = useState(null);
     const [paymentBankId, setPaymentBankId] = useState('');
+    const canCreate = permissions.canCreate ?? false;
+    const canApprove = permissions.canApprove ?? false;
+    const canRelease = permissions.canRelease ?? false;
+    const canMarkPurchased = permissions.canMarkPurchased ?? false;
+    const canReceive = permissions.canReceive ?? false;
+    const canLock = permissions.canLock ?? false;
+    const canUnlock = permissions.canUnlock ?? false;
     const form = useForm({
         tanggal: new Date().toISOString().slice(0, 10),
         material_purchase_request_id: selectedRequest ? String(selectedRequest.id) : '',
@@ -101,7 +108,8 @@ export default function Index({ title, baseUrl, rows, filters = {}, options, sel
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                <Form collapsible title={title} description="Pembelian hanya menambah persediaan gudang. HPP proyek baru bertambah saat material keluar melalui permintaan yang telah disetujui." onSubmit={submit} actions={<Button type="submit" disabled={form.processing}><Save size={17} /> Buat Pembelian</Button>}>
+                {canCreate ? (
+                    <Form collapsible title={title} description="Pembelian hanya menambah persediaan gudang. HPP proyek baru bertambah saat material keluar melalui permintaan yang telah disetujui." onSubmit={submit} actions={<Button type="submit" disabled={form.processing}><Save size={17} /> Buat Pembelian</Button>}>
                     {form.data.material_purchase_request_id && (
                         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-700 dark:text-emerald-300">
                             Form diisi dari permintaan pembelian gudang. Qty dan harga masih dapat disesuaikan sebelum disimpan.
@@ -132,8 +140,13 @@ export default function Index({ title, baseUrl, rows, filters = {}, options, sel
                         ))}
                         <div className="text-right text-lg font-extrabold">Total: {money(total)}</div>
                     </div>
-                    <Textarea label="Keterangan" value={form.data.keterangan} onChange={(event) => form.setData('keterangan', event.target.value)} />
-                </Form>
+                        <Textarea label="Keterangan" value={form.data.keterangan} onChange={(event) => form.setData('keterangan', event.target.value)} />
+                    </Form>
+                ) : (
+                    <section className="rounded-lg border border-dashed border-silver-deep/70 bg-silver-soft/40 p-6 text-sm text-ink-soft dark:border-white/10 dark:bg-white/5">
+                        Form pembelian disembunyikan karena role aktif tidak memiliki izin create pembelian barang.
+                    </section>
+                )}
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form className="flex flex-col gap-3 p-5 md:flex-row md:items-end md:justify-between" onSubmit={(event) => { event.preventDefault(); router.get(baseUrl, { search }, { preserveScroll: true, preserveState: true, replace: true }); }}>
@@ -162,13 +175,13 @@ export default function Index({ title, baseUrl, rows, filters = {}, options, sel
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
                                                 {row.record_status === 'locked' ? (
-                                                    <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>
+                                                    canUnlock && <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>
                                                 ) : (
                                                     <>
-                                                        <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}><Lock size={15} /> Lock</Button>
-                                                        {row.status === 'menunggu_approval_manager' && <Button type="button" size="sm" variant="outline" onClick={() => post(`${baseUrl}/${row.id}/approve`)}><CheckCircle2 size={15} /> Approve</Button>}
-                                                        {row.status === 'menunggu_pencairan_dana' && <Button type="button" size="sm" variant="outline" onClick={() => openRelease(row)}><HandCoins size={15} /> Cairkan</Button>}
-                                                        {row.status === 'dana_cair' && <Button type="button" size="sm" variant="outline" onClick={() => post(`${baseUrl}/${row.id}/mark-purchased`)}><ShoppingCart size={15} /> Sudah Dibeli</Button>}
+                                                        {canLock && <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}><Lock size={15} /> Lock</Button>}
+                                                        {canApprove && row.status === 'menunggu_approval_manager' && <Button type="button" size="sm" variant="outline" onClick={() => post(`${baseUrl}/${row.id}/approve`)}><CheckCircle2 size={15} /> Approve</Button>}
+                                                        {canRelease && row.status === 'menunggu_pencairan_dana' && <Button type="button" size="sm" variant="outline" onClick={() => openRelease(row)}><HandCoins size={15} /> Cairkan</Button>}
+                                                        {canMarkPurchased && row.status === 'dana_cair' && <Button type="button" size="sm" variant="outline" onClick={() => post(`${baseUrl}/${row.id}/mark-purchased`)}><ShoppingCart size={15} /> Sudah Dibeli</Button>}
                                                     </>
                                                 )}
                                             </div>
@@ -182,7 +195,7 @@ export default function Index({ title, baseUrl, rows, filters = {}, options, sel
             </div>
 
             <Modal
-                open={Boolean(releaseRow)}
+                open={Boolean(releaseRow) && canRelease}
                 onClose={() => setReleaseRow(null)}
                 title={releaseRow ? `Cairkan Dana ${releaseRow.kode_pembelian}` : 'Cairkan Dana'}
                 footer={(

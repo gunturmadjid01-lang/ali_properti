@@ -91,7 +91,7 @@ class MaterialPurchaseService
             $this->notifications->toRoles(
                 ['manajer_pimpro', 'owner', 'super_admin'],
                 'Pembelian barang menunggu approval',
-                "Pembelian {$purchase->kode_pembelian} membutuhkan approval manager.",
+                "Pembelian {$purchase->kode_pembelian} membutuhkan approval manajer.",
                 '/admin/pembelian-material'
             );
 
@@ -101,7 +101,7 @@ class MaterialPurchaseService
 
     public function approve(MaterialPurchase $purchase): void
     {
-        abort_unless($purchase->status === MaterialPurchase::STATUS_MENUNGGU_MANAGER, 422, 'Pembelian tidak sedang menunggu approval manager.');
+        abort_unless($purchase->status === MaterialPurchase::STATUS_MENUNGGU_MANAGER, 422, 'Pembelian tidak sedang menunggu approval manajer.');
 
         DB::transaction(function () use ($purchase) {
             $purchase->update([

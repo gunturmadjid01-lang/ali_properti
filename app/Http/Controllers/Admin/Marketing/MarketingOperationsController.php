@@ -143,8 +143,8 @@ class MarketingOperationsController extends Controller
 
     public function unlock(string $section, string $id): RedirectResponse
     {
-        $user = request()->user();
-        abort_unless($user === null || $user->hasAnyRole(['owner', 'super_admin']), 403, 'Hanya owner yang dapat membuka lock data.');
+        $permissions = $this->permissionsForSection(request(), $section);
+        abort_unless(($permissions['canUnlock'] ?? false) === true, 403, 'Hanya user yang diberi akses yang dapat membuka lock data.');
 
         $model = $this->lockableModel($section, $id);
         $model->forceFill([
@@ -710,7 +710,7 @@ class MarketingOperationsController extends Controller
 
         return match ($section) {
             'pipeline' => [
-                'canView' => $this->hasMarketingAccess($request, ['manager', 'owner'], 'marketing.pipeline-report.view'),
+                'canView' => $this->hasMarketingAccess($request, ['manajer_pimpro', 'owner'], 'marketing.pipeline-report.view'),
                 'canCreate' => false,
                 'canUpdate' => false,
                 'canDelete' => false,
@@ -738,14 +738,14 @@ class MarketingOperationsController extends Controller
                 'canUnlock' => false,
             ],
             'piutang' => [
-                'canView' => $this->hasMarketingAccess($request, ['owner', 'manager'], 'marketing.receivable.view'),
+                'canView' => $this->hasMarketingAccess($request, ['owner', 'manajer_pimpro'], 'marketing.receivable.view'),
                 'canCreate' => false,
                 'canUpdate' => false,
                 'canDelete' => false,
                 'canUnlock' => false,
             ],
             'target-komisi' => [
-                'canView' => $this->hasMarketingAccess($request, ['supervisor_marketing', 'manager'], 'marketing.target-commission.manage'),
+                'canView' => $this->hasMarketingAccess($request, ['supervisor_marketing', 'manajer_pimpro'], 'marketing.target-commission.manage'),
                 'canCreate' => (bool) $user?->can('marketing.target-commission.create') || $user?->can('marketing.target-commission.manage'),
                 'canUpdate' => (bool) $user?->can('marketing.target-commission.update') || $user?->can('marketing.target-commission.manage'),
                 'canDelete' => (bool) $user?->can('marketing.target-commission.delete') || $user?->can('marketing.target-commission.manage'),
@@ -771,13 +771,13 @@ class MarketingOperationsController extends Controller
     protected function defaultRolesForSection(string $section): array
     {
         return match ($section) {
-            'pipeline' => ['manager', 'owner'],
+            'pipeline' => ['manajer_pimpro', 'owner'],
             'campaign' => ['pengawas'],
-            'reminder' => ['marketing', 'area_marketing', 'supervisor_marketing', 'manager', 'owner', 'manajer_pimpro', 'pengawas'],
+            'reminder' => ['marketing', 'area_marketing', 'supervisor_marketing', 'manajer_pimpro', 'owner', 'pengawas'],
             'dokumen' => ['supervisor_marketing'],
-            'piutang' => ['owner', 'manager', 'manajer_pimpro'],
-            'target-komisi' => ['supervisor_marketing', 'manager'],
-            'template' => ['marketing', 'area_marketing', 'supervisor_marketing', 'manager', 'owner', 'manajer_pimpro'],
+            'piutang' => ['owner', 'manajer_pimpro'],
+            'target-komisi' => ['supervisor_marketing', 'manajer_pimpro'],
+            'template' => ['marketing', 'area_marketing', 'supervisor_marketing', 'manajer_pimpro', 'owner'],
             default => [],
         };
     }

@@ -199,6 +199,6 @@ class UserController extends Controller
 
     protected function description(): string
     {
-        return 'Kelola data, cari cepat, edit, dan hapus dari satu halaman.';
+        return 'Kelola data, role, dan penugasan properti dari satu halaman.';
     }
 }

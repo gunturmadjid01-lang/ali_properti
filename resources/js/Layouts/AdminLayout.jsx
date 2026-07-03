@@ -53,15 +53,10 @@ function activeItemKey(items, currentUrl) {
 }
 
 function canSeeSidebarItem(item, roles, permissions) {
-    if (item.roles?.length && !item.roles.some((role) => roles.includes(role))) {
-        return Boolean(item.permission && permissions.includes(item.permission));
-    }
+    const roleAllowed = !item.roles?.length || item.roles.some((role) => roles.includes(role));
+    const permissionAllowed = !item.permission || permissions.includes(item.permission);
 
-    if (item.permission && !permissions.includes(item.permission)) {
-        return item.roles?.length ? item.roles.some((role) => roles.includes(role)) : false;
-    }
-
-    return true;
+    return roleAllowed && permissionAllowed;
 }
 
 function filterSidebarItems(items, roles, permissions) {
@@ -234,8 +229,21 @@ export default function AdminLayout({ children, title = 'Dashboard' }) {
             admin_keuangan: keuanganSidebar,
         };
 
-        const selectedRole = roles.find((role) => sidebarsByRole[role]);
-
+        const sidebarPriority = [
+            'super_admin',
+            'owner',
+            'admin',
+            'manajer_pimpro',
+            'manager',
+            'admin_keuangan',
+            'keuangan',
+            'supervisor_marketing',
+            'marketing',
+            'area_marketing',
+            'pengawas',
+            'user_area_gudang',
+        ];
+        const selectedRole = sidebarPriority.find((role) => roles.includes(role) && sidebarsByRole[role]);
         const sidebar = sidebarsByRole[selectedRole] ?? [];
 
         return sidebar.map((section) => ({

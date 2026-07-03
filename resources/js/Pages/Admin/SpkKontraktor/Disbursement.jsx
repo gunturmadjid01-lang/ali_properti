@@ -46,7 +46,7 @@ export default function Disbursement({ title, description, baseUrl, pageUrl, row
 
                     <div className="grid gap-4 border-t border-silver-deep/60 p-5 dark:border-white/10">
                         {rows.data.map((row) => {
-                            const pendingPayments = row.payments.filter((payment) => payment.status === 'menunggu_approval_manager');
+                            const pendingPayments = row.payments.filter((payment) => ['menunggu_approval_manager', 'menunggu_approval_manajer'].includes(payment.status));
 
                             return (
                                 <article className="rounded-lg border border-silver-deep/70 bg-white/70 p-5 dark:border-white/10 dark:bg-white/5" key={row.id}>
@@ -54,8 +54,8 @@ export default function Disbursement({ title, description, baseUrl, pageUrl, row
                                         <div className="grid gap-1">
                                             <p className="text-xs font-extrabold uppercase tracking-wider text-ink-soft">{row.nomor_spk}</p>
                                             <h3 className="text-xl font-extrabold">{row.judul_pekerjaan}</h3>
-                                            <p className="font-semibold">{row.kontraktor} — {row.perumahan} / {row.unit}</p>
-                                            <p className="text-sm text-ink-soft">Nilai SPK: {money(row.nilai_kontrak)} · Status: {row.status} · {row.record_status_label}</p>
+                                            <p className="font-semibold">{row.kontraktor} - {row.perumahan} / {row.unit}</p>
+                                            <p className="text-sm text-ink-soft">Nilai SPK: {money(row.nilai_kontrak)} | Status: {row.status} | {row.record_status_label}</p>
                                             <p className={`text-sm font-bold ${row.hpp_plan_exists ? 'text-emerald-600 dark:text-emerald-300' : 'text-amber-600 dark:text-amber-300'}`}>
                                                 {row.hpp_plan_exists ? `Rencana HPP ${row.hpp_plan_label}: ${money(row.hpp_plan_total)}` : `Rencana HPP ${row.hpp_plan_label} belum diisi.`}
                                             </p>
@@ -67,8 +67,8 @@ export default function Disbursement({ title, description, baseUrl, pageUrl, row
                                         {pendingPayments.map((payment) => (
                                             <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-500/20 dark:bg-amber-500/10 md:flex-row md:items-center md:justify-between" key={payment.id}>
                                                 <div>
-                                                    <p className="font-extrabold">Termin {payment.termin_ke} — {money(payment.nominal)}</p>
-                                                    <p className="text-sm text-ink-soft">Jatuh tempo {payment.tanggal_jatuh_tempo || '-'} · {payment.status_label}</p>
+                                                    <p className="font-extrabold">Termin {payment.termin_ke} - {money(payment.nominal)}</p>
+                                                    <p className="text-sm text-ink-soft">Jatuh tempo {payment.tanggal_jatuh_tempo || '-'} | {payment.status_label}</p>
                                                     {payment.opname && <p className="text-sm font-semibold">Opname: {payment.opname}</p>}
                                                 </div>
                                                 {permissions.canApprovePayment && <Button type="button" onClick={() => approve(row, payment)}><CheckCircle2 size={16} /> Setujui Pencairan</Button>}
@@ -116,7 +116,7 @@ export default function Disbursement({ title, description, baseUrl, pageUrl, row
                             <p className="font-extrabold">Rincian Termin</p>
                             {detail.payments.map((payment) => (
                                 <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10" key={payment.id}>
-                                    <p className="font-extrabold">Termin {payment.termin_ke} — {money(payment.nominal)}</p>
+                                    <p className="font-extrabold">Termin {payment.termin_ke} - {money(payment.nominal)}</p>
                                     <p>Jatuh tempo: {payment.tanggal_jatuh_tempo || '-'}</p>
                                     <p>Tanggal bayar: {payment.tanggal_pembayaran || '-'}</p>
                                     <p>Status: {payment.status_label}</p>

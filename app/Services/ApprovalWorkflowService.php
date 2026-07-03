@@ -9,7 +9,6 @@ use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Gate;
 
 class ApprovalWorkflowService
 {
@@ -124,7 +123,7 @@ class ApprovalWorkflowService
         $roleIds = collect($setting?->approver_role_ids ?? [])->map(fn ($id) => (int) $id);
 
         if ($roleIds->isEmpty()) {
-            return Gate::allows('approval.manage') || $user->hasRole('super_admin');
+            return $user->hasRole('super_admin');
         }
 
         return $user->roles()->whereIn('roles.id', $roleIds)->exists();

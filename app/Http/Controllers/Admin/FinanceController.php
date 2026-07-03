@@ -51,6 +51,11 @@ class FinanceController extends Controller
             'title' => $this->sections[$section],
             'section' => $section,
             'baseUrl' => route('admin.finance.show', $section, absolute: false),
+            'permissions' => [
+                'canCreate' => (bool) $request->user()?->can('keuangan.create') || $request->user()?->can('keuangan.manage'),
+                'canUpdate' => (bool) $request->user()?->can('keuangan.update') || $request->user()?->can('keuangan.manage'),
+                'canDelete' => (bool) $request->user()?->can('keuangan.delete') || $request->user()?->can('keuangan.manage'),
+            ],
             'filters' => [
                 'date_from' => $from->toDateString(),
                 'date_to' => $to->toDateString(),
@@ -686,9 +691,9 @@ class FinanceController extends Controller
     protected function authorizeFinanceView(Request $request): void
     {
         abort_unless(
-            $request->user()?->hasAnyRole([
-                'super_admin', 'owner', 'keuangan', 'admin', 'manager', 'manajer_pimpro',
-            ]),
+            $request->user()?->can('keuangan.view')
+            || $request->user()?->can('laporan.view')
+            || $request->user()?->hasAnyRole(['super_admin', 'owner']),
             403,
         );
     }
@@ -696,7 +701,10 @@ class FinanceController extends Controller
     protected function authorizeFinanceWrite(Request $request): void
     {
         abort_unless(
-            $request->user()?->hasAnyRole(['super_admin', 'owner', 'keuangan', 'admin']),
+            $request->user()?->can('keuangan.create')
+            || $request->user()?->can('keuangan.update')
+            || $request->user()?->can('keuangan.delete')
+            || $request->user()?->hasAnyRole(['super_admin', 'owner']),
             403,
         );
     }

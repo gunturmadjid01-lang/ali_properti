@@ -4,31 +4,35 @@ import { useState } from 'react';
 import { Button, Dropdown, Input, Modal } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
-export default function FinanceIndex({ title, baseUrl, purchaseUrl, purchaseActionUrl, rows = { data: [] }, filters = {}, bankOptions = [] }) {
+export default function FinanceIndex({ title, baseUrl, purchaseUrl, purchaseActionUrl, rows = { data: [] }, filters = {}, bankOptions = [], permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [detail, setDetail] = useState(null);
     const [releaseTarget, setReleaseTarget] = useState(null);
     const [paymentBankId, setPaymentBankId] = useState('');
+    const canProcess = permissions.canProcess ?? false;
+    const canApprove = permissions.canApprove ?? false;
+    const canRelease = permissions.canRelease ?? false;
+    const canMarkPurchased = permissions.canMarkPurchased ?? false;
     const postAction = (url, message) => {
         if (!window.confirm(message)) return;
         router.post(url, {}, { preserveScroll: true, onSuccess: () => setDetail(null) });
     };
 
     const workflowAction = (row) => {
-        if (row.can_approve) {
+        if (canApprove && row.can_approve) {
             return <Button type="button" size="sm" onClick={() => postAction(`${purchaseActionUrl}/${row.purchase_id}/approve`, `Approve pembelian ${row.purchase_code}?`)}><CheckCircle2 size={15} /> Approve</Button>;
         }
-        if (row.can_release) {
+        if (canRelease && row.can_release) {
             return <Button type="button" size="sm" onClick={() => {
                 setDetail(null);
                 setReleaseTarget(row);
                 setPaymentBankId(row.planned_master_bank_id || '');
             }}><HandCoins size={15} /> Cairkan Dana</Button>;
         }
-        if (row.can_mark_purchased) {
+        if (canMarkPurchased && row.can_mark_purchased) {
             return <Button type="button" size="sm" onClick={() => postAction(`${purchaseActionUrl}/${row.purchase_id}/mark-purchased`, `Tandai pembelian ${row.purchase_code} sudah dibeli dan kirim ke pemeriksaan gudang?`)}><PackageCheck size={15} /> Sudah Dibeli</Button>;
         }
-        if (row.can_process) {
+        if (canProcess && row.can_process) {
             return <Button as={Link} href={`${purchaseUrl}?request_id=${row.id}`} size="sm"><ShoppingCart size={15} /> Proses Pembelian</Button>;
         }
         return <span className="self-center text-xs font-bold text-ink-soft">{row.purchase_status?.replaceAll('_', ' ') ?? 'Sudah diproses'}</span>;

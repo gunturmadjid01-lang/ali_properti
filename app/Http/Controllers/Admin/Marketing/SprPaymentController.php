@@ -146,7 +146,7 @@ class SprPaymentController extends Controller
 
     public function refundIndex(Request $request): Response
     {
-        abort_unless($this->canAccessRefundPage($request), 403, 'Hanya keuangan, manager, atau owner yang dapat mengakses refund SPR.');
+        abort_unless($this->canAccessRefundPage($request), 403, 'Hanya keuangan, manajer, atau owner yang dapat mengakses refund SPR.');
 
         $search = trim((string) $request->query('search', ''));
         $mode = $request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']) ? 'approval' : 'finance';
@@ -239,15 +239,16 @@ class SprPaymentController extends Controller
             ]);
         });
 
-        return back()->with('success', 'Pengajuan refund berhasil dikirim ke manager.');
+        return back()->with('success', 'Pengajuan refund berhasil dikirim ke manajer.');
     }
 
     public function approveRefundManager(Request $request, string $sprId): RedirectResponse
     {
-        abort_unless($request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']), 403, 'Hanya manager/owner yang dapat approve refund tahap manager.');
+        abort_unless($request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']), 403, 'Hanya manajer/owner yang dapat approve refund tahap manajer.');
 
         $spr = Spr::query()->findOrFail($sprId);
-        abort_unless($spr->refund_status === 'menunggu_manager', 422, 'Refund tidak sedang menunggu approval manager.');
+        abort_unless(($spr->record_status ?? 'draft') === 'locked', 422, 'Refund harus di-lock terlebih dahulu.');
+        abort_unless($spr->refund_status === 'menunggu_manager', 422, 'Refund tidak sedang menunggu approval manajer.');
 
         $validated = $request->validate(['note' => ['nullable', 'string']]);
 
@@ -255,10 +256,10 @@ class SprPaymentController extends Controller
             'refund_status' => 'menunggu_owner',
             'refund_manager_approved_by' => $request->user()?->id,
             'refund_manager_approved_at' => now(),
-            'refund_approval_note' => $this->appendApprovalNote($spr->refund_approval_note, 'Manager', $validated['note'] ?? null),
+            'refund_approval_note' => $this->appendApprovalNote($spr->refund_approval_note, 'Manajer', $validated['note'] ?? null),
         ]);
 
-        return back()->with('success', 'Refund disetujui manager dan menunggu owner.');
+        return back()->with('success', 'Refund disetujui manajer dan menunggu owner.');
     }
 
     public function approveRefundOwner(Request $request, string $sprId): RedirectResponse
@@ -268,6 +269,7 @@ class SprPaymentController extends Controller
         $spr = Spr::query()
             ->with(['detailRumah.perumahan.cabang'])
             ->findOrFail($sprId);
+        abort_unless(($spr->record_status ?? 'draft') === 'locked', 422, 'Refund harus di-lock terlebih dahulu.');
         abort_unless($spr->refund_status === 'menunggu_owner', 422, 'Refund belum siap approval owner.');
         abort_unless(! $spr->refund_transaksi_keuangan_id, 422, 'Refund ini sudah dicairkan.');
 
@@ -304,10 +306,11 @@ class SprPaymentController extends Controller
 
     public function rejectRefund(Request $request, string $sprId): RedirectResponse
     {
-        abort_unless($request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']), 403, 'Hanya manager/owner yang dapat menolak refund.');
+        abort_unless($request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']), 403, 'Hanya manajer/owner yang dapat menolak refund.');
 
         $validated = $request->validate(['note' => ['required', 'string']]);
         $spr = Spr::query()->findOrFail($sprId);
+        abort_unless(($spr->record_status ?? 'draft') === 'locked', 422, 'Refund harus di-lock terlebih dahulu.');
         abort_unless(in_array($spr->refund_status, ['menunggu_manager', 'menunggu_owner'], true), 422, 'Refund sudah diproses.');
 
         $spr->update([
@@ -722,9 +725,9 @@ class SprPaymentController extends Controller
             'alasan_batal' => $spr->alasan_batal,
             'refund_approval_note' => $spr->refund_approval_note,
             'can_request' => $this->canRequestRefund($request) && $refundable > 0 && ! in_array($status, ['menunggu_manager', 'menunggu_owner', 'disetujui'], true),
-            'can_approve_manager' => (bool) $request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']) && $status === 'menunggu_manager',
-            'can_approve_owner' => (bool) $request->user()?->hasAnyRole(['owner', 'super_admin']) && $status === 'menunggu_owner',
-            'can_reject' => (bool) $request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']) && in_array($status, ['menunggu_manager', 'menunggu_owner'], true),
+            'can_approve_manager' => ($spr->record_status ?? 'draft') === 'locked' && (bool) $request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']) && $status === 'menunggu_manager',
+            'can_approve_owner' => ($spr->record_status ?? 'draft') === 'locked' && (bool) $request->user()?->hasAnyRole(['owner', 'super_admin']) && $status === 'menunggu_owner',
+            'can_reject' => ($spr->record_status ?? 'draft') === 'locked' && (bool) $request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']) && in_array($status, ['menunggu_manager', 'menunggu_owner'], true),
         ];
     }
 
@@ -732,7 +735,7 @@ class SprPaymentController extends Controller
     {
         return [
             'belum_diajukan' => 'Belum Diajukan',
-            'menunggu_manager' => 'Menunggu Manager',
+            'menunggu_manager' => 'Menunggu Manajer',
             'menunggu_owner' => 'Menunggu Owner',
             'disetujui' => 'Disetujui Owner',
             'ditolak' => 'Ditolak',
@@ -784,17 +787,21 @@ class SprPaymentController extends Controller
 
     protected function canConfirmPayments(Request $request): bool
     {
-        return (bool) $request->user()?->hasAnyRole(['admin', 'admin_keuangan', 'keuangan', 'super_admin']);
+        return (bool) $request->user()?->can('spr-payment.update')
+            || $request->user()?->hasAnyRole(['owner', 'super_admin']);
     }
 
     protected function canAccessRefundPage(Request $request): bool
     {
-        return (bool) $request->user()?->hasAnyRole(['admin', 'admin_keuangan', 'keuangan', 'manajer_pimpro', 'owner', 'super_admin']);
+        return (bool) $request->user()?->can('refund-spr.view')
+            || $request->user()?->can('refund-spr.create')
+            || $request->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']);
     }
 
     protected function canRequestRefund(Request $request): bool
     {
-        return (bool) $request->user()?->hasAnyRole(['admin', 'admin_keuangan', 'keuangan', 'owner', 'super_admin']);
+        return (bool) $request->user()?->can('refund-spr.create')
+            || $request->user()?->hasAnyRole(['owner', 'super_admin']);
     }
 
     protected function shouldScopeToCurrentMarketing(Request $request): bool

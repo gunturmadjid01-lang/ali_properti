@@ -1,18 +1,21 @@
-import { Head, router, useForm, usePage } from '@inertiajs/react';
+import { Head, router, useForm } from '@inertiajs/react';
 import { CheckCircle2, Edit3, Eye, FileText, Lock, Search, Trash2, Unlock, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
 import { Button, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
-export default function Index({ title, baseUrl, rows = { data: [], links: [] }, filters = {}, options = {} }) {
+export default function Index({ title, baseUrl, rows = { data: [], links: [] }, filters = {}, options = {}, permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [filterPerumahan, setFilterPerumahan] = useState(filters.perumahan_id ?? '');
     const [filterUnit, setFilterUnit] = useState(filters.detail_rumah_id ?? '');
     const [editing, setEditing] = useState(null);
     const [detail, setDetail] = useState(null);
-    const roles = usePage().props.auth?.user?.roles ?? [];
-    const canManageLock = roles.some((role) => ['owner', 'super_admin'].includes(role));
+    const canCreate = permissions.canCreate ?? false;
+    const canUpdate = permissions.canUpdate ?? false;
+    const canDelete = permissions.canDelete ?? false;
+    const canLock = permissions.canLock ?? false;
+    const canUnlock = permissions.canUnlock ?? false;
     const form = useForm({
         jenis_laporan: 'harian', tanggal: new Date().toISOString().slice(0, 10), periode_mulai: '', periode_selesai: '',
         perumahan_id: '', detail_rumah_id: '', tahapan_pembangunan_id: '', site_schedule_id: '', progress_pembangunan_id: '', cuaca: '', jumlah_pekerja: 0,
@@ -20,10 +23,28 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
     });
     const perumahans = options.perumahans ?? [];
     const detailRumahs = options.detailRumahs ?? [];
-    const tahapanPembangunans = options.tahapanPembangunans ?? [];
+    const tahapanPembangunansUnit = options.tahapanPembangunansUnit ?? options.tahapanPembangunans ?? [];
+    const tahapanPembangunansKawasan = options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? [];
+    const resolveScopedValue = (selectedValue, fallbackValue) => ((selectedValue !== undefined && selectedValue !== null && selectedValue !== '') ? selectedValue : fallbackValue);
+    const tahapanPembangunans = useMemo(
+        () => (form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan),
+        [form.data.detail_rumah_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+    );
     const unitOptions = useMemo(() => detailRumahs.filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, detailRumahs]);
     const scheduleOptions = useMemo(() => (options.siteSchedules ?? []).filter((row) => !form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id)), [form.data.detail_rumah_id, options.siteSchedules]);
     const progressOptions = useMemo(() => (options.progressPembangunans ?? []).filter((row) => !form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id)), [form.data.detail_rumah_id, options.progressPembangunans]);
+
+    useEffect(() => {
+        if (!form.data.tahapan_pembangunan_id) {
+            return;
+        }
+
+        const valid = tahapanPembangunans.some((option) => option.value === String(form.data.tahapan_pembangunan_id));
+
+        if (!valid) {
+            form.setData('tahapan_pembangunan_id', '');
+        }
+    }, [form, form.data.tahapan_pembangunan_id, tahapanPembangunans]);
     const submit = (event) => {
         event.preventDefault();
         const requestOptions = { forceFormData: true, preserveScroll: true, onSuccess: resetForm };
@@ -55,7 +76,8 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                <Form collapsible title={editing ? `Edit ${editing.kode_laporan}` : 'Input Laporan Harian / Mingguan'} description="Berfungsi sekaligus sebagai site diary, laporan pekerjaan, kendala, koordinasi, dan rencana kerja berikutnya." onSubmit={submit} actions={<>{editing && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}<Button type="submit" disabled={form.processing}><FileText size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan Laporan'}</Button></>}>
+                {canCreate && (
+                <Form collapsible title={editing ? `Edit ${editing.kode_laporan}` : 'Input Laporan Harian / Mingguan'} description="Berfungsi sekaligus sebagai site diary, laporan pekerjaan, kendala, koordinasi, dan rencana kerja berikutnya." onSubmit={submit} actions={<>{editing && canUpdate && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}<Button type="submit" disabled={form.processing}><FileText size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan Laporan'}</Button></>}>
                     {Object.keys(form.errors).length > 0 && <div className="rounded-lg bg-red-50 p-4 text-sm font-bold text-red-700">{Object.values(form.errors).map((error) => <p key={error}>{error}</p>)}</div>}
                     <div className="grid gap-4 md:grid-cols-4">
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Jenis Laporan</span><Dropdown value={form.data.jenis_laporan} options={[{ value: 'harian', label: 'Harian' }, { value: 'mingguan', label: 'Mingguan' }]} onChange={(value) => form.setData('jenis_laporan', value)} /></div>
@@ -64,13 +86,13 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                         {form.data.jenis_laporan === 'mingguan' && <Input label="Periode Selesai" type="date" value={form.data.periode_selesai} onChange={(event) => form.setData('periode_selesai', event.target.value)} />}
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown label="Pilih Perumahan" value={form.data.perumahan_id} options={perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '', site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Unit (Opsional)</span><Dropdown label="Kawasan / Pilih Unit" value={form.data.detail_rumah_id} options={unitOptions} onChange={(value) => form.setData({ ...form.data, detail_rumah_id: value, site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown label="Pilih Tahapan" value={form.data.tahapan_pembangunan_id} options={tahapanPembangunans} onChange={(value) => form.setData('tahapan_pembangunan_id', value)} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown label="Pilih Perumahan" value={form.data.perumahan_id} options={perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '', tahapan_pembangunan_id: '', site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Unit (Opsional)</span><Dropdown label="Kawasan / Pilih Unit" value={form.data.detail_rumah_id} options={unitOptions} onChange={(value, selected) => form.setData({ ...form.data, detail_rumah_id: value, perumahan_id: resolveScopedValue(selected?.perumahan_id, form.data.perumahan_id), tahapan_pembangunan_id: '', site_schedule_id: '', progress_pembangunan_id: '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown label={form.data.detail_rumah_id ? 'Pilih Tahapan Rumah' : 'Pilih Tahapan Kawasan'} value={form.data.tahapan_pembangunan_id} options={tahapanPembangunans} onChange={(value) => form.setData('tahapan_pembangunan_id', value)} /></div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-2">
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Jadwal Lapangan Terkait</span><Dropdown label="Pilih Jadwal" value={form.data.site_schedule_id} options={scheduleOptions} onChange={(value, selected) => form.setData({ ...form.data, site_schedule_id: value, perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id, detail_rumah_id: selected?.detail_rumah_id ?? form.data.detail_rumah_id, tahapan_pembangunan_id: selected?.tahapan_pembangunan_id ?? form.data.tahapan_pembangunan_id, pekerjaan_selesai: form.data.pekerjaan_selesai || selected?.nama_pekerjaan || '' })} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Progress Terkait</span><Dropdown label="Pilih Progress Approved" value={form.data.progress_pembangunan_id} options={progressOptions} onChange={(value, selected) => form.setData({ ...form.data, progress_pembangunan_id: value, site_schedule_id: selected?.site_schedule_id || form.data.site_schedule_id, perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id, detail_rumah_id: selected?.detail_rumah_id ?? form.data.detail_rumah_id, tahapan_pembangunan_id: selected?.tahapan_pembangunan_id ?? form.data.tahapan_pembangunan_id, pekerjaan_selesai: form.data.pekerjaan_selesai || selected?.nama_progress || '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Jadwal Lapangan Terkait</span><Dropdown label="Pilih Jadwal" value={form.data.site_schedule_id} options={scheduleOptions} onChange={(value, selected) => form.setData({ ...form.data, site_schedule_id: value, perumahan_id: resolveScopedValue(selected?.perumahan_id, form.data.perumahan_id), detail_rumah_id: resolveScopedValue(selected?.detail_rumah_id, form.data.detail_rumah_id), tahapan_pembangunan_id: resolveScopedValue(selected?.tahapan_pembangunan_id, form.data.tahapan_pembangunan_id), pekerjaan_selesai: form.data.pekerjaan_selesai || selected?.nama_pekerjaan || '' })} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Progress Terkait</span><Dropdown label="Pilih Progress Approved" value={form.data.progress_pembangunan_id} options={progressOptions} onChange={(value, selected) => form.setData({ ...form.data, progress_pembangunan_id: value, site_schedule_id: resolveScopedValue(selected?.site_schedule_id, form.data.site_schedule_id), perumahan_id: resolveScopedValue(selected?.perumahan_id, form.data.perumahan_id), detail_rumah_id: resolveScopedValue(selected?.detail_rumah_id, form.data.detail_rumah_id), tahapan_pembangunan_id: resolveScopedValue(selected?.tahapan_pembangunan_id, form.data.tahapan_pembangunan_id), pekerjaan_selesai: form.data.pekerjaan_selesai || selected?.nama_progress || '' })} /></div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-3">
                         <Input label="Cuaca" value={form.data.cuaca} onChange={(event) => form.setData('cuaca', event.target.value)} />
@@ -82,6 +104,7 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                     <div className="grid gap-4 md:grid-cols-2"><Textarea label="Koordinasi / Keputusan" value={form.data.koordinasi} onChange={(event) => form.setData('koordinasi', event.target.value)} /><Textarea label="Rencana Berikutnya" value={form.data.rencana_berikutnya} onChange={(event) => form.setData('rencana_berikutnya', event.target.value)} /></div>
                     <div className="grid gap-2"><span className="text-sm font-extrabold">Lampiran Foto / Dokumen</span><input type="file" className="min-h-11 rounded-lg border border-silver-deep/70 p-2" onChange={(event) => form.setData('lampiran', event.target.files?.[0] ?? null)} /></div>
                 </Form>
+                )}
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form className="grid gap-3 p-5 lg:grid-cols-[1.2fr_1fr_1fr_auto]" onSubmit={(event) => { event.preventDefault(); router.get(baseUrl, { search, perumahan_id: filterPerumahan, detail_rumah_id: filterUnit }, { preserveState: true, replace: true }); }}>
@@ -102,11 +125,11 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                             <td className="px-5 py-4"><div className="flex flex-wrap gap-2">
                                 <Button type="button" size="sm" variant="outline" onClick={() => setDetail(row)}><Eye size={14} /> Detail</Button>
                                 {row.lampiran_url && <Button as="a" href={row.lampiran_url} target="_blank" size="sm" variant="outline">Lampiran</Button>}
-                                {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Edit</Button>}
+                                {canUpdate && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Edit</Button>}
                                 {row.can_approve && row.approval_status !== 'approved' && <Button type="button" size="sm" onClick={() => router.post(`${baseUrl}/${row.id}/approve`)}><CheckCircle2 size={14} /> Approve</Button>}
-                                {row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus laporan?') && router.delete(`${baseUrl}/${row.id}`)}><Trash2 size={14} /></Button>}
-                                {row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`)}><Lock size={14} /> Lock</Button>}
-                                {row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`)}><Unlock size={14} /> Unlock</Button>}
+                                {canDelete && row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus laporan?') && router.delete(`${baseUrl}/${row.id}`)}><Trash2 size={14} /></Button>}
+                                {canLock && row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`)}><Lock size={14} /> Lock</Button>}
+                                {canUnlock && row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`)}><Unlock size={14} /> Unlock</Button>}
                             </div></td>
                         </tr>)}{rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={7}>Belum ada laporan lapangan.</td></tr>}</tbody>
                     </table></div>

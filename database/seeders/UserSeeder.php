@@ -20,7 +20,7 @@ class UserSeeder extends Seeder
                 'email' => 'owner@ptali.com',
                 'name' => 'Owner',
                 'phone' => '081100000001',
-                'roles' => ['owner', 'super_admin'],
+                'roles' => ['owner'],
             ],
             [
                 'email' => 'admin@ptali.com',

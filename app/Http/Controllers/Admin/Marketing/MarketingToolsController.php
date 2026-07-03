@@ -528,7 +528,6 @@ class MarketingToolsController extends Controller
     {
         return (bool) $request->user()?->hasAnyRole([
             'supervisor_marketing',
-            'manager',
             'manajer_pimpro',
             'owner',
             'super_admin',
@@ -548,14 +547,14 @@ class MarketingToolsController extends Controller
                 'canUnlock' => (bool) $user?->can('marketing.lead-distribution.unlock') || $user?->can('marketing.lead-distribution.manage'),
             ],
             'monitoring-aktivitas' => [
-                'canView' => $this->hasMarketingAccess($request, ['owner', 'manager', 'supervisor_marketing'], 'marketing.activity.view'),
+                'canView' => $this->hasMarketingAccess($request, ['owner', 'manajer_pimpro', 'supervisor_marketing'], 'marketing.activity.view'),
                 'canCreate' => false,
                 'canUpdate' => false,
                 'canDelete' => false,
                 'canUnlock' => false,
             ],
             'leaderboard-sales' => [
-                'canView' => $this->hasMarketingAccess($request, ['owner', 'manager', 'supervisor_marketing'], 'marketing.leaderboard.view'),
+                'canView' => $this->hasMarketingAccess($request, ['owner', 'manajer_pimpro', 'supervisor_marketing'], 'marketing.leaderboard.view'),
                 'canCreate' => false,
                 'canUpdate' => false,
                 'canDelete' => false,
@@ -575,8 +574,8 @@ class MarketingToolsController extends Controller
     {
         return match ($section) {
             'distribusi-lead' => ['supervisor_marketing'],
-            'monitoring-aktivitas' => ['owner', 'manager', 'supervisor_marketing'],
-            'leaderboard-sales' => ['owner', 'manager', 'supervisor_marketing'],
+            'monitoring-aktivitas' => ['owner', 'manajer_pimpro', 'supervisor_marketing'],
+            'leaderboard-sales' => ['owner', 'manajer_pimpro', 'supervisor_marketing'],
             default => ['marketing', 'area_marketing', 'supervisor_marketing', 'manager', 'owner', 'manajer_pimpro', 'pengawas'],
         };
     }

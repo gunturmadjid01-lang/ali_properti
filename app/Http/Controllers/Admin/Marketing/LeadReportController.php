@@ -20,7 +20,7 @@ class LeadReportController extends Controller
 
     public function index(Request $request): Response
     {
-        $this->abortUnlessMarketingAccess($request, ['manager', 'owner'], 'marketing.lead-report.view');
+        $this->abortUnlessMarketingAccess($request, ['manajer_pimpro', 'owner'], 'marketing.lead-report.view');
         $dateFrom = $request->query('date_from') ?: now()->startOfMonth()->toDateString();
         $dateTo = $request->query('date_to') ?: now()->toDateString();
 

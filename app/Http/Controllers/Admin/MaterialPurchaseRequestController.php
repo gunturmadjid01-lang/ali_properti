@@ -28,6 +28,11 @@ class MaterialPurchaseRequestController extends Controller
         return Inertia::render('Admin/MaterialPurchaseRequest/Index', [
             'title' => 'Permintaan Pembelian Barang',
             'baseUrl' => route('admin.material-purchase-request.index', absolute: false),
+            'permissions' => [
+                'canCreate' => (bool) auth()->user()?->can('material-purchase.create') || auth()->user()?->can('material-purchase.manage'),
+                'canUpdate' => (bool) auth()->user()?->can('material-purchase.update') || auth()->user()?->can('material-purchase.manage'),
+                'canDelete' => (bool) auth()->user()?->can('material-purchase.delete') || auth()->user()?->can('material-purchase.manage'),
+            ],
             'rows' => MaterialPurchaseRequest::query()
                 ->with(['gudang:id,nama_gudang', 'requestedBy:id,name', 'details.barangMaterial:id,nama_barang'])
                 ->when($search !== '', fn (Builder $query) => $query
@@ -70,6 +75,12 @@ class MaterialPurchaseRequestController extends Controller
             'baseUrl' => route('admin.material-purchase-request.finance-index', absolute: false),
             'purchaseUrl' => route('admin.material-purchase.index', absolute: false),
             'purchaseActionUrl' => '/admin/pembelian-material',
+            'permissions' => [
+                'canProcess' => (bool) auth()->user()?->hasAnyRole(['admin_keuangan', 'keuangan', 'manajer_pimpro', 'owner', 'super_admin']),
+                'canApprove' => (bool) auth()->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']),
+                'canRelease' => (bool) auth()->user()?->hasAnyRole(['keuangan', 'admin_keuangan', 'owner', 'super_admin']),
+                'canMarkPurchased' => (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'admin', 'super_admin']),
+            ],
             'rows' => MaterialPurchaseRequest::query()
                 ->with([
                     'gudang:id,nama_gudang',
@@ -127,7 +138,7 @@ class MaterialPurchaseRequestController extends Controller
                         'purchase_approved_by_name' => $purchase?->approvedBy?->name ?? '-',
                         'purchase_released_by_name' => $purchase?->fundReleasedBy?->name ?? '-',
                         'can_process' => $row->status === MaterialPurchaseRequest::STATUS_DIAJUKAN,
-                        'can_approve' => $purchase?->status === MaterialPurchase::STATUS_MENUNGGU_MANAGER,
+                        'can_approve' => ($purchase?->record_status ?? 'draft') === 'locked' && $purchase?->status === MaterialPurchase::STATUS_MENUNGGU_MANAGER,
                         'can_release' => $purchase?->status === MaterialPurchase::STATUS_MENUNGGU_DANA,
                         'can_mark_purchased' => $purchase?->status === MaterialPurchase::STATUS_DANA_CAIR,
                     ];
