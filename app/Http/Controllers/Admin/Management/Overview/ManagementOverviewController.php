@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\CabangPerusahaan;
 use App\Models\DokumenLegalitas;
 use App\Models\DokumenLegalitasRumah;
-use App\Models\KelompokHpp;
 use App\Models\MasterBank;
 use App\Models\Perumahan;
 use App\Models\TipePost;
@@ -333,43 +332,6 @@ class ManagementOverviewController extends Controller
                     'postTypes' => [
                         ['value' => 'pemasukan', 'label' => 'Pemasukan'],
                         ['value' => 'pengeluaran', 'label' => 'Pengeluaran'],
-                    ],
-                    'status' => [
-                        ['value' => 'aktif', 'label' => 'Aktif'],
-                        ['value' => 'nonaktif', 'label' => 'Nonaktif'],
-                    ],
-                ],
-            ],
-            'kelompok-hpp' => [
-                'title' => 'Management HPP',
-                'description' => 'Master kelompok HPP standar sistem untuk perumahan, rumah, logistik, dan realisasi biaya.',
-                'routeName' => 'admin.management.kelompok-hpp',
-                'model' => KelompokHpp::class,
-                'readOnly' => true,
-                'columns' => [
-                    ['key' => 'nama_hpp', 'label' => 'Nama HPP'],
-                    ['key' => 'kategori_label', 'label' => 'Kategori'],
-                    ['key' => 'record_status', 'label' => 'Lock'],
-                    ['key' => 'status', 'label' => 'Status'],
-                ],
-                'fields' => [
-                    ['name' => 'nama_hpp', 'label' => 'Nama HPP', 'type' => 'text'],
-                    ['name' => 'kategori', 'label' => 'Kategori', 'type' => 'select', 'optionsKey' => 'categories'],
-                    ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status'],
-                ],
-                'searchableColumns' => ['nama_hpp', 'kategori', 'status'],
-                'options' => fn () => [
-                    'categories' => [
-                        ['value' => 'tanah', 'label' => 'Tanah'],
-                        ['value' => 'legalitas', 'label' => 'Perizinan & Persuratan'],
-                        ['value' => 'bangunan', 'label' => 'Konstruksi'],
-                        ['value' => 'tenaga_kerja', 'label' => 'Konstruksi - Tenaga Kerja'],
-                        ['value' => 'material', 'label' => 'Logistik'],
-                        ['value' => 'infrastruktur', 'label' => 'Utilitas'],
-                        ['value' => 'marketing', 'label' => 'Pemasaran'],
-                        ['value' => 'operasional', 'label' => 'Operasional'],
-                        ['value' => 'keuangan', 'label' => 'Keuangan'],
-                        ['value' => 'cadangan', 'label' => 'Cadangan'],
                     ],
                     'status' => [
                         ['value' => 'aktif', 'label' => 'Aktif'],

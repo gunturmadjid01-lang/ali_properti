@@ -172,8 +172,7 @@ function DetailModal({ row, onClose, baseUrl }) {
                         ['Lokasi', item.lokasi],
                         ['Nomor Dokumen', item.nomor_dokumen || '-'],
                         ['Pihak Terkait', item.pihak_terkait || '-'],
-                        ['Dibuat Oleh', item.created_by],
-                        ['Diubah Oleh', item.updated_by],
+                        ['Audit', `Dibuat: ${item.created_by ?? '-'} | Diubah: ${item.updated_by ?? '-'}`],
                     ].map(([label, value]) => <div className="rounded-xl bg-silver-soft p-4 dark:bg-white/5" key={label}><p className="text-xs font-bold uppercase text-ink-soft">{label}</p><p className="mt-1 font-extrabold">{value}</p></div>)}
                 </div>
                 <div className="rounded-xl bg-silver-soft p-4 dark:bg-white/5"><p className="text-xs font-bold uppercase text-ink-soft">Catatan</p><p className="mt-2">{item.catatan || '-'}</p></div>

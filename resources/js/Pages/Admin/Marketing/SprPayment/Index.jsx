@@ -2,6 +2,7 @@ import { Head, router, useForm } from '@inertiajs/react';
 import { Ban, Eye, FileText, LoaderCircle, Save, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, CurrencyInput, Dropdown, Input, Modal, Textarea } from '../../../../Components/UI';
+import AuditCell from '../../../../Components/UI/AuditCell';
 import AdminLayout from '../../../../Layouts/AdminLayout';
 
 function money(value) {
@@ -311,10 +312,10 @@ export default function Index({ title, description, baseUrl, filters = {}, booki
                             <thead className="bg-silver-soft/80 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
                                 <tr>
                                     {(activeTab === 'booking'
-                                        ? ['SPR', 'Customer', 'Unit', 'Booking Fee', 'Dibayar', 'Sisa', 'Dibuat', 'Diupdate', 'Status', 'Aksi']
+                                        ? ['SPR', 'Customer', 'Unit', 'Booking Fee', 'Dibayar', 'Sisa', 'Audit', 'Status', 'Aksi']
                                         : activeTab === 'dp'
-                                            ? ['SPR', 'Customer', 'Unit', 'DP', 'Dibayar', 'Sisa', 'Dibuat', 'Diupdate', 'Status', 'Aksi']
-                                            : ['SPR', 'Customer', 'Unit', 'Total', 'Sudah Dibayar', 'Keterangan', 'Dibuat', 'Diupdate', 'Status', 'Aksi']
+                                            ? ['SPR', 'Customer', 'Unit', 'DP', 'Dibayar', 'Sisa', 'Audit', 'Status', 'Aksi']
+                                            : ['SPR', 'Customer', 'Unit', 'Total', 'Sudah Dibayar', 'Keterangan', 'Audit', 'Status', 'Aksi']
                                     ).map((column) => (
                                         <th className={`px-4 py-3 font-extrabold ${column === 'Aksi' ? 'text-right' : ''}`} key={column}>{column}</th>
                                     ))}
@@ -353,8 +354,7 @@ export default function Index({ title, description, baseUrl, filters = {}, booki
                                                     ? money(row.dp_remaining)
                                                     : row.other_status}
                                         </td>
-                                        <td className="px-4 py-3 font-semibold">{row.created_at ?? '-'}</td>
-                                        <td className="px-4 py-3 font-semibold">{row.updated_at ?? '-'}</td>
+                                        <td className="px-4 py-3 font-semibold"><AuditCell createdBy={row.created_at} updatedBy={row.updated_at} /></td>
                                         <td className="px-4 py-3 font-semibold">
                                             <p>
                                                 {!canInputPayments

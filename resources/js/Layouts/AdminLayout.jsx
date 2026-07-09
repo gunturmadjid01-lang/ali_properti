@@ -55,8 +55,9 @@ function activeItemKey(items, currentUrl) {
 function canSeeSidebarItem(item, roles, permissions) {
     const roleAllowed = !item.roles?.length || item.roles.some((role) => roles.includes(role));
     const permissionAllowed = !item.permission || permissions.includes(item.permission);
+    const permissionsAnyAllowed = !item.permissionsAny?.length || item.permissionsAny.some((permission) => permissions.includes(permission));
 
-    return roleAllowed && permissionAllowed;
+    return roleAllowed && permissionAllowed && permissionsAnyAllowed;
 }
 
 function filterSidebarItems(items, roles, permissions) {
@@ -225,6 +226,8 @@ export default function AdminLayout({ children, title = 'Dashboard' }) {
             supervisor_marketing: supervisorMarketingSidebar,
             area_marketing: marketingSidebar,
             user_area_gudang: gudangSidebar,
+            gudang: gudangSidebar,
+            admin_gudang: gudangSidebar,
             keuangan: keuanganSidebar,
             admin_keuangan: keuanganSidebar,
         };
@@ -240,6 +243,8 @@ export default function AdminLayout({ children, title = 'Dashboard' }) {
             'supervisor_marketing',
             'marketing',
             'area_marketing',
+            'admin_gudang',
+            'gudang',
             'pengawas',
             'user_area_gudang',
         ];

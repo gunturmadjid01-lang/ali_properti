@@ -36,11 +36,11 @@ class SiteReportController extends Controller
             'filters' => ['search' => $search, 'perumahan_id' => $perumahanId, 'detail_rumah_id' => $detailRumahId],
             'options' => $this->options(),
             'permissions' => [
-                'canCreate' => (bool) auth()->user()?->can('site-report.create') || auth()->user()?->can('site-report.manage'),
-                'canUpdate' => (bool) auth()->user()?->can('site-report.update') || auth()->user()?->can('site-report.manage'),
-                'canDelete' => (bool) auth()->user()?->can('site-report.delete') || auth()->user()?->can('site-report.manage'),
-                'canLock' => (bool) auth()->check(),
-                'canUnlock' => $this->currentUserCanManageLockedRecords(),
+                'canCreate' => $this->canSiteReport('create'),
+                'canUpdate' => $this->canSiteReport('update'),
+                'canDelete' => $this->canSiteReport('delete'),
+                'canLock' => $this->canSiteReport('update'),
+                'canUnlock' => $this->canSiteReport('unlock') || $this->currentUserCanManageLockedRecords(),
             ],
             'rows' => SiteReport::query()
                 ->with([
@@ -94,10 +94,10 @@ class SiteReportController extends Controller
                     'lampiran_url' => $row->lampiran ? route('media', ['path' => $row->lampiran], false) : null,
                     'approval_status' => $row->approval_status,
                     'can_approve' => ($row->record_status ?? 'draft') === 'locked' && $this->requiresApprovalFor('site-report') && $row->approval_status !== 'approved' && $this->canApproveFor('site-report'),
-                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
-                    'can_unlock' => $this->currentUserCanManageLockedRecords(),
-                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && ((bool) auth()->user()?->can('site-report.update') || auth()->user()?->can('site-report.manage')),
-                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && ((bool) auth()->user()?->can('site-report.delete') || auth()->user()?->can('site-report.manage')),
+                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSiteReport('update'),
+                    'can_unlock' => $this->canSiteReport('unlock') || $this->currentUserCanManageLockedRecords(),
+                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSiteReport('update'),
+                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSiteReport('delete'),
                     'record_status' => $row->record_status ?? 'draft',
                 ]),
         ]);
@@ -105,7 +105,7 @@ class SiteReportController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        $this->authorizeSiteReport('create');
         $validated = $request->validate([
             'jenis_laporan' => ['required', 'in:harian,mingguan'],
             'tanggal' => ['required', 'date'],
@@ -162,21 +162,21 @@ class SiteReportController extends Controller
 
     public function lock(string $id): RedirectResponse
     {
-        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci laporan.');
+        $this->authorizeSiteReport('update');
 
         return $this->traitLock($id);
     }
 
     public function unlock(string $id): RedirectResponse
     {
-        abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock laporan.');
+        abort_unless($this->canSiteReport('unlock') || $this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock laporan.');
 
         return $this->traitUnlock($id);
     }
 
     public function update(Request $request, string $id): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        $this->authorizeSiteReport('update');
         $row = SiteReport::query()->findOrFail($id);
         $this->abortIfLocked($row);
         $validated = $this->validatedPayload($request);
@@ -207,7 +207,7 @@ class SiteReportController extends Controller
 
     public function destroy(string $id): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        $this->authorizeSiteReport('delete');
         $row = SiteReport::query()->findOrFail($id);
         $this->abortIfLocked($row);
         if ($row->lampiran) {
@@ -221,6 +221,22 @@ class SiteReportController extends Controller
     protected function modelClass(): string
     {
         return SiteReport::class;
+    }
+
+    private function authorizeSiteReport(string $action): void
+    {
+        abort_unless($this->canSiteReport($action), 403, 'Anda tidak memiliki permission laporan lapangan.');
+    }
+
+    private function canSiteReport(string $action): bool
+    {
+        $user = auth()->user();
+
+        return (bool) (
+            $user?->hasRole('super_admin')
+            || $user?->can("site-report.{$action}")
+            || $user?->can('site-report.manage')
+        );
     }
 
     private function options(): array

@@ -1,0 +1,16 @@
+fitur paling penting program ALI PROPERTI
+semua fitur menggunakan CRUD dimana tombol edit, tambah, hapus,
+1. halaman profil perusahaan(cabang dan pusat) bisa banyak cabang
+2. halaman daftar lokasi property (opsional) #saat ini belum butuh, relasi juga ke perusahaan
+3. halaman profil perumahan relasi ke profil perusahaan dan nati terhubung dengan lokasi property
+4. halaman hpp(rab) perumahan, dengan beberapa tahap dan setiap tahap punya banyak item (bisa tambah, edit, hapus tahap dan juga item) jadi 1 perumahan bisa beda jumlah tahap dan itemnya
+5. halaman data unit rumah
+6. halaman template hpp(rab) unit,  dengan beberapa tahap dan setiap tahap punya banyak item (bisa tambah, edit, hapus tahap dan juga item) jadi 1 perumahan bisa beda jumlah tahap dan itemnya halaman ini nah template ini nanti yang secara otomatis akan muncul Ketika ingin membuat hpp (rab) per unit. jadi ada status aktif atau tidak
+7. halaman hpp (rab) unit rumah. secara otomatis yang muncul adalah template rab yang statusnya aktif namun tetap bisa di edit Kembali item atau tahap, volume bahkan harganya
+8. halaman kontraktor
+9. halaman supplier
+10. halaman template RAB PERUMAHAN(status aktif) setiap perumahan menggunakan RAB aktif tapi tetap bisa diedit setiap item dan tahapannya jadi walaupun menggunakan template yang sama tapi tetap bisa berbeda ketika sudah di edit rabnya
+
+
+
+

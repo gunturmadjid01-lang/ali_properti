@@ -2,6 +2,7 @@ import { Head, router, useForm } from '@inertiajs/react';
 import { CheckCircle2, Edit3, Eye, FilePlus2, Lock, Search, ShieldCheck, Unlock, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Accordion, Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../../Components/UI';
+import AuditCell from '../../../../Components/UI/AuditCell';
 import DetailModal from '../../../../Components/UI/DetailModal';
 import AdminLayout from '../../../../Layouts/AdminLayout';
 import { useResourcePermissions } from '../../../../Utils/permissions';
@@ -847,7 +848,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                         <table className="min-w-full divide-y divide-silver-deep/60 text-xs dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
                                 <tr>
-                                    {['Kode', 'Customer', 'Unit', 'Metode', 'Bank KPR', 'Harga', 'Pengajuan KPR', 'Dibuat', 'Diupdate', 'Lock', 'Status', 'Aksi'].map((column) => (
+                                    {['Kode', 'Customer', 'Unit', 'Metode', 'Bank KPR', 'Harga', 'Pengajuan KPR', 'Audit', 'Lock', 'Status', 'Aksi'].map((column) => (
                                         <th className={`px-4 py-3 font-extrabold ${column === 'Aksi' ? 'text-right' : ''}`} key={column}>{column}</th>
                                     ))}
                                 </tr>
@@ -862,8 +863,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-4 py-3 font-semibold">{row.metode_key === 'kpr_bank' ? row.bank_kredit : '-'}</td>
                                         <td className="px-4 py-3 font-semibold">{money(row.harga_jual)}</td>
                                         <td className="px-4 py-3 font-semibold">{money(row.nilai_pengajuan_kpr)}</td>
-                                        <td className="px-4 py-3 font-semibold">{row.created_at ?? '-'}</td>
-                                        <td className="px-4 py-3 font-semibold">{row.updated_at ?? '-'}</td>
+                                        <td className="px-4 py-3 font-semibold"><AuditCell createdBy={row.created_at} updatedBy={row.updated_at} /></td>
                                         <td className="px-4 py-3 font-semibold">{row.record_status_label}</td>
                                         <td className="px-4 py-3 font-semibold">
                                             <span className="rounded-full bg-silver-soft px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.08em] text-ink-soft dark:bg-white/10 dark:text-white/60">{row.status_label}</span>
@@ -916,7 +916,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                 ))}
                                 {rows.data.length === 0 && (
                                     <tr>
-                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={12}>Belum ada SPR.</td>
+                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={11}>Belum ada SPR.</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -944,8 +944,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                     { key: 'uang_muka', label: 'Uang Muka', render: (row) => money(row.uang_muka) },
                     { key: 'status_label', label: 'Status' },
                     { key: 'created_by', label: 'Marketing' },
-                    { key: 'created_at', label: 'Dibuat' },
-                    { key: 'updated_at', label: 'Diupdate' },
+                    { key: 'audit', label: 'Audit', render: (row) => `Dibuat: ${row.created_at ?? '-'}\nDiubah: ${row.updated_at ?? '-'}` },
                     { key: 'record_status_label', label: 'Lock' },
                     { key: 'catatan', label: 'Catatan', full: true },
                 ]}

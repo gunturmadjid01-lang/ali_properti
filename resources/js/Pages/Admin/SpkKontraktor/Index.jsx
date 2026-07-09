@@ -1,5 +1,5 @@
 import { Head, router, useForm } from '@inertiajs/react';
-import { Edit3, Eye, LoaderCircle, Lock, MinusCircle, PlusCircle, Save, Search, Trash2, Unlock, X } from 'lucide-react';
+import { CheckCircle2, Edit3, Eye, LoaderCircle, Lock, MinusCircle, PlusCircle, Save, Search, Trash2, Unlock, X, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
@@ -8,21 +8,22 @@ function money(value) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value ?? 0));
 }
 
-function paymentTemplate() {
-    return { tanggal_jatuh_tempo: '', nominal: '', keterangan: '' };
+function workItemTemplate() {
+    return {
+        nama_pekerjaan: '',
+        harga_satuan: '',
+    };
 }
 
-function additionTemplate() {
+function workGroupTemplate() {
     return {
-        kategori_penambahan: 'lainnya',
-        judul_penambahan: '',
-        deskripsi: '',
-        volume: '',
-        satuan: '',
-        harga_satuan: '',
-        total: '',
-        keterangan: '',
+        judul_tahapan: '',
+        items: [workItemTemplate()],
     };
+}
+
+function paymentTemplate() {
+    return { tanggal_jatuh_tempo: '', nominal: '', keterangan: '' };
 }
 
 function FormErrorSummary({ errors }) {
@@ -43,40 +44,74 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
     const [search, setSearch] = useState(filters.search ?? '');
     const [editing, setEditing] = useState(null);
     const [paymentDetail, setPaymentDetail] = useState(null);
+    const [showUnitModal, setShowUnitModal] = useState(false);
+    const [unitSearch, setUnitSearch] = useState('');
+    const [selectedPerumahanTemplateId, setSelectedPerumahanTemplateId] = useState('');
+    const [selectedUnitTemplateId, setSelectedUnitTemplateId] = useState('');
     const showPaymentSchedule = approvalOnly || paymentOnly || disbursementOnly;
+    const defaultWorker = useMemo(() => (options.kontraktors ?? []).find((row) => row.is_default_worker) ?? (options.kontraktors ?? [])[0] ?? null, [options.kontraktors]);
     const form = useForm({
-        kontraktor_id: '',
+        sumber_tenaga_kerja: 'tukang_owner',
+        kontraktor_id: defaultWorker?.value ?? '',
         perumahan_id: '',
         detail_rumah_id: '',
+        detail_rumah_ids: [],
         judul_pekerjaan: '',
         jenis_pekerjaan: 'rumah',
         tanggal_spk: new Date().toISOString().slice(0, 10),
         tanggal_mulai: '',
         tanggal_selesai: '',
-        nilai_kontrak_dasar: '',
         nilai_kontrak: '',
         metode_pembayaran: 'cash',
-        approval_role: 'manajer',
         lingkup_pekerjaan: '',
         catatan: '',
         status: 'draft',
-        additions: [additionTemplate()],
+        work_groups: [workGroupTemplate()],
         payments: [paymentTemplate()],
     });
 
+    const selectedDetailRumahIds = form.data.detail_rumah_ids ?? [];
+    const occupiedDetailRumahIds = useMemo(() => new Set((options.spkKontraktors ?? [])
+        .filter((spk) => String(spk.status ?? '') !== 'batal' && String(spk.detail_rumah_id ?? '') !== '')
+        .map((spk) => String(spk.detail_rumah_id))), [options.spkKontraktors]);
     const detailRumahOptions = useMemo(() => {
         if (!form.data.perumahan_id) return options.detailRumahs;
         return options.detailRumahs.filter((item) => item.perumahan_id === String(form.data.perumahan_id));
     }, [form.data.perumahan_id, options.detailRumahs]);
+    const filteredDetailRumahOptions = useMemo(() => {
+        const query = unitSearch.trim().toLowerCase();
+        return detailRumahOptions.filter((item) => {
+            const itemId = String(item.value);
+            const isSelected = selectedDetailRumahIds.includes(itemId);
+            const isOccupied = occupiedDetailRumahIds.has(itemId) && !isSelected && String(form.data.detail_rumah_id ?? '') !== itemId;
+            if (isOccupied) {
+                return false;
+            }
 
-    const additionsTotal = (form.data.additions ?? []).reduce((sum, item) => {
-        const volume = Number(item.volume || 0);
-        const hargaSatuan = Number(item.harga_satuan || 0);
-        const total = item.total ? Number(item.total || 0) : volume * hargaSatuan;
-        return sum + total;
-    }, 0);
-    const nilaiDasarKontrak = Number(form.data.nilai_kontrak_dasar || 0);
-    const totalKontrak = nilaiDasarKontrak + additionsTotal;
+            if (!query) {
+                return true;
+            }
+
+            return String(item.label ?? '').toLowerCase().includes(query);
+        });
+    }, [detailRumahOptions, occupiedDetailRumahIds, selectedDetailRumahIds, form.data.detail_rumah_id, unitSearch]);
+
+    const perumahanTemplateOptions = useMemo(() => (options.spkTemplatePerumahans ?? []).filter((template) => !form.data.perumahan_id || String(template.perumahan_id) === String(form.data.perumahan_id)), [form.data.perumahan_id, options.spkTemplatePerumahans]);
+    const unitTemplateOptions = useMemo(() => (options.spkTemplateUnits ?? []).filter((template) => !form.data.perumahan_id || String(template.perumahan_id) === String(form.data.perumahan_id)), [form.data.perumahan_id, options.spkTemplateUnits]);
+
+    const templateToWorkGroups = (template) => (template?.groups ?? []).map((group) => ({
+        judul_tahapan: group.judul_tahapan ?? '',
+        items: (group.items ?? []).map((item) => ({
+            nama_pekerjaan: item.nama_pekerjaan ?? '',
+            harga_satuan: item.harga_satuan ?? '',
+        })),
+    }));
+
+    const itemsTotal = useMemo(() => (form.data.work_groups ?? []).reduce((sumGroup, group) => (
+        sumGroup + (group.items ?? []).reduce((sumItem, item) => sumItem + Number(item.harga_satuan || 0), 0)
+    ), 0), [form.data.work_groups]);
+    const nilaiDasarKontrak = itemsTotal;
+    const totalKontrak = nilaiDasarKontrak;
     const totalPayment = form.data.payments.reduce((sum, item) => sum + Number(item.nominal || 0), 0);
     const paymentDifference = totalKontrak - totalPayment;
     const paymentIsBalanced = form.data.metode_pembayaran === 'cash' || Math.round(paymentDifference) === 0;
@@ -103,22 +138,25 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
         setEditing(null);
         form.reset();
         form.clearErrors();
+        setShowUnitModal(false);
+        setUnitSearch('');
+        setSelectedPerumahanTemplateId('');
+        setSelectedUnitTemplateId('');
     };
-
-    const setPayment = (index, key, value) => {
-        form.setData('payments', form.data.payments.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
+    const setSelectedUnits = (unitIds) => {
+        const uniqueIds = Array.from(new Set(unitIds.map((id) => String(id))));
+        form.setData({
+            ...form.data,
+            detail_rumah_ids: uniqueIds,
+            detail_rumah_id: uniqueIds[0] ?? '',
+        });
     };
-
-    const setAddition = (index, key, value) => {
-        form.setData('additions', form.data.additions.map((item, itemIndex) => {
-            if (itemIndex !== index) return item;
-
-            const next = { ...item, [key]: value };
-            const volume = Number(next.volume || 0);
-            const hargaSatuan = Number(next.harga_satuan || 0);
-            next.total = volume * hargaSatuan;
-            return next;
-        }));
+    const toggleDetailRumah = (unitId) => {
+        const stringId = String(unitId);
+        const current = selectedDetailRumahIds.map((id) => String(id));
+        const exists = current.includes(stringId);
+        const next = exists ? current.filter((id) => id !== stringId) : [...current, stringId];
+        setSelectedUnits(next);
     };
 
     const setMetodePembayaran = (value) => {
@@ -133,50 +171,63 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
         });
     };
 
-    const setNilaiDasarKontrak = (value) => {
-        form.setData('nilai_kontrak_dasar', value);
-        if (form.data.metode_pembayaran === 'cash') {
-            form.setData('payments', [{
-                ...(form.data.payments[0] ?? paymentTemplate()),
-                tanggal_jatuh_tempo: form.data.tanggal_spk,
-                nominal: Number(value || 0) + additionsTotal,
-            }]);
+    const setPayment = (index, key, value) => {
+        form.setData('payments', form.data.payments.map((item, paymentIndex) => (
+            paymentIndex === index ? { ...item, [key]: value } : item
+        )));
+    };
+
+    const applyTemplateById = (templateId, templateOptions) => {
+        const template = templateOptions.find((row) => String(row.value) === String(templateId));
+
+        if (!template) {
+            return;
         }
+
+        form.setData('work_groups', templateToWorkGroups(template));
     };
 
     const editRow = (row) => {
         setEditing(row);
+        setSelectedPerumahanTemplateId('');
+        setSelectedUnitTemplateId('');
+        const groupedWorkGroups = Object.values((row.items ?? []).reduce((acc, item) => {
+            const judulTahapan = item.nama_tahap_pekerjaan || 'Tahap';
+            if (!acc[judulTahapan]) {
+                acc[judulTahapan] = { judul_tahapan: judulTahapan, items: [] };
+            }
+
+            acc[judulTahapan].items.push({
+                nama_pekerjaan: item.nama_pekerjaan ?? '',
+                harga_satuan: item.harga_satuan ?? '',
+            });
+            return acc;
+        }, {}));
+
         form.setData({
-            kontraktor_id: row.kontraktor_id ?? '',
+            sumber_tenaga_kerja: row.sumber_tenaga_kerja ?? 'tukang_owner',
+            kontraktor_id: row.kontraktor_id ?? defaultWorker?.value ?? '',
             perumahan_id: row.perumahan_id ?? '',
             detail_rumah_id: row.detail_rumah_id ?? '',
+            detail_rumah_ids: row.detail_rumah_id ? [String(row.detail_rumah_id)] : [],
             judul_pekerjaan: row.judul_pekerjaan ?? '',
             jenis_pekerjaan: row.jenis_pekerjaan ?? 'rumah',
             tanggal_spk: row.tanggal_spk ?? new Date().toISOString().slice(0, 10),
             tanggal_mulai: row.tanggal_mulai ?? '',
             tanggal_selesai: row.tanggal_selesai ?? '',
-            nilai_kontrak_dasar: row.nilai_kontrak_dasar ?? '',
             nilai_kontrak: row.nilai_kontrak ?? '',
             metode_pembayaran: row.metode_pembayaran ?? 'cash',
-            approval_role: row.approval_role ?? 'manajer',
             lingkup_pekerjaan: row.lingkup_pekerjaan ?? '',
             catatan: row.catatan ?? '',
             status: row.status ?? 'draft',
-            additions: row.additions?.length ? row.additions.map((addition) => ({
-                kategori_penambahan: addition.kategori_penambahan ?? 'lainnya',
-                judul_penambahan: addition.judul_penambahan ?? '',
-                deskripsi: addition.deskripsi ?? '',
-                volume: addition.volume ?? '',
-                satuan: addition.satuan ?? '',
-                harga_satuan: addition.harga_satuan ?? '',
-                total: addition.total ?? '',
-                keterangan: addition.keterangan ?? '',
-            })) : [additionTemplate()],
-            payments: row.payments?.length ? row.payments.map((payment) => ({
-                tanggal_jatuh_tempo: payment.tanggal_jatuh_tempo ?? '',
-                nominal: payment.nominal ?? '',
-                keterangan: payment.keterangan ?? '',
-            })) : [paymentTemplate()],
+            work_groups: groupedWorkGroups.length ? groupedWorkGroups : [workGroupTemplate()],
+            payments: row.payments?.length ? row.payments.map((payment) => {
+                return {
+                    tanggal_jatuh_tempo: payment.tanggal_jatuh_tempo ?? '',
+                    nominal: payment.nominal ?? '',
+                    keterangan: payment.keterangan ?? '',
+                };
+            }) : [paymentTemplate()],
         });
     };
 
@@ -186,9 +237,35 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
         editing ? form.put(`${baseUrl}/${editing.id}`, requestOptions) : form.post(baseUrl, requestOptions);
     };
 
+    const setWorkGroup = (groupIndex, key, value) => {
+        form.setData('work_groups', form.data.work_groups.map((group, index) => {
+            if (index !== groupIndex) return group;
+            return { ...group, [key]: value };
+        }));
+    };
+
+    const setWorkGroupItem = (groupIndex, itemIndex, key, value) => {
+        form.setData('work_groups', form.data.work_groups.map((group, index) => {
+            if (index !== groupIndex) return group;
+
+            return {
+                ...group,
+                items: group.items.map((item, innerIndex) => {
+                    if (innerIndex !== itemIndex) return item;
+                    return { ...item, [key]: value };
+                }),
+            };
+        }));
+    };
+
     const destroyRow = (row) => {
         if (!window.confirm(`Hapus SPK ${row.nomor_spk}?`)) return;
         router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true });
+    };
+
+    const cancelRow = (row) => {
+        if (!window.confirm(`Batalkan SPK ${row.nomor_spk}?`)) return;
+        router.post(`${baseUrl}/${row.id}/cancel`, {}, { preserveScroll: true });
     };
 
     const postPaymentAction = (row, payment, action) => {
@@ -219,7 +296,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                     <Form
                         collapsible
                         title={editing ? 'Edit SPK Kontraktor' : 'Tambah SPK Kontraktor'}
-                        description="SPK digunakan sebagai surat perjanjian pekerjaan dan jadwal pembayaran kontraktor."
+                        description="SPK digunakan sebagai surat perjanjian pekerjaan, item tahap, dan termin pembayaran kontraktor."
                         onSubmit={submit}
                         actions={(
                             <>
@@ -232,16 +309,43 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                         )}
                     >
                     <FormErrorSummary errors={form.errors} />
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Kontraktor</span><Dropdown value={form.data.kontraktor_id} label="Pilih Kontraktor" options={options.kontraktors} onChange={(value) => form.setData('kontraktor_id', value)} />{form.errors.kontraktor_id && <span className="text-xs font-bold text-red-600">{form.errors.kontraktor_id}</span>}</div>
-                        <Input label="Judul Pekerjaan" value={form.data.judul_pekerjaan} error={form.errors.judul_pekerjaan} onChange={(event) => form.setData('judul_pekerjaan', event.target.value)} />
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Jenis Pekerjaan</span><Dropdown value={form.data.jenis_pekerjaan} options={options.jenisPekerjaan} onChange={(value) => form.setData('jenis_pekerjaan', value)} /></div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-lg border border-silver-deep/70 bg-silver-soft/50 p-4 dark:border-white/10 dark:bg-white/5">
+                            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Total Item SPK</p>
+                            <p className="mt-2 text-2xl font-extrabold">{money(itemsTotal)}</p>
+                            <p className="mt-1 text-sm text-ink-soft dark:text-white/60">Nilai SPK mengikuti jumlah harga item pada tiap tahap.</p>
+                        </div>
+                        <div className="rounded-lg border border-silver-deep/70 bg-silver-soft/50 p-4 dark:border-white/10 dark:bg-white/5">
+                            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Total Pengajuan Kredit</p>
+                            <p className="mt-2 text-2xl font-extrabold">{money(totalKontrak)}</p>
+                            <p className="mt-1 text-sm text-ink-soft dark:text-white/60">Nominal ini akan dipakai saat SPK diajukan.</p>
+                        </div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-4">
                         <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Approval SPK</span>
-                            <Dropdown value={form.data.approval_role} options={options.approvalRoles} onChange={(value) => form.setData('approval_role', value)} />
+                            <span className="text-sm font-extrabold">Sumber Tenaga Kerja</span>
+                            <Dropdown
+                                value={form.data.sumber_tenaga_kerja}
+                                options={options.sumberTenagaKerjas}
+                                onChange={(value) => form.setData({
+                                    ...form.data,
+                                    sumber_tenaga_kerja: value,
+                                    kontraktor_id: value === 'tukang_owner' ? (defaultWorker?.value ?? form.data.kontraktor_id) : form.data.kontraktor_id,
+                                })}
+                            />
                         </div>
+                        <div className="grid gap-2">
+                            <span className="text-sm font-extrabold">Kontraktor / Tukang</span>
+                            <Dropdown
+                                value={form.data.kontraktor_id}
+                                label="Pilih Kontraktor"
+                                options={options.kontraktors}
+                                onChange={(value) => form.setData('kontraktor_id', value)}
+                            />
+                            {form.errors.kontraktor_id && <span className="text-xs font-bold text-red-600">{form.errors.kontraktor_id}</span>}
+                        </div>
+                        <Input label="Judul Pekerjaan" value={form.data.judul_pekerjaan} error={form.errors.judul_pekerjaan} onChange={(event) => form.setData('judul_pekerjaan', event.target.value)} />
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Jenis Pekerjaan</span><Dropdown value={form.data.jenis_pekerjaan} options={options.jenisPekerjaan} onChange={(value) => form.setData('jenis_pekerjaan', value)} /></div>
                     </div>
                     <div className="grid gap-4 md:grid-cols-4">
                         <Input label="Tanggal SPK" type="date" value={form.data.tanggal_spk} error={form.errors.tanggal_spk} onChange={(event) => form.setData('tanggal_spk', event.target.value)} />
@@ -252,29 +356,26 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                     <div className="grid gap-4 md:grid-cols-3">
                         <div className="grid gap-2">
                             <span className="text-sm font-extrabold">Perumahan</span>
-                            <Dropdown value={form.data.perumahan_id} label="Pilih Perumahan" options={options.perumahans} onChange={(value) => form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '' })} />
+                            <Dropdown value={form.data.perumahan_id} label="Pilih Perumahan" options={options.perumahans} onChange={(value) => {
+                                setSelectedPerumahanTemplateId('');
+                                setSelectedUnitTemplateId('');
+                                setShowUnitModal(false);
+                                setUnitSearch('');
+                                form.setData({ ...form.data, perumahan_id: value, detail_rumah_id: '', detail_rumah_ids: [] });
+                            }} />
                             {form.errors.perumahan_id && <span className="text-xs font-bold text-red-600">{form.errors.perumahan_id}</span>}
                         </div>
                         <div className="grid gap-2">
                             <span className="text-sm font-extrabold">Unit Rumah</span>
-                            <Dropdown value={form.data.detail_rumah_id} label={form.data.jenis_pekerjaan === 'rumah' ? 'Wajib pilih unit' : 'Opsional untuk pekerjaan kawasan'} options={detailRumahOptions} onChange={(value, selected) => form.setData({ ...form.data, detail_rumah_id: value, perumahan_id: selected?.perumahan_id ?? form.data.perumahan_id })} />
-                            <span className="text-xs text-ink-soft">{form.data.jenis_pekerjaan === 'rumah' ? 'Pembangunan rumah dicatat ke HPP unit.' : 'Tanpa unit, biaya dicatat ke HPP perumahan/kawasan.'}</span>
-                            {form.errors.detail_rumah_id && <span className="text-xs font-bold text-red-600">{form.errors.detail_rumah_id}</span>}
-                        </div>
-                        <CurrencyInput label="Nilai Dasar Kontrak" value={form.data.nilai_kontrak_dasar} error={form.errors.nilai_kontrak_dasar} onChange={setNilaiDasarKontrak} />
-                    </div>
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <div className="rounded-lg border border-silver-deep/70 bg-silver-soft/50 p-4 dark:border-white/10 dark:bg-white/5">
-                            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Tambahan Pekerjaan</p>
-                            <p className="mt-1 text-sm text-ink-soft dark:text-white/60">Penambahan lahan, pekerjaan tambahan, atau item lain akan otomatis masuk ke total pengajuan kredit.</p>
-                        </div>
-                        <div className="rounded-lg border border-silver-deep/70 bg-silver-soft/50 p-4 dark:border-white/10 dark:bg-white/5">
-                            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Total Penambahan</p>
-                            <p className="mt-2 text-2xl font-extrabold">{money(additionsTotal)}</p>
-                        </div>
-                        <div className="rounded-lg border border-silver-deep/70 bg-silver-soft/50 p-4 dark:border-white/10 dark:bg-white/5">
-                            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Total Pengajuan Kredit</p>
-                            <p className="mt-2 text-2xl font-extrabold">{money(totalKontrak)}</p>
+                            <div className="flex items-center gap-3 rounded-lg border border-silver-deep/60 bg-white/60 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+                                <Button type="button" variant="outline" onClick={() => setShowUnitModal(true)} disabled={!form.data.perumahan_id}>
+                                    Tampilkan Data Rumah
+                                </Button>
+                                <span className="text-xs font-semibold text-ink-soft dark:text-white/60">
+                                    {selectedDetailRumahIds.length > 0 ? `${selectedDetailRumahIds.length} dipilih` : 'Belum ada pilihan'}
+                                </span>
+                            </div>
+                            {form.errors.detail_rumah_ids && <span className="text-xs font-bold text-red-600">{form.errors.detail_rumah_ids}</span>}
                         </div>
                     </div>
                     <Textarea label="Lingkup Pekerjaan" value={form.data.lingkup_pekerjaan} error={form.errors.lingkup_pekerjaan} onChange={(event) => form.setData('lingkup_pekerjaan', event.target.value)} />
@@ -282,31 +383,67 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                     <div className="grid gap-4 rounded-lg border border-silver-deep/70 p-4 dark:border-white/10">
                         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                             <div>
-                                <p className="text-sm font-extrabold">Tambahan Pekerjaan / Penambahan Lahan</p>
-                                <p className="text-xs text-ink-soft dark:text-white/60">Tambahkan item baru jika ada perluasan lahan atau pekerjaan tambahan lain.</p>
+                                <p className="text-sm font-extrabold">Judul Tahapan & Item Pekerjaan</p>
+                                <p className="text-xs text-ink-soft dark:text-white/60">Satu judul tahapan bisa punya banyak item pekerjaan, persis seperti lembar progres yang kamu kirim.</p>
                             </div>
-                            <Button type="button" variant="outline" onClick={() => form.setData('additions', [...form.data.additions, additionTemplate()])}>
-                                <PlusCircle size={16} /> Tambah Penambahan
-                            </Button>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Dropdown
+                                    value={form.data.detail_rumah_id ? selectedUnitTemplateId : selectedPerumahanTemplateId}
+                                    label={form.data.detail_rumah_id ? 'Template Unit' : 'Template Perumahan'}
+                                    options={(form.data.detail_rumah_id ? unitTemplateOptions : perumahanTemplateOptions).map((template) => ({
+                                        value: template.value,
+                                        label: `${template.label} (${template.group_count} tahap)`,
+                                    }))}
+                                    onChange={(value) => {
+                                        if (form.data.detail_rumah_id) {
+                                            setSelectedUnitTemplateId(value);
+                                            applyTemplateById(value, unitTemplateOptions);
+                                            return;
+                                        }
+
+                                        setSelectedPerumahanTemplateId(value);
+                                        applyTemplateById(value, perumahanTemplateOptions);
+                                    }}
+                                />
+                                <Button type="button" variant="outline" onClick={() => form.setData('work_groups', [...form.data.work_groups, workGroupTemplate()])}>
+                                    <PlusCircle size={16} /> Tambah Tahap
+                                </Button>
+                            </div>
                         </div>
 
-                        {form.data.additions.map((addition, index) => (
-                            <div className="grid gap-3 rounded-lg bg-silver-soft/80 p-4 dark:bg-white/5 md:grid-cols-2 xl:grid-cols-6" key={index}>
-                                <div className="grid gap-2">
-                                    <span className="text-sm font-extrabold">Kategori</span>
-                                    <Dropdown value={addition.kategori_penambahan} options={options.kategoriPenambahan} onChange={(value) => setAddition(index, 'kategori_penambahan', value)} />
+                        {(form.data.work_groups ?? []).map((group, groupIndex) => (
+                            <div className="grid gap-4 rounded-lg bg-silver-soft/80 p-4 dark:bg-white/5" key={groupIndex}>
+                                <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                                    <div className="grid gap-2 md:flex-1">
+                                        <span className="text-sm font-extrabold">Judul Tahapan</span>
+                                        <Input value={group.judul_tahapan} placeholder="Contoh: PEK. PERSIAPAN & PONDASI" onChange={(event) => setWorkGroup(groupIndex, 'judul_tahapan', event.target.value)} />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <Button type="button" variant="outline" onClick={() => setWorkGroup(groupIndex, 'items', [...group.items, workItemTemplate()])}>
+                                            <PlusCircle size={16} /> Tambah Item
+                                        </Button>
+                                        <Button type="button" variant="ghost" className="text-red-600" disabled={form.data.work_groups.length === 1} onClick={() => form.setData('work_groups', form.data.work_groups.filter((_, index) => index !== groupIndex))}>
+                                            <MinusCircle size={16} />
+                                        </Button>
+                                    </div>
                                 </div>
-                                <Input label="Judul Penambahan" value={addition.judul_penambahan} onChange={(event) => setAddition(index, 'judul_penambahan', event.target.value)} />
-                                <Input label="Volume" value={addition.volume} onChange={(event) => setAddition(index, 'volume', event.target.value)} />
-                                <Input label="Satuan" value={addition.satuan} onChange={(event) => setAddition(index, 'satuan', event.target.value)} />
-                                <CurrencyInput label="Harga Satuan" value={addition.harga_satuan} onChange={(value) => setAddition(index, 'harga_satuan', value)} />
-                                <CurrencyInput label="Total" value={addition.total || (Number(addition.volume || 0) * Number(addition.harga_satuan || 0))} readOnly />
-                                <Input className="xl:col-span-3" label="Deskripsi" value={addition.deskripsi} onChange={(event) => setAddition(index, 'deskripsi', event.target.value)} />
-                                <Textarea className="xl:col-span-2" label="Keterangan" value={addition.keterangan} onChange={(event) => setAddition(index, 'keterangan', event.target.value)} />
-                                <div className="flex items-end justify-end xl:col-span-1">
-                                    <Button type="button" variant="ghost" size="sm" className="text-red-600" disabled={form.data.additions.length === 1} onClick={() => form.setData('additions', form.data.additions.filter((_, additionIndex) => additionIndex !== index))}>
-                                        <MinusCircle size={16} />
-                                    </Button>
+
+                                <div className="grid gap-3">
+                                    {(group.items ?? []).map((item, itemIndex) => (
+                                        <div className="grid gap-3 rounded-lg border border-white/50 bg-white/70 p-3 dark:border-white/10 dark:bg-black/10 md:grid-cols-[1.7fr_0.9fr_auto]" key={itemIndex}>
+                                            <Input label={`Item Pekerjaan ${itemIndex + 1}`} value={item.nama_pekerjaan} placeholder="Contoh: Pasang pondasi batu gunung" onChange={(event) => setWorkGroupItem(groupIndex, itemIndex, 'nama_pekerjaan', event.target.value)} />
+                                            <CurrencyInput label="Harga Satuan" value={item.harga_satuan} onChange={(value) => setWorkGroupItem(groupIndex, itemIndex, 'harga_satuan', value)} />
+                                            <div className="flex items-end justify-end">
+                                                <Button type="button" variant="ghost" size="sm" className="text-red-600" disabled={group.items.length === 1} onClick={() => setWorkGroup(groupIndex, 'items', group.items.filter((_, index) => index !== itemIndex))}>
+                                                    <MinusCircle size={16} />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="text-right text-sm font-extrabold text-ink-soft dark:text-white/60">
+                                    Total tahapan: {money((group.items ?? []).reduce((sum, item) => sum + Number(item.harga_satuan || 0), 0))}
                                 </div>
                             </div>
                         ))}
@@ -325,11 +462,11 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                         </div>
 
                         {form.data.payments.map((payment, index) => (
-                            <div className="grid gap-3 rounded-lg bg-silver-soft/80 p-3 dark:bg-white/5 md:grid-cols-[0.4fr_0.9fr_1fr_1fr_auto]" key={index}>
+                            <div className="grid gap-3 rounded-lg bg-silver-soft/80 p-3 dark:bg-white/5 md:grid-cols-2 xl:grid-cols-[0.35fr_0.95fr_1fr_auto]" key={index}>
                                 <Input label="Termin" value={index + 1} readOnly />
                                 <Input label="Jatuh Tempo" type="date" value={payment.tanggal_jatuh_tempo} onChange={(event) => setPayment(index, 'tanggal_jatuh_tempo', event.target.value)} />
                                 <CurrencyInput label="Nominal" value={payment.nominal} onChange={(value) => setPayment(index, 'nominal', value)} readOnly={form.data.metode_pembayaran === 'cash'} />
-                                <Input label="Keterangan" value={payment.keterangan} onChange={(event) => setPayment(index, 'keterangan', event.target.value)} />
+                                <Input label="Keterangan" value={payment.keterangan} onChange={(event) => form.setData('payments', form.data.payments.map((item, paymentIndex) => (paymentIndex === index ? { ...item, keterangan: event.target.value } : item)))} />
                                 <div className="flex items-end justify-end"><Button type="button" variant="ghost" size="sm" className="text-red-600" disabled={form.data.metode_pembayaran === 'cash' || form.data.payments.length === 1} onClick={() => form.setData('payments', form.data.payments.filter((_, paymentIndex) => paymentIndex !== index))}><MinusCircle size={16} /></Button></div>
                             </div>
                         ))}
@@ -348,6 +485,72 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                     </Form>
                     )}
 
+                <Modal
+                    open={showUnitModal}
+                    onClose={() => setShowUnitModal(false)}
+                    title="Data Rumah"
+                    size="xl"
+                    footer={(
+                        <div className="flex gap-2">
+                            <Button type="button" variant="outline" onClick={() => setShowUnitModal(false)}>Tutup</Button>
+                        </div>
+                    )}
+                >
+                    <div className="grid gap-4">
+                        <Input
+                            label="Cari Data Rumah"
+                            value={unitSearch}
+                            placeholder="Cari nomor rumah, kode, atau nama blok..."
+                            onChange={(event) => setUnitSearch(event.target.value)}
+                        />
+
+                        <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
+                            {filteredDetailRumahOptions.length > 0 ? (
+                                <div className="grid max-h-[58vh] grid-cols-2 gap-2 overflow-y-auto rounded-lg border border-silver-deep/60 bg-white/60 p-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 dark:border-white/10 dark:bg-white/5">
+                                    {filteredDetailRumahOptions.map((unit) => (
+                                        <button
+                                            className={`flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-left text-[13px] font-bold whitespace-nowrap transition ${
+                                                selectedDetailRumahIds.includes(String(unit.value))
+                                                    ? 'border-emerald-500 bg-emerald-500/10 text-white dark:text-white'
+                                                    : 'border-silver-deep/50 bg-white/70 text-white dark:border-white/10 dark:bg-white/5 dark:text-white'
+                                            }`}
+                                            key={unit.value}
+                                            type="button"
+                                            onClick={() => toggleDetailRumah(unit.value)}
+                                        >
+                                            <input checked={selectedDetailRumahIds.includes(String(unit.value))} readOnly type="checkbox" />
+                                            <span>{unit.label}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="rounded-lg border border-dashed border-silver-deep/60 p-4 text-sm text-ink-soft dark:border-white/10 dark:text-white/60">
+                                    {form.data.perumahan_id ? 'Tidak ada data rumah yang cocok.' : 'Pilih perumahan dulu supaya data rumah muncul.'}
+                                </div>
+                            )}
+
+                            <div className="rounded-lg border border-silver-deep/60 bg-silver-soft/40 p-4 dark:border-white/10 dark:bg-white/5">
+                                <div className="flex flex-wrap gap-2">
+                                    <Button type="button" size="sm" variant="outline" onClick={() => setSelectedUnits(filteredDetailRumahOptions.map((unit) => unit.value))} disabled={filteredDetailRumahOptions.length === 0}>Pilih hasil cari</Button>
+                                    <Button type="button" size="sm" variant="outline" onClick={() => setSelectedUnits(detailRumahOptions.map((unit) => unit.value))} disabled={detailRumahOptions.length === 0}>Pilih semua</Button>
+                                    <Button type="button" size="sm" variant="outline" onClick={() => setSelectedUnits([])} disabled={detailRumahOptions.length === 0}>Kosongkan</Button>
+                                </div>
+                                <div className="mt-4 grid max-h-[34vh] grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3 lg:grid-cols-4">
+                                    {selectedDetailRumahIds.length > 0 ? selectedDetailRumahIds.map((unitId) => {
+                                        const unit = detailRumahOptions.find((item) => String(item.value) === String(unitId));
+                                        if (!unit) return null;
+                                        return (
+                                            <div className="rounded-lg border border-silver-deep/50 bg-white px-3 py-2 text-sm font-bold whitespace-nowrap dark:border-white/10 dark:bg-black/10" key={unitId}>
+                                                {unit.label}
+                                            </div>
+                                        );
+                                    }) : <p className="text-sm text-ink-soft">Belum ada unit yang dipilih.</p>}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </Modal>
+
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form className="flex flex-col gap-3 p-5 md:flex-row md:items-end md:justify-between" onSubmit={(event) => { event.preventDefault(); router.get(pageUrl, { search }, { preserveScroll: true, preserveState: true, replace: true }); }}>
                         <Input className="md:max-w-md" label="Search" value={search} placeholder="Cari nomor SPK, pekerjaan, kontraktor..." onChange={(event) => setSearch(event.target.value)} />
@@ -362,11 +565,10 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                     'Pekerjaan',
                                     'Lokasi',
                                     'Nilai Dasar',
-                                    'Tambahan',
                                     'Total',
                                     'Metode',
                                     'Approval',
-                                    ...(showPaymentSchedule ? ['Jadwal Pembayaran'] : []),
+                                    ...(showPaymentSchedule ? ['Termin Pembayaran'] : []),
                                     'Status SPK',
                                     'Aksi',
                                 ].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
@@ -379,7 +581,6 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                         <td className="px-5 py-4">{row.judul_pekerjaan}</td>
                                         <td className="px-5 py-4">{row.perumahan} / {row.unit}</td>
                                         <td className="px-5 py-4 font-extrabold">{money(row.nilai_kontrak_dasar)}</td>
-                                        <td className="px-5 py-4 font-extrabold">{money(row.total_penambahan)}</td>
                                         <td className="px-5 py-4 font-extrabold">{money(row.nilai_kontrak)}</td>
                                         <td className="px-5 py-4 font-bold">{row.metode_pembayaran === 'cash' ? 'Cash / Sekaligus' : 'Cicil / Termin'}</td>
                                         <td className="px-5 py-4 font-bold">{row.approval_role === 'admin' ? 'Admin' : 'Manajer'}</td>
@@ -405,20 +606,22 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                         <td className="px-5 py-4 font-bold">{row.status}<br /><span className="text-xs text-ink-soft">{row.record_status_label}</span></td>
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
-                                                {permissions.canViewPaymentDetail && <Button type="button" size="sm" variant="outline" onClick={() => setPaymentDetail(row)}><Eye size={15} /> Detail Pembayaran</Button>}
+                                                {permissions.canViewPaymentDetail && <Button type="button" size="sm" variant="outline" title="Detail Pembayaran" aria-label="Detail Pembayaran" onClick={() => setPaymentDetail(row)} className="w-9 gap-0 px-0"><Eye size={15} /></Button>}
+                                                {!approvalOnly && !paymentOnly && !disbursementOnly && permissions.canApproveSpk && row.can_approve && <Button type="button" size="sm" title="Approve SPK" aria-label="Approve SPK" onClick={() => router.post(`${baseUrl}/${row.id}/approve`, {}, { preserveScroll: true })} className="w-9 gap-0 px-0"><CheckCircle2 size={15} /></Button>}
                                                 {!approvalOnly && !paymentOnly && !disbursementOnly && permissions.canManageSpk && (
                                                     <>
-                                                        {row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>}
-                                                        {row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={15} /> Lock</Button>}
-                                                        {row.can_unlock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={15} /> Unlock</Button>}
-                                                        {row.can_delete && <Button type="button" size="sm" variant="outline" onClick={() => destroyRow(row)}><Trash2 size={15} /> Hapus</Button>}
+                                                        {row.can_edit && <Button type="button" size="sm" variant="outline" title="Edit" aria-label="Edit" onClick={() => editRow(row)} className="w-9 gap-0 px-0"><Edit3 size={15} /></Button>}
+                                                        {row.can_lock && <Button type="button" size="sm" variant="outline" title="Lock" aria-label="Lock" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })} className="w-9 gap-0 px-0"><Lock size={15} /></Button>}
+                                                        {row.can_unlock && <Button type="button" size="sm" variant="outline" title="Unlock" aria-label="Unlock" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })} className="w-9 gap-0 px-0"><Unlock size={15} /></Button>}
+                                                        {row.can_cancel && <Button type="button" size="sm" variant="outline" title="Cancel SPK" aria-label="Cancel SPK" onClick={() => cancelRow(row)} className="w-9 gap-0 px-0 text-rose-600"><XCircle size={15} /></Button>}
+                                                        {row.can_delete && <Button type="button" size="sm" variant="outline" title="Hapus" aria-label="Hapus" onClick={() => destroyRow(row)} className="w-9 gap-0 px-0"><Trash2 size={15} /></Button>}
                                                     </>
                                                 )}
                                             </div>
                                         </td>
                                     </tr>
                                 ))}
-                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={showPaymentSchedule ? 12 : 11}>Belum ada SPK kontraktor.</td></tr>}
+                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={showPaymentSchedule ? 11 : 10}>Belum ada SPK kontraktor.</td></tr>}
                             </tbody>
                         </table>
                     </div>
@@ -440,11 +643,11 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                             <p><b>Lokasi:</b> {paymentDetail.perumahan} / {paymentDetail.unit}</p>
                             <p><b>Tanggal SPK:</b> {paymentDetail.tanggal_spk || '-'}</p>
                             <p><b>Periode pekerjaan:</b> {paymentDetail.tanggal_mulai || '-'} s/d {paymentDetail.tanggal_selesai || '-'}</p>
-                            <p><b>Nilai dasar:</b> {money(paymentDetail.nilai_kontrak_dasar)}</p>
-                            <p><b>Total tambahan:</b> {money(paymentDetail.total_penambahan)}</p>
+                            <p><b>Total item:</b> {money(paymentDetail.nilai_kontrak_dasar)}</p>
                             <p><b>Total SPK:</b> {money(paymentDetail.nilai_kontrak)}</p>
                             <p><b>Metode pembayaran:</b> {paymentDetail.metode_pembayaran === 'cash' ? 'Cash / Sekaligus' : 'Cicil / Termin'}</p>
                             <p><b>Approval:</b> {paymentDetail.approval_role === 'admin' ? 'Admin' : 'Manajer'}</p>
+                            <p><b>Disetujui:</b> {paymentDetail.approved_at || '-'}</p>
                             <p><b>Status SPK:</b> {paymentDetail.status}</p>
                             <p><b>Status Dokumen:</b> {paymentDetail.record_status_label}</p>
                             <p><b>Rencana HPP:</b> {paymentDetail.hpp_plan_exists ? money(paymentDetail.hpp_plan_total) : `Belum diisi untuk ${paymentDetail.hpp_plan_label}`}</p>
@@ -453,18 +656,6 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                             <p className="font-extrabold">Lingkup Pekerjaan</p>
                             <p className="mt-1 whitespace-pre-wrap text-ink-soft">{paymentDetail.lingkup_pekerjaan || '-'}</p>
                         </div>
-                        {paymentDetail.additions?.length > 0 && (
-                            <div className="grid gap-3">
-                                <p className="font-extrabold">Tambahan Pekerjaan</p>
-                                {paymentDetail.additions.map((addition, index) => (
-                                    <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10" key={addition.id ?? index}>
-                                        <p className="font-extrabold">{addition.judul_penambahan}</p>
-                                        <p>{addition.volume} {addition.satuan || ''} x {money(addition.harga_satuan)} = {money(addition.total)}</p>
-                                        <p className="text-ink-soft">{addition.deskripsi || addition.keterangan || '-'}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
                         <div className="grid gap-3">
                             <p className="font-extrabold">Rincian Pembayaran</p>
                             {paymentDetail.payments.map((payment) => (

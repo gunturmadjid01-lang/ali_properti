@@ -11,8 +11,6 @@ import DokumenLegalitasForm from '../DokumenLegalitas/Form';
 import dokumenLegalitasRequest from '../DokumenLegalitas/request';
 import DokumenLegalitasRumahForm from '../DokumenLegalitasRumah/Form';
 import dokumenLegalitasRumahRequest from '../DokumenLegalitasRumah/request';
-import KelompokHppForm from '../KelompokHpp/Form';
-import kelompokHppRequest from '../KelompokHpp/request';
 import MasterBankForm from '../MasterBank/Form';
 import masterBankRequest from '../MasterBank/request';
 import PerumahanForm from '../Perumahan/Form';
@@ -30,7 +28,6 @@ const sectionResources = {
     'master-bank': { FormComponent: MasterBankForm, requestService: masterBankRequest },
     'dokumen-legalitas': { FormComponent: DokumenLegalitasForm, requestService: dokumenLegalitasRequest },
     'dokumen-legalitas-rumah': { FormComponent: DokumenLegalitasRumahForm, requestService: dokumenLegalitasRumahRequest },
-    'kelompok-hpp': { FormComponent: KelompokHppForm, requestService: kelompokHppRequest },
     'tipe-post': { FormComponent: TipePostForm, requestService: tipePostRequest },
     user: { FormComponent: UserForm, requestService: userRequest },
     'role-permission': { FormComponent: RolePermissionForm, requestService: rolePermissionRequest },
@@ -42,7 +39,6 @@ const sectionPermissionKeys = {
     'master-bank': 'master-bank',
     'dokumen-legalitas': 'dokumen-legalitas',
     'dokumen-legalitas-rumah': 'dokumen-legalitas',
-    'kelompok-hpp': 'kelompok-hpp',
     'tipe-post': 'tipe-post',
     user: 'users',
     'role-permission': 'roles',

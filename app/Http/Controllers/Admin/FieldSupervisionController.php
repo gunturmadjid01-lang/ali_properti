@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\BuildsFieldOptions;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\UsesApprovalSettings;
-use App\Models\ContractorOpname;
 use App\Models\DetailRumah;
 use App\Models\FieldDefect;
 use App\Models\InternalHandover;
@@ -15,7 +14,6 @@ use App\Models\SafetyReport;
 use App\Models\SiteManpowerLog;
 use App\Models\SiteSchedule;
 use App\Models\SpkKontraktor;
-use App\Models\SpkKontraktorPayment;
 use App\Models\TahapanPembangunan;
 use App\Models\WorkChangeRequest;
 use Illuminate\Database\Eloquent\Builder;
@@ -25,7 +23,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -39,14 +36,6 @@ class FieldSupervisionController extends Controller
             'model' => FieldDefect::class,
             'code' => 'kode_defect',
             'prefix' => 'DEF',
-            'photo' => true,
-            'approval' => true,
-        ],
-        'opname-kontraktor' => [
-            'title' => 'Opname Kontraktor',
-            'model' => ContractorOpname::class,
-            'code' => 'kode_opname',
-            'prefix' => 'OPN',
             'photo' => true,
             'approval' => true,
         ],
@@ -115,10 +104,10 @@ class FieldSupervisionController extends Controller
                 'photo' => $config['photo'],
                 'approval' => $config['approval'],
                 'canApprove' => $config['approval'] && $this->requiresApprovalFor('field-supervision') && $this->canApproveFor('field-supervision'),
-                'canCreate' => (bool) auth()->user()?->can('field-supervision.create') || auth()->user()?->can('field-supervision.manage'),
-                'canUpdate' => (bool) auth()->user()?->can('field-supervision.update') || auth()->user()?->can('field-supervision.manage'),
-                'canDelete' => (bool) auth()->user()?->can('field-supervision.delete') || auth()->user()?->can('field-supervision.manage'),
-                'canLock' => (bool) auth()->check(),
+                'canCreate' => $this->canFieldSupervision('create'),
+                'canUpdate' => $this->canFieldSupervision('update'),
+                'canDelete' => $this->canFieldSupervision('delete'),
+                'canLock' => $this->canFieldSupervision('update'),
                 'canUnlock' => $this->canManageFieldLock(),
             ],
         ]);
@@ -126,7 +115,7 @@ class FieldSupervisionController extends Controller
 
     public function store(Request $request, string $section): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        $this->authorizeFieldSupervision('create');
         $config = $this->config($section);
         $validated = $this->validated($request, $section);
 
@@ -154,7 +143,7 @@ class FieldSupervisionController extends Controller
 
     public function update(Request $request, string $section, string $id): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        $this->authorizeFieldSupervision('update');
         $config = $this->config($section);
         $row = $this->findRow($section, $id);
         abort_if(($row->record_status ?? 'draft') === 'locked', 422, 'Data sudah locked.');
@@ -183,7 +172,7 @@ class FieldSupervisionController extends Controller
 
     public function destroy(string $section, string $id): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        $this->authorizeFieldSupervision('delete');
         $row = $this->findRow($section, $id);
         abort_if(($row->record_status ?? 'draft') === 'locked', 422, 'Data sudah locked.');
         if (isset($row->foto) && $row->foto) {
@@ -209,10 +198,6 @@ class FieldSupervisionController extends Controller
                 return;
             }
 
-            if ($section === 'opname-kontraktor' && $row instanceof ContractorOpname) {
-                $this->ensureOpnameWithinContract($row);
-            }
-
             $row->update([
                 'approval_status' => 'approved',
                 'approved_by' => auth()->id(),
@@ -228,10 +213,6 @@ class FieldSupervisionController extends Controller
                 ]);
             }
 
-            if ($section === 'opname-kontraktor' && $row instanceof ContractorOpname) {
-                $row->update(['status' => 'disetujui']);
-                $this->syncOpnameToSpkPayment($row->fresh());
-            }
         });
 
         return back()->with('success', 'Data berhasil disetujui.');
@@ -239,7 +220,7 @@ class FieldSupervisionController extends Controller
 
     public function lock(string $section, string $id): RedirectResponse
     {
-        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci data.');
+        $this->authorizeFieldSupervision('update');
         $row = $this->findRow($section, $id);
         $row->update(['record_status' => 'locked', 'locked_at' => now(), 'locked_by' => auth()->id()]);
 
@@ -275,22 +256,19 @@ class FieldSupervisionController extends Controller
         if ($this->config($section)['approval']) {
             $base[] = 'approvedBy:id,name';
         }
-        if (in_array($section, ['defect', 'opname-kontraktor', 'perubahan-pekerjaan'], true)) {
+        if (in_array($section, ['defect', 'perubahan-pekerjaan'], true)) {
             $base[] = 'tahapanPembangunan:id,nama_tahapan';
         }
-        if (in_array($section, ['defect', 'opname-kontraktor', 'perubahan-pekerjaan', 'tenaga-kerja-alat'], true)) {
+        if (in_array($section, ['defect', 'perubahan-pekerjaan', 'tenaga-kerja-alat'], true)) {
             $base[] = 'progressPembangunan:id,nama_progress,persentase,site_schedule_id';
         }
-        if (in_array($section, ['opname-kontraktor', 'perubahan-pekerjaan', 'tenaga-kerja-alat'], true)) {
+        if (in_array($section, ['perubahan-pekerjaan', 'tenaga-kerja-alat'], true)) {
             $base[] = 'spkKontraktor:id,nomor_spk,judul_pekerjaan,nilai_kontrak';
         }
         if ($section === 'tenaga-kerja-alat') {
             $base[] = 'officeAssets:id,kode_aset,nama_aset,status';
             $base[] = 'siteSchedule:id,nama_pekerjaan,perumahan_id,detail_rumah_id,tahapan_pembangunan_id';
             $base[] = 'progressPembangunan:id,nama_progress,perumahan_id,detail_rumah_id,tahapan_pembangunan_id,site_schedule_id';
-        }
-        if ($section === 'opname-kontraktor') {
-            $base[] = 'progressPembangunan:id,nama_progress,persentase,persentase_total';
         }
         if ($section === 'defect') {
             $base[] = 'qualityInspection:id,kode_inspeksi,item_pemeriksaan';
@@ -314,7 +292,6 @@ class FieldSupervisionController extends Controller
     {
         return match ($section) {
             'defect' => ['kode_defect', 'temuan', 'instruksi_perbaikan', 'status'],
-            'opname-kontraktor' => ['kode_opname', 'pekerjaan', 'status', 'catatan'],
             'perubahan-pekerjaan' => ['kode_perubahan', 'uraian_perubahan', 'alasan', 'status'],
             'tenaga-kerja-alat' => ['kode_log', 'sumber_tenaga_kerja', 'kontraktor', 'nama_mandor', 'alat_digunakan', 'pekerjaan'],
             'k3' => ['kode_k3', 'temuan', 'tindakan', 'status'],
@@ -360,11 +337,27 @@ class FieldSupervisionController extends Controller
             'approved_by_name' => $row->approvedBy?->name ?? '-',
             'record_status' => $row->record_status ?? 'draft',
             'can_approve' => ($row->record_status ?? 'draft') === 'locked' && $config['approval'] && $this->requiresApprovalFor('field-supervision') && ($row->approval_status ?? null) !== 'approved' && $this->canApproveFor('field-supervision'),
-            'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && ((bool) auth()->user()?->can('field-supervision.update') || auth()->user()?->can('field-supervision.manage')),
-            'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && ((bool) auth()->user()?->can('field-supervision.delete') || auth()->user()?->can('field-supervision.manage')),
-            'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+            'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canFieldSupervision('update'),
+            'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && $this->canFieldSupervision('delete'),
+            'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canFieldSupervision('update'),
             'can_unlock' => $this->canManageFieldLock(),
         ];
+    }
+
+    protected function authorizeFieldSupervision(string $action): void
+    {
+        abort_unless($this->canFieldSupervision($action), 403, 'Anda tidak memiliki permission pengawasan lapangan.');
+    }
+
+    protected function canFieldSupervision(string $action): bool
+    {
+        $user = auth()->user();
+
+        return (bool) $user && (
+            $user->hasRole('super_admin')
+            || $user->can("field-supervision.{$action}")
+            || $user->can('field-supervision.manage')
+        );
     }
 
     protected function canManageFieldLock(): bool
@@ -372,11 +365,9 @@ class FieldSupervisionController extends Controller
         $user = auth()->user();
 
         return (bool) $user && (
-            $user->hasAnyRole(['super_admin'])
+            $user->hasRole('super_admin')
             || $user->can('field-supervision.unlock')
             || $user->can('field-supervision.manage')
-            || $user->can('field-supervision.update')
-            || $user->can('field-supervision.delete')
             || $user->can('field-supervision.approve')
         );
     }
@@ -385,7 +376,6 @@ class FieldSupervisionController extends Controller
     {
         return match ($section) {
             'defect' => trim(($row->prioritas ?? '').' - '.$row->temuan),
-            'opname-kontraktor' => trim(($row->pekerjaan ?? '').' - Rp '.number_format((float) $row->nilai_diajukan, 0, ',', '.')),
             'perubahan-pekerjaan' => trim(($row->jenis_perubahan ?? '').' - '.$row->uraian_perubahan),
             'tenaga-kerja-alat' => trim(
                 ucwords(str_replace('_', ' ', (string) ($row->sumber_tenaga_kerja ?? 'kontraktor')))
@@ -421,18 +411,6 @@ class FieldSupervisionController extends Controller
                 ['name' => 'target_selesai', 'label' => 'Target Selesai', 'type' => 'date'],
                 ['name' => 'tanggal_selesai', 'label' => 'Tanggal Selesai', 'type' => 'date'],
                 ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'defectStatuses'],
-            ],
-            'opname-kontraktor' => [...$base,
-                ['name' => 'sumber_tenaga_kerja', 'label' => 'Sumber Tenaga Kerja', 'type' => 'select', 'optionsKey' => 'manpowerSources', 'default' => 'kontraktor'],
-                ['name' => 'spk_kontraktor_id', 'label' => 'SPK Kontraktor', 'type' => 'select', 'optionsKey' => 'spks', 'showWhen' => ['sumber_tenaga_kerja' => ['kontraktor']]],
-                ['name' => 'tahapan_pembangunan_id', 'label' => 'Tahapan', 'type' => 'select', 'optionsKey' => 'tahapanPembangunans'],
-                ['name' => 'progress_pembangunan_id', 'label' => 'Progress Terkait', 'type' => 'select', 'optionsKey' => 'progressPembangunans'],
-                ['name' => 'pekerjaan', 'label' => 'Pekerjaan', 'type' => 'text', 'required' => true],
-                ['name' => 'progress_diakui', 'label' => 'Progress Diakui %', 'type' => 'number'],
-                ['name' => 'nilai_diajukan', 'label' => 'Nilai Diajukan', 'type' => 'currency'],
-                ['name' => 'nilai_disetujui', 'label' => 'Nilai Disetujui', 'type' => 'currency'],
-                ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'opnameStatuses'],
-                ['name' => 'catatan', 'label' => 'Catatan', 'type' => 'textarea'],
             ],
             'perubahan-pekerjaan' => [...$base,
                 ['name' => 'sumber_tenaga_kerja', 'label' => 'Sumber Tenaga Kerja', 'type' => 'select', 'optionsKey' => 'manpowerSources', 'default' => 'kontraktor'],
@@ -580,7 +558,6 @@ class FieldSupervisionController extends Controller
 
         return $request->validate(match ($section) {
             'defect' => [...$rules, 'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'], 'progress_pembangunan_id' => ['nullable', 'exists:progress_pembangunans,id'], 'quality_inspection_id' => ['nullable', 'exists:quality_inspections,id'], 'kategori' => ['required', 'string'], 'prioritas' => ['required', Rule::in(['low', 'medium', 'high', 'urgent'])], 'temuan' => ['required', 'string'], 'instruksi_perbaikan' => ['nullable', 'string'], 'target_selesai' => ['nullable', 'date'], 'tanggal_selesai' => ['nullable', 'date'], 'status' => ['required', 'string']],
-            'opname-kontraktor' => [...$rules, 'sumber_tenaga_kerja' => ['required', Rule::in(['kontraktor', 'tukang_owner', 'mandor_internal', 'harian_lepas'])], 'spk_kontraktor_id' => ['nullable', 'exists:spk_kontraktors,id'], 'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'], 'progress_pembangunan_id' => ['nullable', 'exists:progress_pembangunans,id'], 'pekerjaan' => ['required', 'string'], 'progress_diakui' => ['nullable', 'numeric', 'min:0', 'max:100'], 'nilai_diajukan' => ['nullable', 'numeric', 'min:0'], 'nilai_disetujui' => ['nullable', 'numeric', 'min:0'], 'status' => ['required', 'string'], 'catatan' => ['nullable', 'string']],
             'perubahan-pekerjaan' => [...$rules, 'sumber_tenaga_kerja' => ['required', Rule::in(['kontraktor', 'tukang_owner', 'mandor_internal', 'harian_lepas'])], 'spk_kontraktor_id' => ['nullable', 'exists:spk_kontraktors,id'], 'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'], 'jenis_perubahan' => ['required', 'string'], 'uraian_perubahan' => ['required', 'string'], 'alasan' => ['nullable', 'string'], 'estimasi_biaya' => ['nullable', 'numeric', 'min:0'], 'estimasi_hari' => ['nullable', 'integer', 'min:0'], 'status' => ['required', 'string']],
             'tenaga-kerja-alat' => [
                 ...$rules,
@@ -649,7 +626,7 @@ class FieldSupervisionController extends Controller
             }
         }
 
-        if (in_array($section, ['opname-kontraktor', 'perubahan-pekerjaan', 'tenaga-kerja-alat'], true) && ($payload['sumber_tenaga_kerja'] ?? 'kontraktor') !== 'kontraktor') {
+        if (in_array($section, ['perubahan-pekerjaan', 'tenaga-kerja-alat'], true) && ($payload['sumber_tenaga_kerja'] ?? 'kontraktor') !== 'kontraktor') {
             $payload['spk_kontraktor_id'] = null;
         }
 
@@ -689,90 +666,6 @@ class FieldSupervisionController extends Controller
     protected function nextCode(string $prefix): string
     {
         return $prefix.'-'.now()->format('ymd-His').'-'.random_int(10, 99);
-    }
-
-    protected function ensureOpnameWithinContract(ContractorOpname $opname): void
-    {
-        if (! $opname->spk_kontraktor_id) {
-            return;
-        }
-
-        $spk = SpkKontraktor::query()->find($opname->spk_kontraktor_id);
-        if (! $spk) {
-            return;
-        }
-
-        $nilaiOpname = (float) ($opname->nilai_disetujui ?: $opname->nilai_diajukan);
-        $approvedBefore = ContractorOpname::query()
-            ->where('spk_kontraktor_id', $opname->spk_kontraktor_id)
-            ->where('id', '!=', $opname->id)
-            ->where('approval_status', 'approved')
-            ->sum('nilai_disetujui');
-
-        if (((float) $approvedBefore + $nilaiOpname) > (float) $spk->nilai_kontrak) {
-            throw ValidationException::withMessages([
-                'nilai_disetujui' => 'Total opname disetujui melebihi nilai kontrak SPK. Sisa kontrak: Rp '.number_format(max(0, (float) $spk->nilai_kontrak - (float) $approvedBefore), 0, ',', '.').'.',
-            ]);
-        }
-    }
-
-    protected function syncOpnameToSpkPayment(ContractorOpname $opname): void
-    {
-        if (! $opname->spk_kontraktor_id) {
-            return;
-        }
-
-        $nominal = (float) ($opname->nilai_disetujui ?: $opname->nilai_diajukan);
-        if ($nominal <= 0) {
-            return;
-        }
-
-        $payment = SpkKontraktorPayment::query()
-            ->where('spk_kontraktor_id', $opname->spk_kontraktor_id)
-            ->where('contractor_opname_id', $opname->id)
-            ->first();
-
-        if (! $payment) {
-            $payment = SpkKontraktorPayment::query()
-                ->where('spk_kontraktor_id', $opname->spk_kontraktor_id)
-                ->whereNull('contractor_opname_id')
-                ->where('status', 'menunggu_pengajuan')
-                ->orderBy('termin_ke')
-                ->first();
-        }
-
-        if (! $payment) {
-            $lastTermin = (int) SpkKontraktorPayment::query()
-                ->where('spk_kontraktor_id', $opname->spk_kontraktor_id)
-                ->max('termin_ke');
-
-            $payment = SpkKontraktorPayment::query()->create([
-                'spk_kontraktor_id' => $opname->spk_kontraktor_id,
-                'termin_ke' => $lastTermin + 1,
-                'tanggal_jatuh_tempo' => $opname->tanggal,
-                'tanggal_pembayaran' => null,
-                'nominal' => 0,
-                'status' => 'menunggu_pengajuan',
-            ]);
-        }
-
-        if ($payment->status !== 'menunggu_pengajuan') {
-            throw ValidationException::withMessages([
-                'opname' => 'Termin SPK terkait sudah masuk proses pembayaran. Buat opname/termin baru untuk koreksi berikutnya.',
-            ]);
-        }
-
-        $payment->update([
-            'contractor_opname_id' => $opname->id,
-            'tanggal_pembayaran' => null,
-            'nominal' => $nominal,
-            'keterangan' => trim('Opname '.$opname->kode_opname.' - '.$opname->pekerjaan),
-            'status' => 'menunggu_pengajuan',
-            'requested_by' => null,
-            'requested_at' => null,
-            'approved_by' => null,
-            'approved_at' => null,
-        ]);
     }
 
     protected function simpleOptions(array $values): array

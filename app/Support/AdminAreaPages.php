@@ -118,7 +118,6 @@ class AdminAreaPages
                     ['label' => 'List Jenis Pemasukan', 'description' => 'Data master untuk jenis pemasukan.', 'href' => '/admin/management/tipe-post'],
                     ['label' => 'List Jenis Pengeluaran', 'description' => 'Data master untuk jenis pengeluaran.', 'href' => '/admin/management/tipe-post'],
                     ['label' => 'Master Bank', 'description' => 'Akses daftar rekening bank perusahaan.', 'href' => '/admin/management/master-bank'],
-                    ['label' => 'HPP', 'description' => 'Kelola kelompok HPP dan realisasi biaya.', 'href' => '/admin/management/kelompok-hpp'],
                 ],
             ],
             'konsumen' => [

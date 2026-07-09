@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
 import { Button, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
+import { scopedTahapanOptions } from '../../../Utils/tahapanOptions';
 
 export default function Index({ title, baseUrl, rows = { data: [], links: [] }, filters = {}, options = {}, permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
@@ -27,8 +28,12 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
     const tahapanPembangunansKawasan = options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? [];
     const resolveScopedValue = (selectedValue, fallbackValue) => ((selectedValue !== undefined && selectedValue !== null && selectedValue !== '') ? selectedValue : fallbackValue);
     const tahapanPembangunans = useMemo(
-        () => (form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan),
-        [form.data.detail_rumah_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+        () => scopedTahapanOptions(
+            form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan,
+            form.data.perumahan_id,
+            form.data.detail_rumah_id,
+        ),
+        [form.data.detail_rumah_id, form.data.perumahan_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
     );
     const unitOptions = useMemo(() => detailRumahs.filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, detailRumahs]);
     const scheduleOptions = useMemo(() => (options.siteSchedules ?? []).filter((row) => !form.data.detail_rumah_id || row.detail_rumah_id === String(form.data.detail_rumah_id)), [form.data.detail_rumah_id, options.siteSchedules]);
@@ -76,7 +81,7 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                {canCreate && (
+                {(canCreate || (editing && canUpdate)) && (
                 <Form collapsible title={editing ? `Edit ${editing.kode_laporan}` : 'Input Laporan Harian / Mingguan'} description="Berfungsi sekaligus sebagai site diary, laporan pekerjaan, kendala, koordinasi, dan rencana kerja berikutnya." onSubmit={submit} actions={<>{editing && canUpdate && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}<Button type="submit" disabled={form.processing}><FileText size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan Laporan'}</Button></>}>
                     {Object.keys(form.errors).length > 0 && <div className="rounded-lg bg-red-50 p-4 text-sm font-bold text-red-700">{Object.values(form.errors).map((error) => <p key={error}>{error}</p>)}</div>}
                     <div className="grid gap-4 md:grid-cols-4">

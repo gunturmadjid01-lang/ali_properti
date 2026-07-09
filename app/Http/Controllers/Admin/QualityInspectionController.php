@@ -34,6 +34,13 @@ class QualityInspectionController extends Controller
         return Inertia::render('Admin/QualityInspection/Index', [
             'title' => 'Kontrol Kualitas',
             'baseUrl' => route('admin.quality-inspection.index', absolute: false),
+            'permissions' => [
+                'canCreate' => $this->canQualityInspection('create'),
+                'canUpdate' => $this->canQualityInspection('update'),
+                'canDelete' => $this->canQualityInspection('delete'),
+                'canLock' => $this->canQualityInspection('update'),
+                'canUnlock' => $this->canQualityInspection('unlock') || $this->currentUserCanManageLockedRecords(),
+            ],
             'filters' => ['search' => $search, 'perumahan_id' => $perumahanId, 'detail_rumah_id' => $detailRumahId],
             'options' => $this->options(),
             'rows' => QualityInspection::query()
@@ -82,10 +89,10 @@ class QualityInspectionController extends Controller
                     'updated_by_name' => $row->updater?->name ?? '-',
                     'approved_by_name' => $row->approvedBy?->name ?? '-',
                     'can_approve' => ($row->record_status ?? 'draft') === 'locked' && $this->requiresApprovalFor('quality-inspection') && $row->approval_status !== 'approved' && $this->canApproveFor('quality-inspection'),
-                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
-                    'can_unlock' => $this->currentUserCanManageLockedRecords(),
-                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked',
-                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked',
+                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canQualityInspection('update'),
+                    'can_unlock' => $this->canQualityInspection('unlock') || $this->currentUserCanManageLockedRecords(),
+                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canQualityInspection('update'),
+                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && $this->canQualityInspection('delete'),
                     'record_status' => $row->record_status ?? 'draft',
                 ]),
         ]);
@@ -93,7 +100,7 @@ class QualityInspectionController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        $this->authorizeQualityInspection('create');
         $validated = $request->validate([
             'tanggal' => ['required', 'date'],
             'perumahan_id' => ['required', 'exists:perumahans,id'],
@@ -149,21 +156,21 @@ class QualityInspectionController extends Controller
 
     public function lock(string $id): RedirectResponse
     {
-        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci inspeksi.');
+        $this->authorizeQualityInspection('update');
 
         return $this->traitLock($id);
     }
 
     public function unlock(string $id): RedirectResponse
     {
-        abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock inspeksi.');
+        abort_unless($this->canQualityInspection('unlock') || $this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock inspeksi.');
 
         return $this->traitUnlock($id);
     }
 
     public function update(Request $request, string $id): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        $this->authorizeQualityInspection('update');
         $row = QualityInspection::query()->findOrFail($id);
         $this->abortIfLocked($row);
         $validated = $this->validatedPayload($request);
@@ -197,7 +204,7 @@ class QualityInspectionController extends Controller
 
     public function destroy(string $id): RedirectResponse
     {
-        $this->authorizeFieldUser();
+        $this->authorizeQualityInspection('delete');
         $row = QualityInspection::query()->findOrFail($id);
         $this->abortIfLocked($row);
         if ($row->foto) {
@@ -211,6 +218,22 @@ class QualityInspectionController extends Controller
     protected function modelClass(): string
     {
         return QualityInspection::class;
+    }
+
+    private function authorizeQualityInspection(string $action): void
+    {
+        abort_unless($this->canQualityInspection($action), 403, 'Anda tidak memiliki permission kontrol kualitas.');
+    }
+
+    private function canQualityInspection(string $action): bool
+    {
+        $user = auth()->user();
+
+        return (bool) (
+            $user?->hasRole('super_admin')
+            || $user?->can("quality-inspection.{$action}")
+            || $user?->can('quality-inspection.manage')
+        );
     }
 
     protected function syncDefectFromInspection(QualityInspection $inspection): void
@@ -251,26 +274,8 @@ class QualityInspectionController extends Controller
     private function options(): array
     {
         $options = $this->fieldOptions();
-        $options['tahapanPembangunansUnit'] = TahapanPembangunan::query()
-            ->where('status', 'aktif')
-            ->where('konteks', 'unit')
-            ->orderBy('urutan')
-            ->get(['id', 'nama_tahapan', 'bobot_persen'])
-            ->map(fn (TahapanPembangunan $row) => [
-                'value' => (string) $row->id,
-                'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)',
-            ])
-            ->values();
-        $options['tahapanPembangunansKawasan'] = TahapanPembangunan::query()
-            ->where('status', 'aktif')
-            ->where('konteks', 'kawasan')
-            ->orderBy('urutan')
-            ->get(['id', 'nama_tahapan', 'bobot_persen'])
-            ->map(fn (TahapanPembangunan $row) => [
-                'value' => (string) $row->id,
-                'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)',
-            ])
-            ->values();
+        $options['tahapanPembangunansUnit'] = app(\App\Services\TahapanOptionService::class)->forContext('unit');
+        $options['tahapanPembangunansKawasan'] = app(\App\Services\TahapanOptionService::class)->forContext('kawasan');
         $options['siteSchedules'] = SiteSchedule::query()
             ->with(['perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah'])
             ->orderBy('tanggal_target')

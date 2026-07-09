@@ -9,10 +9,14 @@ use App\Models\DetailRumahHpp;
 use App\Models\Kontraktor;
 use App\Models\Perumahan;
 use App\Models\PerumahanHpp;
-use App\Models\SpkKontraktorAddition;
+use App\Models\SpkKontraktorItem;
 use App\Models\SpkKontraktor;
 use App\Models\SpkKontraktorPayment;
+use App\Models\SiteSchedule;
+use App\Models\SpkWorkTemplate;
+use App\Models\TahapanPembangunan;
 use App\Services\AccountingService;
+use App\Services\SpkRabSyncService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -63,7 +67,7 @@ class SpkKontraktorController extends Controller
         $disbursementOnly = $mode === 'disbursement';
 
         $rows = SpkKontraktor::query()
-            ->with(['kontraktor:id,nama_kontraktor', 'perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah', 'payments.contractorOpname:id,kode_opname', 'additions'])
+            ->with(['kontraktor:id,nama_kontraktor', 'perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah', 'items.tahapanPembangunan:id,nama_tahapan', 'payments.contractorOpname:id,kode_opname'])
             ->when($disbursementOnly, fn (Builder $query) => $query->whereHas(
                 'payments',
                 fn (Builder $query) => $query->whereIn('status', $this->spkApprovalPendingStatuses()),
@@ -99,7 +103,7 @@ class SpkKontraktorController extends Controller
                 'tanggal_selesai' => optional($row->tanggal_selesai)->format('Y-m-d'),
                 'nilai_kontrak_dasar' => $row->nilai_kontrak_dasar,
                 'nilai_kontrak' => $row->nilai_kontrak,
-                'total_penambahan' => $row->total_penambahan,
+                'total_penambahan' => 0,
                 'metode_pembayaran' => $row->metode_pembayaran,
                 'approval_role' => $this->normalizeApprovalRole($row->approval_role),
                 'record_status' => $row->record_status ?? 'draft',
@@ -107,6 +111,18 @@ class SpkKontraktorController extends Controller
                 'lingkup_pekerjaan' => $row->lingkup_pekerjaan,
                 'catatan' => $row->catatan,
                 'status' => $row->status,
+                'approved_at' => optional($row->approved_at)->format('Y-m-d H:i'),
+                'sumber_tenaga_kerja' => $row->sumber_tenaga_kerja ?? 'tukang_owner',
+                'items' => $row->items->sortBy('urutan')->map(fn (SpkKontraktorItem $item) => [
+                    'id' => $item->id,
+                    'tahapan_pembangunan_id' => (string) ($item->tahapan_pembangunan_id ?? ''),
+                    'nama_tahap_pekerjaan' => $item->nama_tahap_pekerjaan,
+                    'nama_pekerjaan' => $item->nama_pekerjaan,
+                    'harga_satuan' => $item->harga_satuan,
+                    'total' => $item->total,
+                    'urutan' => $item->urutan,
+                ])->values(),
+                'items_text' => $row->items->sortBy('urutan')->map(fn (SpkKontraktorItem $item) => trim($item->nama_tahap_pekerjaan.' - '.$item->nama_pekerjaan))->join(', '),
                 'hpp_plan_exists' => $hppPlan['exists'],
                 'hpp_plan_total' => $hppPlan['total'],
                 'hpp_plan_label' => $hppPlan['label'],
@@ -124,19 +140,14 @@ class SpkKontraktorController extends Controller
                     'status' => $payment->status,
                     'status_label' => $this->paymentStatusLabel($payment->status),
                 ])->values(),
-                'additions' => $row->additions->map(fn (SpkKontraktorAddition $addition) => [
-                    'id' => $addition->id,
-                    'kategori_penambahan' => $addition->kategori_penambahan,
-                    'judul_penambahan' => $addition->judul_penambahan,
-                    'deskripsi' => $addition->deskripsi,
-                    'volume' => $addition->volume,
-                    'satuan' => $addition->satuan,
-                    'harga_satuan' => $addition->harga_satuan,
-                    'total' => $addition->total,
-                    'keterangan' => $addition->keterangan,
-                ])->values(),
                 'can_edit' => $this->canManageSpk() && ($row->record_status ?? 'draft') !== 'locked',
                 'can_delete' => $this->canManageSpk() && ($row->record_status ?? 'draft') !== 'locked',
+                'can_cancel' => $this->canManageSpk()
+                    && $row->status !== 'batal'
+                    && blank($row->approved_at)
+                    && ! $row->siteSchedules()->exists()
+                    && ! $row->payments()->where('status', '!=', 'menunggu_pengajuan')->exists(),
+                'can_approve' => $this->canApproveSpk() && blank($row->approved_at),
                 'can_lock' => (bool) auth()->check() && ($row->record_status ?? 'draft') !== 'locked',
                 'can_unlock' => $this->canManageSpkLock() && ($row->record_status ?? 'draft') === 'locked',
                 ];
@@ -159,7 +170,7 @@ class SpkKontraktorController extends Controller
                 'approval' => 'Daftar termin SPK yang membutuhkan persetujuan manajer atau owner.',
                 'disbursement' => 'Owner atau manajer memeriksa detail termin sebelum menyetujui pencairan.',
                 'payment' => 'Admin keuangan mengajukan termin dan mencatat pembayaran setelah disetujui.',
-                default => 'Buat surat perjanjian kontrak dan jadwal pembayaran kontraktor.',
+                default => 'Buat surat perjanjian kontrak, item pekerjaan, dan termin pembayaran kontraktor.',
             },
             'baseUrl' => route('admin.spk-kontraktor.index', absolute: false),
             'pageUrl' => match ($mode) {
@@ -176,6 +187,7 @@ class SpkKontraktorController extends Controller
                 'canViewPaymentDetail' => $this->canApprovePayment(),
                 'canRequestPayment' => $this->canRequestSpkPayment(),
                 'canApprovePayment' => $this->canApprovePayment(),
+                'canApproveSpk' => $this->canApproveSpk(),
                 'canReleasePayment' => $this->canReleaseSpkPayment(),
             ],
             'approvalOnly' => $approvalOnly,
@@ -246,7 +258,7 @@ class SpkKontraktorController extends Controller
                 'tanggal_pembayaran' => $paidAt->toDateString(),
             ]);
 
-            $accounting->recordContractorPayment($payment->fresh('spkKontraktor.perumahan'));
+            $accounting->recordContractorPayment($payment->fresh(['spkKontraktor.perumahan']));
             $this->syncSpkStatus($payment->spkKontraktor);
         });
 
@@ -259,57 +271,114 @@ class SpkKontraktorController extends Controller
         $payload = $this->payload($request);
         $payload = $this->preparePayloadTotals($payload);
         $this->ensurePaymentTotalMatchesContract($payload);
+        $detailRumahIds = collect($payload['detail_rumah_ids'] ?? [])
+            ->filter()
+            ->values();
+        unset($payload['detail_rumah_ids']);
 
-        DB::transaction(function () use ($payload) {
+        DB::transaction(function () use ($payload, $detailRumahIds) {
             $payments = $this->paymentsPayload($payload);
-            $additions = $this->additionsPayload($payload);
+            $items = $this->itemsPayload($payload);
             unset($payload['payments']);
-            unset($payload['additions']);
+            unset($payload['items']);
 
-            $spk = SpkKontraktor::query()->create([
-                ...$payload,
-                'nomor_spk' => $this->nextNumber(),
-                'created_by' => auth()->id(),
-                'updated_by' => auth()->id(),
-            ]);
+            $targets = $detailRumahIds->isNotEmpty() ? $detailRumahIds : collect([null]);
 
-            $this->syncPayments($spk, $payments);
-            $this->syncAdditions($spk, $additions);
+            foreach ($targets as $detailRumahId) {
+                $spk = SpkKontraktor::query()->create([
+                    ...$payload,
+                    'detail_rumah_id' => $detailRumahId,
+                    'nomor_spk' => $this->nextNumber(),
+                    'created_by' => auth()->id(),
+                    'updated_by' => auth()->id(),
+                ]);
+
+                $this->syncItems($spk, $items);
+                $this->syncPayments($spk, $payments);
+            }
         });
 
-        return back()->with('success', 'SPK kontraktor berhasil dibuat.');
+        return back()->with('success', $detailRumahIds->count() > 1 ? 'SPK kontraktor berhasil dibuat untuk beberapa unit.' : 'SPK kontraktor berhasil dibuat.');
     }
 
     public function update(Request $request, string $id): RedirectResponse
     {
         $this->authorizeOwnerOrManager();
-        $payload = $this->payload($request);
+        $spk = SpkKontraktor::query()->findOrFail($id);
+        $payload = $this->payload($request, $spk);
         $payload = $this->preparePayloadTotals($payload);
         $this->ensurePaymentTotalMatchesContract($payload);
-        $spk = SpkKontraktor::query()->findOrFail($id);
         abort_if(($spk->record_status ?? 'draft') === 'locked', 422, 'SPK sudah dikunci. Buka lock terlebih dahulu sebelum mengubah data.');
         abort_if(
             $spk->payments()->where('status', '!=', 'menunggu_pengajuan')->exists(),
             422,
             'SPK tidak dapat diubah karena sudah memiliki termin yang diproses. Batalkan proses pembayaran terlebih dahulu.',
         );
+        unset($payload['detail_rumah_ids']);
 
         DB::transaction(function () use ($spk, $payload) {
             $payments = $this->paymentsPayload($payload);
-            $additions = $this->additionsPayload($payload);
+            $items = $this->itemsPayload($payload);
             unset($payload['payments']);
-            unset($payload['additions']);
+            unset($payload['items']);
 
             $spk->update([
                 ...$payload,
                 'updated_by' => auth()->id(),
             ]);
 
+            $spk->items()->delete();
+            $this->syncItems($spk, $items);
             $this->syncPayments($spk, $payments);
-            $this->syncAdditions($spk, $additions);
         });
 
+        if ($spk->fresh()->approved_at) {
+            app(SpkRabSyncService::class)->sync($spk->fresh(['items', 'perumahan']));
+        }
+
         return back()->with('success', 'SPK kontraktor berhasil diperbarui.');
+    }
+
+    public function approve(string $id, SpkRabSyncService $spkRabSync): RedirectResponse
+    {
+        abort_unless($this->canApproveSpk(), 403, 'Hanya manajer atau owner yang dapat menyetujui SPK.');
+        $spk = SpkKontraktor::query()->with(['items', 'perumahan'])->findOrFail($id);
+        abort_if($spk->status === 'batal', 422, 'SPK batal tidak dapat disetujui.');
+
+        DB::transaction(function () use ($spk): void {
+            $spk->update([
+                'approved_by' => auth()->id(),
+                'approved_at' => now(),
+                'status' => $spk->status === 'batal' ? 'batal' : 'aktif',
+                'updated_by' => auth()->id(),
+            ]);
+        });
+
+        $spkRabSync->sync($spk->fresh(['items', 'perumahan']));
+
+        return back()->with('success', 'SPK berhasil disetujui dan ditambahkan ke RAB perumahan.');
+    }
+
+    public function cancel(string $id): RedirectResponse
+    {
+        $this->authorizeOwnerOrManager();
+        $spk = SpkKontraktor::query()->findOrFail($id);
+
+        abort_if($spk->status === 'batal', 422, 'SPK ini sudah dibatalkan.');
+        abort_if(($spk->record_status ?? 'draft') === 'locked', 422, 'SPK terkunci. Buka lock terlebih dahulu sebelum membatalkan.');
+        abort_if($spk->approved_at, 422, 'SPK yang sudah di-approve tidak dapat dibatalkan.');
+        abort_if($spk->payments()->where('status', '!=', 'menunggu_pengajuan')->exists(), 422, 'SPK yang sudah diproses pembayarannya tidak dapat dibatalkan.');
+        abort_if($spk->siteSchedules()->exists(), 422, 'SPK yang sudah dipakai membuat jadwal lapangan tidak dapat dibatalkan.');
+
+        $spk->update([
+            'status' => 'batal',
+            'record_status' => 'draft',
+            'locked_at' => null,
+            'locked_by' => null,
+            'updated_by' => auth()->id(),
+        ]);
+
+        return back()->with('success', 'SPK berhasil dibatalkan.');
     }
 
     public function destroy(string $id): RedirectResponse
@@ -322,12 +391,15 @@ class SpkKontraktorController extends Controller
         return back()->with('success', 'SPK kontraktor berhasil dihapus.');
     }
 
-    protected function payload(Request $request): array
+    protected function payload(Request $request, ?SpkKontraktor $spk = null): array
     {
         $payload = $request->validate([
-            'kontraktor_id' => ['required', 'exists:kontraktors,id'],
+            'sumber_tenaga_kerja' => ['required', 'in:tukang_owner,kontraktor,mandor_internal,harian_lepas'],
+            'kontraktor_id' => ['nullable', 'exists:kontraktors,id'],
             'perumahan_id' => ['required', 'exists:perumahans,id'],
-            'detail_rumah_id' => ['required_if:jenis_pekerjaan,rumah', 'nullable', 'exists:detail_rumahs,id'],
+            'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
+            'detail_rumah_ids' => ['nullable', 'array'],
+            'detail_rumah_ids.*' => ['nullable', 'exists:detail_rumahs,id'],
             'judul_pekerjaan' => ['required', 'string', 'max:255'],
             'jenis_pekerjaan' => ['required', 'in:rumah,jalan,pembukaan_lahan,lainnya'],
             'tanggal_spk' => ['required', 'date'],
@@ -335,23 +407,18 @@ class SpkKontraktorController extends Controller
             'tanggal_selesai' => ['nullable', 'date'],
             'nilai_kontrak' => ['required', 'numeric', 'min:0'],
             'metode_pembayaran' => ['required', 'in:cash,cicil'],
-            'approval_role' => ['required', 'in:manajer,admin'],
             'lingkup_pekerjaan' => ['nullable', 'string'],
             'catatan' => ['nullable', 'string'],
             'status' => ['required', 'in:draft,aktif,selesai,batal'],
             'payments' => ['required', 'array', 'min:1'],
-            'nilai_kontrak_dasar' => ['required', 'numeric', 'min:0'],
+            'work_groups' => ['required', 'array', 'min:1'],
+            'work_groups.*.judul_tahapan' => ['required', 'string', 'max:255'],
+            'work_groups.*.items' => ['required', 'array', 'min:1'],
+            'work_groups.*.items.*.nama_pekerjaan' => ['required', 'string', 'max:255'],
+            'work_groups.*.items.*.harga_satuan' => ['required', 'numeric', 'min:0'],
             'payments.*.tanggal_jatuh_tempo' => ['nullable', 'date'],
             'payments.*.nominal' => ['required', 'numeric', 'min:0'],
             'payments.*.keterangan' => ['nullable', 'string'],
-            'additions' => ['nullable', 'array'],
-            'additions.*.kategori_penambahan' => ['required_with:additions', 'in:lahan,pekerjaan_tambahan,lainnya'],
-            'additions.*.judul_penambahan' => ['required_with:additions', 'string', 'max:255'],
-            'additions.*.deskripsi' => ['nullable', 'string'],
-            'additions.*.volume' => ['required_with:additions', 'numeric', 'min:0'],
-            'additions.*.satuan' => ['nullable', 'string', 'max:50'],
-            'additions.*.harga_satuan' => ['required_with:additions', 'numeric', 'min:0'],
-            'additions.*.keterangan' => ['nullable', 'string'],
         ], [], [
             'kontraktor_id' => 'Kontraktor',
             'judul_pekerjaan' => 'Judul pekerjaan',
@@ -360,12 +427,41 @@ class SpkKontraktorController extends Controller
             'nilai_kontrak_dasar' => 'Nilai dasar kontrak',
             'nilai_kontrak' => 'Nilai kontrak',
             'metode_pembayaran' => 'Metode pembayaran',
-            'approval_role' => 'Approval SPK',
-            'payments' => 'Jadwal pembayaran',
+            'payments' => 'Termin pembayaran',
+            'work_groups' => 'Kelompok tahapan pekerjaan',
             'payments.*.nominal' => 'Nominal pembayaran',
             'payments.*.tanggal_jatuh_tempo' => 'Tanggal jatuh tempo',
-            'additions.*.judul_penambahan' => 'Judul penambahan',
+            'items.*.nama_pekerjaan' => 'Nama pekerjaan',
         ]);
+
+        if (($payload['sumber_tenaga_kerja'] ?? 'tukang_owner') === 'tukang_owner' && empty($payload['kontraktor_id'])) {
+            $payload['kontraktor_id'] = $this->defaultWorkerContractorId();
+        }
+
+        if (($payload['sumber_tenaga_kerja'] ?? 'tukang_owner') === 'kontraktor' && empty($payload['kontraktor_id'])) {
+            throw ValidationException::withMessages([
+                'kontraktor_id' => 'Kontraktor wajib dipilih jika sumber tenaga kerja memakai kontraktor.',
+            ]);
+        }
+
+        $detailRumahIds = collect($payload['detail_rumah_ids'] ?? [])
+            ->filter()
+            ->map(fn ($id) => (string) $id)
+            ->unique()
+            ->values();
+
+        if ($detailRumahIds->isNotEmpty()) {
+            $validUnitCount = DetailRumah::query()
+                ->where('perumahan_id', $payload['perumahan_id'])
+                ->whereIn('id', $detailRumahIds)
+                ->count();
+
+            if ($validUnitCount !== $detailRumahIds->count()) {
+                throw ValidationException::withMessages([
+                    'detail_rumah_ids' => 'Unit rumah harus berasal dari perumahan yang dipilih.',
+                ]);
+            }
+        }
 
         if (! empty($payload['detail_rumah_id'])) {
             $unitMatchesPerumahan = DetailRumah::query()
@@ -379,6 +475,9 @@ class SpkKontraktorController extends Controller
                 ]);
             }
         }
+
+        $payload['detail_rumah_ids'] = $detailRumahIds->all();
+        $payload['approval_role'] = $spk?->approval_role ?? $this->defaultApprovalRole();
 
         return $payload;
     }
@@ -415,43 +514,49 @@ class SpkKontraktorController extends Controller
 
     protected function preparePayloadTotals(array $payload): array
     {
-        $additions = $this->additionsPayload($payload);
-        $totalPenambahan = $this->calculateTotalPenambahan($additions);
-        $nilaiDasar = (float) ($payload['nilai_kontrak_dasar'] ?? 0);
+        $items = $this->itemsPayload($payload);
+        $nilaiDasar = $this->calculateTotalItems($items);
 
-        $payload['additions'] = $additions;
-        $payload['total_penambahan'] = $totalPenambahan;
-        $payload['nilai_kontrak'] = $nilaiDasar + $totalPenambahan;
+        $payload['items'] = $items;
+        $payload['nilai_kontrak'] = $nilaiDasar;
+        $payload['nilai_kontrak_dasar'] = $nilaiDasar;
 
         return $payload;
     }
 
-    protected function additionsPayload(array $payload): array
+    protected function itemsPayload(array $payload): array
     {
-        return collect($payload['additions'] ?? [])
+        return collect($payload['work_groups'] ?? [])
             ->values()
-            ->filter(fn (array $addition) => filled($addition['judul_penambahan'] ?? null))
-            ->map(function (array $addition) {
-                $volume = (float) ($addition['volume'] ?? 0);
-                $hargaSatuan = (float) ($addition['harga_satuan'] ?? 0);
+            ->filter(fn (array $group) => filled($group['judul_tahapan'] ?? null))
+            ->flatMap(function (array $group, int $groupIndex) {
+                $judulTahapan = (string) $group['judul_tahapan'];
 
-                return [
-                    'kategori_penambahan' => $addition['kategori_penambahan'] ?? 'lainnya',
-                    'judul_penambahan' => $addition['judul_penambahan'],
-                    'deskripsi' => $addition['deskripsi'] ?? null,
-                    'volume' => $volume,
-                    'satuan' => $addition['satuan'] ?? null,
-                    'harga_satuan' => $hargaSatuan,
-                    'total' => $volume * $hargaSatuan,
-                    'keterangan' => $addition['keterangan'] ?? null,
-                ];
+                return collect($group['items'] ?? [])
+                    ->values()
+                    ->filter(fn (array $item) => filled($item['nama_pekerjaan'] ?? null))
+                    ->map(function (array $item, int $itemIndex) use ($judulTahapan, $groupIndex) {
+                        $hargaSatuan = (float) ($item['harga_satuan'] ?? 0);
+
+                        return [
+                            'tahapan_pembangunan_id' => null,
+                            'nama_tahap_pekerjaan' => $judulTahapan,
+                            'nama_pekerjaan' => $item['nama_pekerjaan'],
+                            'volume' => 1,
+                            'satuan' => 'Ls',
+                            'harga_satuan' => $hargaSatuan,
+                            'total' => $hargaSatuan,
+                            'urutan' => (($groupIndex + 1) * 1000) + ($itemIndex + 1),
+                        ];
+                    });
             })
+            ->values()
             ->all();
     }
 
-    protected function calculateTotalPenambahan(array $additions): float
+    protected function calculateTotalItems(array $items): float
     {
-        return (float) collect($additions)->sum(fn (array $addition) => (float) ($addition['total'] ?? 0));
+        return (float) collect($items)->sum(fn (array $item) => (float) ($item['total'] ?? 0));
     }
 
     public function lock(string $id): RedirectResponse
@@ -528,13 +633,20 @@ class SpkKontraktorController extends Controller
         }
     }
 
-    protected function syncAdditions(SpkKontraktor $spk, array $additions): void
+    protected function syncItems(SpkKontraktor $spk, array $items): void
     {
-        $spk->additions()->delete();
-
-        foreach ($additions as $addition) {
-            $spk->additions()->create($addition);
+        foreach ($items as $item) {
+            $spk->items()->create($item);
         }
+    }
+
+    protected function stageNameById(int|string|null $stageId): ?string
+    {
+        if (blank($stageId)) {
+            return null;
+        }
+
+        return TahapanPembangunan::query()->whereKey($stageId)->value('nama_tahapan');
     }
 
     protected function nextNumber(): string
@@ -546,14 +658,118 @@ class SpkKontraktorController extends Controller
 
     protected function options(): array
     {
+        $defaultWorker = $this->defaultWorkerContractor();
+        $spkTemplates = SpkWorkTemplate::query()
+            ->with(['perumahan:id,nama_perusahaan', 'groups.items'])
+            ->when(! $this->canSeeAllPerumahans(), fn (Builder $query) => $query->whereIn('perumahan_id', $this->allowedPerumahanIds()))
+            ->orderBy('konteks')
+            ->orderBy('nama_template')
+            ->get();
+        $spkTemplateOptions = $spkTemplates->map(function (SpkWorkTemplate $template) {
+            $groups = $template->groups->sortBy('urutan')->values();
+
+            return [
+                'value' => (string) $template->id,
+                'label' => $template->nama_template,
+                'perumahan_id' => (string) $template->perumahan_id,
+                'perumahan_label' => $template->perumahan?->nama_perusahaan ?? '-',
+                'konteks' => $template->konteks,
+                'group_count' => $groups->count(),
+                'item_count' => $groups->sum(fn ($group) => $group->items->count()),
+                'groups' => $groups->map(function ($group) {
+                    return [
+                        'judul_tahapan' => $group->judul_tahapan,
+                        'items' => $group->items->sortBy('urutan')->map(fn ($item) => [
+                            'nama_pekerjaan' => $item->nama_pekerjaan,
+                            'volume' => $item->volume,
+                            'satuan' => $item->satuan,
+                            'harga_satuan' => $item->harga_satuan,
+                        ])->values(),
+                    ];
+                })->values(),
+            ];
+        })->values();
+
         return [
-            'kontraktors' => Kontraktor::query()->where('status', 'aktif')->orderBy('nama_kontraktor')->get(['id', 'nama_kontraktor'])->map(fn (Kontraktor $row) => ['value' => (string) $row->id, 'label' => $row->nama_kontraktor])->values(),
+            'kontraktors' => collect([
+                [
+                    'value' => (string) $defaultWorker->id,
+                    'label' => $defaultWorker->nama_kontraktor,
+                    'is_default_worker' => true,
+                ],
+            ])->concat(
+                Kontraktor::query()
+                    ->where('status', 'aktif')
+                    ->where('id', '!=', $defaultWorker->id)
+                    ->orderBy('nama_kontraktor')
+                    ->get(['id', 'nama_kontraktor'])
+                    ->map(fn (Kontraktor $row) => ['value' => (string) $row->id, 'label' => $row->nama_kontraktor])
+            )->values(),
             'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn (Perumahan $row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
             'detailRumahs' => DetailRumah::query()->orderBy('kode_nlok')->orderBy('nomor_rumah')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])->map(fn (DetailRumah $row) => [
                 'value' => (string) $row->id,
                 'label' => trim($row->kode_nlok.' '.$row->nomor_rumah),
                 'perumahan_id' => (string) $row->perumahan_id,
             ])->values(),
+            'spkTemplatePerumahans' => $spkTemplateOptions->where('konteks', 'perumahan')->values(),
+            'spkTemplateUnits' => $spkTemplateOptions->where('konteks', 'unit')->values(),
+            'spkKontraktors' => SpkKontraktor::query()
+                ->with(['perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah', 'items'])
+                ->where('status', '!=', 'batal')
+                ->whereNotNull('approved_at')
+                ->whereDoesntHave('siteSchedules')
+                ->orderByDesc('id')
+                ->get()
+                ->map(function (SpkKontraktor $spk) {
+                    $groups = $spk->items
+                        ->sortBy('urutan')
+                        ->groupBy(fn (SpkKontraktorItem $item) => $item->nama_tahap_pekerjaan ?: 'Tahap')
+                        ->map(function ($items, string $judulTahapan) {
+                            return [
+                                'judul_tahapan' => $judulTahapan,
+                                'group_total' => (float) $items->sum('total'),
+                                'items' => $items->map(fn (SpkKontraktorItem $item) => [
+                                    'nama_pekerjaan' => $item->nama_pekerjaan,
+                                    'harga_satuan' => $item->harga_satuan,
+                                ])->values(),
+                            ];
+                        })
+                        ->values();
+
+                    return [
+                        'value' => (string) $spk->id,
+                        'label' => $spk->nomor_spk.' - '.$spk->judul_pekerjaan.' | '.($spk->perumahan?->nama_perusahaan ?? '-').' / '.($spk->detailRumah ? trim($spk->detailRumah->kode_nlok.' '.$spk->detailRumah->nomor_rumah) : 'Kawasan'),
+                        'perumahan_id' => (string) ($spk->perumahan_id ?? ''),
+                        'detail_rumah_id' => (string) ($spk->detail_rumah_id ?? ''),
+                        'perumahan_label' => $spk->perumahan?->nama_perusahaan ?? '-',
+                        'unit_label' => $spk->detailRumah ? trim($spk->detailRumah->kode_nlok.' '.$spk->detailRumah->nomor_rumah) : 'Kawasan',
+                        'status' => $spk->status,
+                        'approved_at' => optional($spk->approved_at)->format('Y-m-d H:i'),
+                        'has_schedule' => $spk->siteSchedules()->exists(),
+                        'total_nilai' => (float) $spk->nilai_kontrak,
+                        'group_count' => $groups->count(),
+                        'item_count' => $spk->items->count(),
+                        'groups' => $groups,
+                    ];
+                })
+                ->values(),
+            'sumberTenagaKerjas' => [
+                ['value' => 'tukang_owner', 'label' => 'Tukang Sendiri'],
+                ['value' => 'kontraktor', 'label' => 'Kontraktor'],
+                ['value' => 'mandor_internal', 'label' => 'Mandor Internal'],
+                ['value' => 'harian_lepas', 'label' => 'Harian Lepas'],
+            ],
+            'tahapanPembangunans' => TahapanPembangunan::query()
+                ->where('status', 'aktif')
+                ->orderBy('konteks')
+                ->orderBy('urutan')
+                ->get(['id', 'nama_tahapan', 'konteks', 'bobot_persen'])
+                ->map(fn (TahapanPembangunan $row) => [
+                    'value' => (string) $row->id,
+                    'label' => $row->nama_tahapan.' - '.$row->konteks.' ('.$row->bobot_persen.'%)',
+                    'konteks' => $row->konteks,
+                ])
+                ->values(),
             'jenisPekerjaan' => [
                 ['value' => 'rumah', 'label' => 'Pembangunan Rumah'],
                 ['value' => 'jalan', 'label' => 'Pembangunan Jalan'],
@@ -563,10 +779,6 @@ class SpkKontraktorController extends Controller
             'metodePembayaran' => [
                 ['value' => 'cash', 'label' => 'Cash / Sekaligus'],
                 ['value' => 'cicil', 'label' => 'Cicil / Termin'],
-            ],
-            'approvalRoles' => [
-                ['value' => 'manajer', 'label' => 'Manajer'],
-                ['value' => 'admin', 'label' => 'Admin'],
             ],
             'kategoriPenambahan' => [
                 ['value' => 'lahan', 'label' => 'Penambahan Lahan'],
@@ -633,6 +845,11 @@ class SpkKontraktorController extends Controller
         return (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro']);
     }
 
+    protected function canApproveSpk(): bool
+    {
+        return (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro']);
+    }
+
     protected function canManageSpk(): bool
     {
         return (bool) auth()->user()?->can('spk-kontraktor.create')
@@ -650,6 +867,43 @@ class SpkKontraktorController extends Controller
             || $user->can('spk-kontraktor.unlock')
             || $user->can('spk-kontraktor.manage')
         );
+    }
+
+    protected function canSeeAllPerumahans(): bool
+    {
+        return (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin']);
+    }
+
+    protected function allowedPerumahanIds(?Request $request = null): array
+    {
+        $user = $request?->user() ?? auth()->user();
+
+        if (! $user || $this->canSeeAllPerumahans()) {
+            return [];
+        }
+
+        return $user->perumahans->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    protected function defaultWorkerContractor(): Kontraktor
+    {
+        return Kontraktor::query()->firstOrCreate(
+            ['nama_kontraktor' => 'Tukang Sendiri'],
+            [
+                'kode_kontraktor' => 'INTERNAL-TAKANG',
+                'jenis_badan' => 'internal',
+                'bidang_pekerjaan' => 'Tukang sendiri',
+                'penanggung_jawab' => auth()->user()?->name ?? 'Sistem',
+                'status' => 'aktif',
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ],
+        );
+    }
+
+    protected function defaultWorkerContractorId(): int
+    {
+        return (int) $this->defaultWorkerContractor()->id;
     }
 
     protected function hppPlanStatus(SpkKontraktor $spk): array
@@ -708,6 +962,11 @@ class SpkKontraktorController extends Controller
     protected function normalizeApprovalRole(?string $value): string
     {
         return $value === 'admin' ? 'admin' : 'manajer';
+    }
+
+    protected function defaultApprovalRole(): string
+    {
+        return 'manajer';
     }
 
     protected function spkApprovalPendingStatuses(): array

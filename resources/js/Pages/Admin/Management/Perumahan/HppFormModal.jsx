@@ -1,6 +1,5 @@
 import { useForm } from '@inertiajs/react';
 import { Save, XCircle } from 'lucide-react';
-import { useMemo } from 'react';
 import { Button, Input, ModalForm } from '../../../../Components/UI';
 
 function money(value) {
@@ -12,19 +11,27 @@ function money(value) {
 }
 
 export default function HppFormModal({ open, title, actionUrl, items = [], onClose }) {
+    const initialItems = items.length > 0 ? items : [{
+        kelompok_hpp_id: '',
+        tahapan_pembangunan_id: '',
+        nama_pekerjaan: '',
+        volume: 1,
+        satuan: 'Ls',
+        harga_satuan: 0,
+        urutan: 0,
+    }];
+
     const form = useForm({
-        items: items.map((item) => ({
+        items: initialItems.map((item) => ({
             kelompok_hpp_id: item.kelompok_hpp_id ? String(item.kelompok_hpp_id) : '',
-            kelompok_hpp_nama: item.kelompok_hpp_nama ?? '-',
+            tahapan_pembangunan_id: item.tahapan_pembangunan_id ? String(item.tahapan_pembangunan_id) : '',
+            nama_pekerjaan: item.nama_pekerjaan ?? '',
             volume: item.volume ?? 0,
             satuan: item.satuan === '-' ? '' : (item.satuan ?? ''),
             harga_satuan: item.harga_satuan ?? 0,
+            urutan: item.urutan ?? 0,
         })),
     });
-
-    const total = useMemo(() => form.data.items.reduce((sum, item) => {
-        return sum + (Number(item.volume || 0) * Number(item.harga_satuan || 0));
-    }, 0), [form.data.items]);
 
     const setItem = (index, key, value) => {
         form.setData('items', form.data.items.map((item, itemIndex) => (
@@ -45,7 +52,7 @@ export default function HppFormModal({ open, title, actionUrl, items = [], onClo
             open={open}
             onClose={onClose}
             title={title}
-            description="Atur rencana biaya HPP berdasarkan kelompok biaya, volume, satuan, dan harga satuan."
+            description="Isi uraian pekerjaan dan nilai rencana biayanya."
             onSubmit={submit}
             size="xl"
             actions={
@@ -65,22 +72,22 @@ export default function HppFormModal({ open, title, actionUrl, items = [], onClo
                 </div>
 
                 {form.data.items.map((item, index) => (
-                    <div className="grid gap-3 rounded-lg border border-silver-deep/70 bg-white/70 p-3 dark:border-white/10 dark:bg-white/8 md:grid-cols-[1.4fr_0.6fr_0.6fr_0.8fr]" key={item.kelompok_hpp_id || index}>
-                        <div className="grid gap-2">
-                            <span className="text-xs font-extrabold text-ink-soft">Kelompok HPP</span>
-                            <div className="flex min-h-11 items-center rounded-lg border border-silver-deep/70 bg-silver-soft px-4 text-sm font-extrabold text-ink dark:border-white/10 dark:bg-white/8 dark:text-white">
-                                {item.kelompok_hpp_nama}
-                            </div>
-                        </div>
+                    <div className="grid gap-3 rounded-lg border border-silver-deep/70 bg-white/70 p-3 dark:border-white/10 dark:bg-white/8 md:grid-cols-2" key={index}>
+                        <Input label="Nama Pekerjaan" value={item.nama_pekerjaan} onChange={(event) => setItem(index, 'nama_pekerjaan', event.target.value)} />
                         <Input label="Volume" type="number" value={item.volume} onChange={(event) => setItem(index, 'volume', event.target.value)} />
                         <Input label="Satuan" value={item.satuan} onChange={(event) => setItem(index, 'satuan', event.target.value)} />
-                        <Input label="Harga" type="number" value={item.harga_satuan} onChange={(event) => setItem(index, 'harga_satuan', event.target.value)} />
+                        <Input label="Harga Satuan" type="number" value={item.harga_satuan} onChange={(event) => setItem(index, 'harga_satuan', event.target.value)} />
+                        <div className="rounded-lg bg-silver-soft px-4 py-3 dark:bg-white/8">
+                            <p className="text-xs font-extrabold text-ink-soft">Total</p>
+                            <p className="mt-1 text-lg font-extrabold">{money(
+                                String(item.satuan ?? '').trim() === '%'
+                                    ? (Number(item.volume || 0) * Number(item.harga_satuan || 0)) / 100
+                                    : Number(item.volume || 0) * Number(item.harga_satuan || 0),
+                            )}</p>
+                        </div>
                     </div>
                 ))}
                 {form.errors.items && <span className="text-xs font-bold text-red-600">{form.errors.items}</span>}
-                <div className="flex justify-end rounded-lg bg-silver-soft px-4 py-3 text-lg font-extrabold dark:bg-white/8">
-                    Total RAB: {money(total)}
-                </div>
             </div>
         </ModalForm>
     );

@@ -7,6 +7,7 @@ use App\Models\AppNotification;
 use App\Models\MarketingReminder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Middleware;
 
@@ -69,14 +70,18 @@ class HandleInertiaRequests extends Middleware
             return 0;
         }
 
-        return MarketingReminder::query()
-            ->where('status', 'menunggu')
-            ->when($this->shouldScopeToActivePerumahan($user), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanIdForUser($user))))
-            ->when($user->hasAnyRole(['marketing', 'area_marketing']), fn (Builder $query) => $query->where(function (Builder $query) use ($user): void {
-                $query->where('user_id', $user->id)
-                    ->orWhereHas('costumer', fn (Builder $query) => $query->where('created_by', $user->id));
-            }))
-            ->count();
+        $cacheKey = 'sidebar-reminders:'.$user->id.':'.request()->session()->get('active_perumahan_id', 'none');
+
+        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($user) {
+            return MarketingReminder::query()
+                ->where('status', 'menunggu')
+                ->when($this->shouldScopeToActivePerumahan($user), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanIdForUser($user))))
+                ->when($user->hasAnyRole(['marketing', 'area_marketing']), fn (Builder $query) => $query->where(function (Builder $query) use ($user): void {
+                    $query->where('user_id', $user->id)
+                        ->orWhereHas('costumer', fn (Builder $query) => $query->where('created_by', $user->id));
+                }))
+                ->count();
+        });
     }
 
     protected function shouldScopeToActivePerumahan($user): bool
@@ -111,20 +116,24 @@ class HandleInertiaRequests extends Middleware
             return ['unread_count' => 0, 'latest' => []];
         }
 
-        $roles = $user->roles->pluck('name')->all();
-        $query = AppNotification::query()
-            ->where(function (Builder $query) use ($user, $roles) {
-                $query->where('user_id', $user->id);
+        $roles = $user->roles->pluck('name')->sort()->values()->all();
+        $cacheKey = 'sidebar-notifications:'.$user->id.':'.sha1(json_encode($roles));
 
-                if (! empty($roles)) {
-                    $query->orWhereIn('role', $roles);
-                }
-            });
+        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($user, $roles) {
+            $query = AppNotification::query()
+                ->where(function (Builder $query) use ($user, $roles) {
+                    $query->where('user_id', $user->id);
 
-        return [
-            'unread_count' => (clone $query)->whereNull('read_at')->count(),
-            'latest' => (clone $query)->latest('id')->limit(5)->get(['id', 'title', 'message', 'url', 'read_at'])->toArray(),
-        ];
+                    if (! empty($roles)) {
+                        $query->orWhereIn('role', $roles);
+                    }
+                });
+
+            return [
+                'unread_count' => (clone $query)->whereNull('read_at')->count(),
+                'latest' => (clone $query)->latest('id')->limit(5)->get(['id', 'title', 'message', 'url', 'read_at'])->toArray(),
+            ];
+        });
     }
 
     protected function assignedPerumahans(Request $request, $user): array
@@ -133,23 +142,27 @@ class HandleInertiaRequests extends Middleware
             return [];
         }
 
-        $query = Perumahan::query()->orderBy('nama_perusahaan');
+        $cacheKey = 'assigned-perumahans:'.($user?->id ?? 0).':'.(int) ($user?->updated_at?->timestamp ?? 0);
 
-        if ($user && ! $user->hasAnyRole(['owner', 'super_admin'])) {
-            $ids = $user->perumahans->pluck('id');
-            $query->whereIn('id', $ids);
-        }
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
+            $query = Perumahan::query()->orderBy('nama_perusahaan');
 
-        return $query
-            ->get(['id', 'nama_perusahaan', 'cabang_id'])
-            ->map(fn (Perumahan $perumahan) => [
-                'id' => $perumahan->id,
-                'nama_perusahaan' => $perumahan->nama_perusahaan,
-                'value' => (string) $perumahan->id,
-                'label' => $perumahan->nama_perusahaan,
-            ])
-            ->values()
-            ->all();
+            if ($user && ! $user->hasAnyRole(['owner', 'super_admin'])) {
+                $ids = $user->perumahans->pluck('id');
+                $query->whereIn('id', $ids);
+            }
+
+            return $query
+                ->get(['id', 'nama_perusahaan', 'cabang_id'])
+                ->map(fn (Perumahan $perumahan) => [
+                    'id' => $perumahan->id,
+                    'nama_perusahaan' => $perumahan->nama_perusahaan,
+                    'value' => (string) $perumahan->id,
+                    'label' => $perumahan->nama_perusahaan,
+                ])
+                ->values()
+                ->all();
+        });
     }
 
     protected function activePerumahan(Request $request, array $assignedPerumahans): ?array

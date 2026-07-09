@@ -1,6 +1,7 @@
 import { Head, Link, useForm } from '@inertiajs/react';
-import { ArrowLeft, Calculator, LoaderCircle, PlusCircle, Eye } from 'lucide-react';
+import { ArrowLeft, LoaderCircle, PlusCircle, Eye } from 'lucide-react';
 import { Button, CurrencyInput, Dropdown, Form, Input, Textarea, Accordion } from '../../../../Components/UI';
+import AuditCell from '../../../../Components/UI/AuditCell';
 import AdminLayout from '../../../../Layouts/AdminLayout';
 import { useResourcePermissions } from '../../../../Utils/permissions';
 
@@ -43,9 +44,7 @@ function FormErrorSummary({ errors }) {
 
 function Detail({ title = 'Detail Perumahan', perumahan = {}, rows = { data: [], links: [] }, options, baseUrl }) {
     const unitPermissions = useResourcePermissions('detail-rumah', baseUrl);
-    const hppPermissions = useResourcePermissions('hpp', baseUrl);
     const canCreateUnit = unitPermissions.canCreate;
-    const canManageHpp = unitPermissions.canUpdate || hppPermissions.canUpdate;
     const pageTitle = `${title} ${perumahan.nama_perusahaan ?? ''}`.trim();
     const overviewAccordion = {
         title: 'Detail Perumahan',
@@ -208,7 +207,7 @@ function Detail({ title = 'Detail Perumahan', perumahan = {}, rows = { data: [],
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-silver-deep/60 text-xs dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
-                                <tr>{['Blok', 'Nomor', 'Tipe', 'Progress', 'Status Bangun', 'Harga Jual', 'Dibuat Oleh', 'Diupdate Oleh', 'RAB HPP', 'Realisasi', 'Aksi'].map((column) => <th className="px-4 py-3 font-extrabold" key={column}>{column}</th>)}</tr>
+                                <tr>{['Blok', 'Nomor', 'Tipe', 'Progress', 'Status Bangun', 'Harga Jual', 'Audit', 'RAB HPP', 'Realisasi', 'Aksi'].map((column) => <th className="px-4 py-3 font-extrabold" key={column}>{column}</th>)}</tr>
                             </thead>
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
                                 {rows.data.map((row) => (
@@ -219,8 +218,7 @@ function Detail({ title = 'Detail Perumahan', perumahan = {}, rows = { data: [],
                                         <td className="px-4 py-3 font-semibold">{row.progress_terakhir}%</td>
                                         <td className="px-4 py-3 font-semibold">{row.status_pembangunan}</td>
                                         <td className="px-4 py-3 font-semibold">{money(row.harga_jual)}</td>
-                                        <td className="px-4 py-3 font-semibold">{row.created_by}</td>
-                                        <td className="px-4 py-3 font-semibold">{row.updated_by}</td>
+                                        <td className="px-4 py-3 font-semibold"><AuditCell createdBy={row.created_by} updatedBy={row.updated_by} /></td>
                                         <td className="px-4 py-3 font-extrabold">{money(row.total_rab)}</td>
                                         <td className="px-4 py-3 font-extrabold">{money(row.total_realisasi)}</td>
                                         <td className="px-4 py-3">
@@ -228,16 +226,11 @@ function Detail({ title = 'Detail Perumahan', perumahan = {}, rows = { data: [],
                                                 <Button as={Link} href={row.detail_url} variant="outline" size="sm">
                                                     <Eye size={15} /> Detail Unit
                                                 </Button>
-                                                {canManageHpp && (
-                                                    <Button as={Link} href={`${baseUrl}/${perumahan.id}/rumah/${row.id}/hpp`} variant="outline" size="sm">
-                                                        <Calculator size={15} /> HPP Unit
-                                                    </Button>
-                                                )}
                                             </div>
                                         </td>
                                     </tr>
                                 ))}
-                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={11}>Belum ada data rumah/unit untuk perumahan ini.</td></tr>}
+                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={10}>Belum ada data rumah/unit untuk perumahan ini.</td></tr>}
                             </tbody>
                         </table>
                     </div>

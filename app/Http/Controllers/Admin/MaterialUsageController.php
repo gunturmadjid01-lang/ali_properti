@@ -33,10 +33,10 @@ class MaterialUsageController extends Controller
             'title' => 'Pemakaian Material',
             'baseUrl' => route('admin.material-usage.index', absolute: false),
             'permissions' => [
-                'canCreate' => (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
-                'canUpdate' => (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
-                'canDelete' => (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
-                'canLock' => (bool) auth()->check(),
+                'canCreate' => $this->canMaterialUsage('create'),
+                'canUpdate' => $this->canMaterialUsage('update'),
+                'canDelete' => $this->canMaterialUsage('delete'),
+                'canLock' => $this->canMaterialUsage('update'),
                 'canUnlock' => $this->currentUserCanManageLockedRecords(),
             ],
             'filters' => [
@@ -90,9 +90,9 @@ class MaterialUsageController extends Controller
                     'keterangan' => $row->keterangan,
                     'foto_url' => $row->foto ? route('media', ['path' => $row->foto], false) : null,
                     'record_status' => $row->record_status ?? 'draft',
-                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
-                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']),
-                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canMaterialUsage('update'),
+                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && $this->canMaterialUsage('delete'),
+                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canMaterialUsage('update'),
                     'can_unlock' => $this->currentUserCanManageLockedRecords(),
                     'created_by_name' => $row->creator?->name ?? '-',
                     'updated_by_name' => $row->updater?->name ?? '-',
@@ -129,7 +129,7 @@ class MaterialUsageController extends Controller
 
     public function store(Request $request, MaterialWorkflowService $workflow): RedirectResponse
     {
-        $this->authorizePengawas();
+        $this->authorizeMaterialUsage('create');
         $validated = $this->validatePayload($request);
         $this->ensureProgressMatches($validated);
 
@@ -140,7 +140,7 @@ class MaterialUsageController extends Controller
 
     public function update(Request $request, string $id, MaterialWorkflowService $workflow): RedirectResponse
     {
-        $this->authorizePengawas();
+        $this->authorizeMaterialUsage('update');
         $usage = MaterialUsage::query()->findOrFail($id);
         $this->abortIfLocked($usage);
         $validated = $this->validatePayload($request);
@@ -157,7 +157,7 @@ class MaterialUsageController extends Controller
 
     public function destroy(string $id): RedirectResponse
     {
-        $this->authorizePengawas();
+        $this->authorizeMaterialUsage('delete');
         $usage = MaterialUsage::query()->with('details')->findOrFail($id);
         $this->abortIfLocked($usage);
 
@@ -182,7 +182,23 @@ class MaterialUsageController extends Controller
 
     private function authorizePengawas(): void
     {
-        abort_unless(auth()->user()?->hasAnyRole(['pengawas', 'owner', 'super_admin']), 403, 'Hanya pengawas yang dapat mencatat pemakaian material.');
+        $this->authorizeMaterialUsage('create');
+    }
+
+    private function authorizeMaterialUsage(string $action): void
+    {
+        abort_unless($this->canMaterialUsage($action), 403, 'Anda tidak memiliki permission pemakaian material.');
+    }
+
+    private function canMaterialUsage(string $action): bool
+    {
+        $user = auth()->user();
+
+        return (bool) (
+            $user?->hasRole('super_admin')
+            || $user?->can("material-usage.{$action}")
+            || $user?->can('material-usage.manage')
+        );
     }
 
     private function validatePayload(Request $request): array
@@ -228,10 +244,8 @@ class MaterialUsageController extends Controller
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
             'detailRumahs' => DetailRumah::query()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}", 'perumahan_id' => (string) $row->perumahan_id])->values(),
-            'tahapanPembangunansUnit' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'unit')->orderBy('urutan')->get(['id', 'nama_tahapan', 'bobot_persen'])
-                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)'])->values(),
-            'tahapanPembangunansKawasan' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'kawasan')->orderBy('urutan')->get(['id', 'nama_tahapan', 'bobot_persen'])
-                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)'])->values(),
+            'tahapanPembangunansUnit' => app(\App\Services\TahapanOptionService::class)->forContext('unit'),
+            'tahapanPembangunansKawasan' => app(\App\Services\TahapanOptionService::class)->forContext('kawasan'),
             'progressPembangunans' => ProgressPembangunan::query()->with(['detailRumah:id,perumahan_id', 'siteSchedule:id,perumahan_id,detail_rumah_id,tahapan_pembangunan_id'])
                 ->where('approval_status', 'approved')->latest('tanggal')->get(['id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'site_schedule_id', 'tanggal', 'nama_progress', 'persentase'])
                 ->map(fn ($row) => [

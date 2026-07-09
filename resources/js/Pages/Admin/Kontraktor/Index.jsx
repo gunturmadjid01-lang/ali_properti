@@ -2,6 +2,7 @@ import { Head, router, useForm } from '@inertiajs/react';
 import { Edit3, LoaderCircle, Lock, PlusCircle, Save, Search, Trash2, Unlock, X } from 'lucide-react';
 import { useState } from 'react';
 import { Button, Dropdown, Form, Input, Textarea } from '../../../Components/UI';
+import AuditCell from '../../../Components/UI/AuditCell';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
 function FormErrorSummary({ errors }) {
@@ -131,7 +132,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-silver-deep/60 text-sm dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
-                                <tr>{['Kode', 'Nama', 'Bidang', 'PIC', 'Kontak', 'Lock', 'Status', 'Dibuat Oleh', 'Diupdate Oleh', 'Aksi'].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
+                                <tr>{['Kode', 'Nama', 'Bidang', 'PIC', 'Kontak', 'Lock', 'Status', 'Audit', 'Aksi'].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
                             </thead>
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
                                 {rows.data.map((row) => (
@@ -143,8 +144,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-5 py-4">{row.phone ?? row.email ?? '-'}</td>
                                         <td className="px-5 py-4 font-bold">{row.record_status_label}</td>
                                         <td className="px-5 py-4 font-bold">{row.status}</td>
-                                        <td className="px-5 py-4">{row.created_by}</td>
-                                        <td className="px-5 py-4">{row.updated_by}</td>
+                                        <td className="px-5 py-4"><AuditCell createdBy={row.created_by} updatedBy={row.updated_by} /></td>
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
                                                 {row.record_status === 'locked' ? (
@@ -160,7 +160,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         </td>
                                     </tr>
                                 ))}
-                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={10}>Belum ada kontraktor.</td></tr>}
+                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={9}>Belum ada kontraktor.</td></tr>}
                             </tbody>
                         </table>
                     </div>

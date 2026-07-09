@@ -11,6 +11,7 @@ function money(value) {
 export default function MasterMaterial({ title, baseUrl, rows, filters = {}, options }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [editing, setEditing] = useState(null);
+    const kategoriMaterialOptions = options?.kategoriMaterial ?? [{ value: '', label: 'Tanpa Kategori' }];
     const form = useForm({ nama_barang: '', kategori_material: '', satuan: '', harga_hpp: '', stok_minimum: '0', catatan: '', status: 'aktif' });
     const reset = () => { setEditing(null); form.reset(); form.clearErrors(); };
     const edit = (row) => { setEditing(row); form.setData({ nama_barang: row.nama_barang ?? '', kategori_material: row.kategori_material ?? '', satuan: row.satuan ?? '', harga_hpp: row.harga_hpp ?? '', stok_minimum: row.stok_minimum ?? '0', catatan: row.catatan ?? '', status: row.status ?? 'aktif' }); };
@@ -28,10 +29,14 @@ export default function MasterMaterial({ title, baseUrl, rows, filters = {}, opt
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                <Form collapsible title={editing ? 'Edit Material' : 'Tambah Material'} description="Master material adalah daftar barang utama untuk HPP, gudang, pembelian, dan pengeluaran stok." onSubmit={submit} actions={<>{editing && <Button type="button" variant="outline" onClick={reset}><X size={17} /> Batal</Button>}<Button type="submit" disabled={form.processing}>{form.processing ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />} Simpan</Button></>}>
+                <Form collapsible title={editing ? 'Edit Item Material' : 'Tambah Item Material'} description="Harga aktif dipakai sebagai default transaksi baru. Detail transaksi lama menyimpan harga satuannya sendiri, jadi tidak berubah ketika harga item diperbarui." onSubmit={submit} actions={<>{editing && <Button type="button" variant="outline" onClick={reset}><X size={17} /> Batal</Button>}<Button type="submit" disabled={form.processing}>{form.processing ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />} Simpan</Button></>}>
                     <div className="grid gap-4 md:grid-cols-3">
                         <Input label="Nama Material" value={form.data.nama_barang} error={form.errors.nama_barang} onChange={(event) => form.setData('nama_barang', event.target.value)} />
-                        <Input label="Kategori Material" value={form.data.kategori_material} onChange={(event) => form.setData('kategori_material', event.target.value)} />
+                        <div className="grid gap-2">
+                            <span className="text-sm font-extrabold">Kategori Material</span>
+                            <Dropdown value={form.data.kategori_material ?? ''} options={kategoriMaterialOptions} onChange={(value) => form.setData('kategori_material', value)} />
+                            {form.errors.kategori_material && <span className="text-xs font-bold text-red-600">{form.errors.kategori_material}</span>}
+                        </div>
                         <Input label="Satuan Default" value={form.data.satuan} error={form.errors.satuan} onChange={(event) => form.setData('satuan', event.target.value)} />
                         <CurrencyInput label="Harga Dasar/HPP" value={form.data.harga_hpp} error={form.errors.harga_hpp} onChange={(value) => form.setData('harga_hpp', value)} />
                         <Input label="Stok Minimum" type="number" value={form.data.stok_minimum} onChange={(event) => form.setData('stok_minimum', event.target.value)} />
@@ -48,4 +53,4 @@ export default function MasterMaterial({ title, baseUrl, rows, filters = {}, opt
     );
 }
 
-MasterMaterial.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Master Material'}>{page}</AdminLayout>;
+MasterMaterial.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Kelola Item Material'}>{page}</AdminLayout>;

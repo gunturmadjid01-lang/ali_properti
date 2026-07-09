@@ -67,6 +67,12 @@ const adminSidebar = [
                         permission: "detail-rumah.view",
                     },
                     {
+                        title: "HPP Unit Rumah",
+                        icon: FileText,
+                        link: "/admin/hpp-unit-rumah",
+                        permission: "rab-unit.view",
+                    },
+                    {
                         title: "Perumahan",
                         icon: Building2,
                         link: "/admin/management/perumahan",
@@ -107,6 +113,12 @@ const adminSidebar = [
                         icon: FileText,
                         link: "/admin/spk-kontraktor",
                         permission: "spk-kontraktor.view",
+                    },
+                    {
+                        title: "Template Pekerjaan SPK",
+                        icon: FileText,
+                        link: "/admin/spk-template",
+                        permissionsAny: ["spk-template-perumahan.view", "spk-template-unit.view"],
                     },
                     {
                         title: "Pembayaran SPK",
@@ -163,16 +175,16 @@ const adminSidebar = [
                         permission: "tipe-post.manage",
                     },
                     {
-                        title: "Kelompok HPP",
-                        icon: FileBarChart,
-                        link: "/admin/management/kelompok-hpp",
-                        permission: "kelompok-hpp.manage",
-                    },
-                    {
-                        title: "Master Material",
+                        title: "Kelola Item Material",
                         icon: Boxes,
                         link: "/admin/master-material",
                         permission: "master-material.view",
+                    },
+                    {
+                        title: "Daftar Tukang",
+                        icon: Wrench,
+                        link: "/admin/tukang",
+                        permission: "tukang.view",
                     },
                 ],
             },
@@ -323,6 +335,24 @@ const adminSidebar = [
                         icon: Building2,
                         link: "/admin/gudang",
                         permission: "master-material.view",
+                    },
+                    {
+                        title: "Kelola Item Material",
+                        icon: Boxes,
+                        link: "/admin/master-material",
+                        permission: "master-material.view",
+                    },
+                    {
+                        title: "Harga Material",
+                        icon: Banknote,
+                        link: "/admin/harga-material",
+                        permission: "material-price.view",
+                    },
+                    {
+                        title: "Saldo Awal Material",
+                        icon: Boxes,
+                        link: "/admin/saldo-awal-material",
+                        permission: "material-opening-balance.view",
                     },
                     {
                         title: "Stok Material",

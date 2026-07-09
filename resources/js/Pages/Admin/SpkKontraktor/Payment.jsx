@@ -102,7 +102,7 @@ export default function Payment({ title, description, baseUrl, pageUrl, rows, fi
                             </article>
                         ))}
 
-                        {rows.data.length === 0 && <p className="py-10 text-center font-bold text-ink-soft">Belum ada jadwal pembayaran SPK.</p>}
+                        {rows.data.length === 0 && <p className="py-10 text-center font-bold text-ink-soft">Belum ada termin pembayaran SPK.</p>}
                     </div>
                     <Pagination links={rows.links} />
                 </section>
@@ -124,7 +124,6 @@ export default function Payment({ title, description, baseUrl, pageUrl, rows, fi
                             <p><b>Tanggal SPK:</b> {detail.tanggal_spk || '-'}</p>
                             <p><b>Periode:</b> {detail.tanggal_mulai || '-'} s/d {detail.tanggal_selesai || '-'}</p>
                             <p><b>Nilai dasar:</b> {money(detail.nilai_kontrak_dasar)}</p>
-                            <p><b>Tambahan:</b> {money(detail.total_penambahan)}</p>
                             <p><b>Total SPK:</b> {money(detail.nilai_kontrak)}</p>
                             <p><b>Status:</b> {detail.status} / {detail.record_status_label}</p>
                         </div>

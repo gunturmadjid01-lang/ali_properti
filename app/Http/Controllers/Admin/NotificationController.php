@@ -7,6 +7,7 @@ use App\Models\AppNotification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -25,6 +26,7 @@ class NotificationController extends Controller
     {
         $notification = $this->query($request)->findOrFail($id);
         $notification->update(['read_at' => now()]);
+        $this->forgetSidebarCache($request);
 
         return back();
     }
@@ -42,5 +44,18 @@ class NotificationController extends Controller
                     $query->orWhereIn('role', $roles);
                 }
             });
+    }
+
+    private function forgetSidebarCache(Request $request): void
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return;
+        }
+
+        $roles = $user->roles->pluck('name')->sort()->values()->all();
+        $cacheKey = 'sidebar-notifications:'.$user->id.':'.sha1(json_encode($roles));
+        Cache::forget($cacheKey);
     }
 }

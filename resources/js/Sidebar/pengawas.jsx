@@ -37,6 +37,12 @@ const pengawasSidebar = [
                         link: "/admin/unit-rumah",
                     },
                     {
+                        title: "HPP Unit Rumah",
+                        icon: FileText,
+                        link: "/admin/hpp-unit-rumah",
+                        permission: "rab-unit.view",
+                    },
+                    {
                         title: "Jadwal Lapangan",
                         icon: CalendarClock,
                         link: "/admin/jadwal-lapangan",
@@ -65,11 +71,6 @@ const pengawasSidebar = [
                         title: "Defect / Punch List",
                         icon: ClipboardList,
                         link: "/admin/pengawasan/defect",
-                    },
-                    {
-                        title: "Opname Kontraktor",
-                        icon: ClipboardCheck,
-                        link: "/admin/pengawasan/opname-kontraktor",
                     },
                     {
                         title: "Perubahan Pekerjaan",

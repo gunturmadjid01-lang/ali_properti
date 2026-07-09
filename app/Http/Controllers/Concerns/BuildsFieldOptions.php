@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Concerns;
 use App\Models\DetailRumah;
 use App\Models\Perumahan;
 use App\Models\TahapanPembangunan;
+use App\Services\TahapanOptionService;
 
 trait BuildsFieldOptions
 {
@@ -20,12 +21,9 @@ trait BuildsFieldOptions
                     'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}",
                     'perumahan_id' => (string) $row->perumahan_id,
                 ])->values(),
-            'tahapanPembangunans' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'unit')->orderBy('urutan')->get(['id', 'nama_tahapan'])
-                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan])->values(),
-            'tahapanPembangunansUnit' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'unit')->orderBy('urutan')->get(['id', 'nama_tahapan', 'bobot_persen'])
-                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)', 'bobot_persen' => $row->bobot_persen])->values(),
-            'tahapanPembangunansKawasan' => TahapanPembangunan::query()->where('status', 'aktif')->where('konteks', 'kawasan')->orderBy('urutan')->get(['id', 'nama_tahapan', 'bobot_persen'])
-                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)', 'bobot_persen' => $row->bobot_persen])->values(),
+            'tahapanPembangunans' => app(TahapanOptionService::class)->forContext('unit'),
+            'tahapanPembangunansUnit' => app(TahapanOptionService::class)->forContext('unit'),
+            'tahapanPembangunansKawasan' => app(TahapanOptionService::class)->forContext('kawasan'),
         ];
     }
 

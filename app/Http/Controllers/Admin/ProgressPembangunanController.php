@@ -87,6 +87,7 @@ class ProgressPembangunanController extends Controller
                 'tahapan' => $row->tahapanPembangunan?->nama_tahapan ?? '-',
                 'persentase' => $row->persentase,
                 'persentase_total' => $row->persentase_total,
+                'source_label' => $row->source_label ?? 'Input Manual',
                 'approval_status' => $row->approval_status,
                 'approval_label' => $this->approvalLabel($row->approval_status),
                 'foto_url' => $row->foto ? route('media', ['path' => $row->foto], false) : null,
@@ -139,27 +140,9 @@ class ProgressPembangunanController extends Controller
                         'perumahan_id' => (string) $row->perumahan_id,
                     ])
                     ->values(),
-                'tahapanPembangunans' => TahapanPembangunan::query()
-                    ->where('status', 'aktif')
-                    ->where('konteks', 'unit')
-                    ->orderBy('urutan')
-                    ->get(['id', 'nama_tahapan', 'bobot_persen'])
-                    ->map(fn (TahapanPembangunan $row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)'])
-                    ->values(),
-                'tahapanPembangunansUnit' => TahapanPembangunan::query()
-                    ->where('status', 'aktif')
-                    ->where('konteks', 'unit')
-                    ->orderBy('urutan')
-                    ->get(['id', 'nama_tahapan', 'bobot_persen'])
-                    ->map(fn (TahapanPembangunan $row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)'])
-                    ->values(),
-                'tahapanPembangunansKawasan' => TahapanPembangunan::query()
-                    ->where('status', 'aktif')
-                    ->where('konteks', 'kawasan')
-                    ->orderBy('urutan')
-                    ->get(['id', 'nama_tahapan', 'bobot_persen'])
-                    ->map(fn (TahapanPembangunan $row) => ['value' => (string) $row->id, 'label' => $row->nama_tahapan.' ('.$row->bobot_persen.'%)'])
-                    ->values(),
+                'tahapanPembangunans' => app(\App\Services\TahapanOptionService::class)->forContext('unit'),
+                'tahapanPembangunansUnit' => app(\App\Services\TahapanOptionService::class)->forContext('unit'),
+                'tahapanPembangunansKawasan' => app(\App\Services\TahapanOptionService::class)->forContext('kawasan'),
                 'siteSchedules' => SiteSchedule::query()
                     ->with('perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah')
                     ->whereNotNull('tahapan_pembangunan_id')
@@ -429,7 +412,7 @@ class ProgressPembangunanController extends Controller
                 ->where('nama_pekerjaan', $namaProgress);
         }
 
-        $approvedPercent = $approvedQuery->sum('persentase');
+        $approvedPercent = $approvedQuery->sum('persentase_total');
 
         $scheduleQuery->get()
             ->each(function (SiteSchedule $schedule) use ($approvedPercent): void {

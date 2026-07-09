@@ -52,6 +52,12 @@ class UserSeeder extends Seeder
                 'phone' => '081100000011',
                 'role' => 'pengawas',
             ],
+            [
+                'email' => 'gudang@ptali.com',
+                'name' => 'Admin Gudang',
+                'phone' => '081100000012',
+                'role' => 'user_area_gudang',
+            ],
         ];
 
         foreach ($users as $data) {

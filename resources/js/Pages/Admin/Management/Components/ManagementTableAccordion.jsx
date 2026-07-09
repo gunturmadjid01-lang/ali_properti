@@ -2,6 +2,7 @@ import { Link } from '@inertiajs/react';
 import { ChevronDown, Edit3, Eye, Lock, Search, Trash2, Unlock } from 'lucide-react';
 import { useState } from 'react';
 import { Button, Input } from '../../../../Components/UI';
+import AuditCell from '../../../../Components/UI/AuditCell';
 import DetailModal from '../../../../Components/UI/DetailModal';
 
 function Pagination({ links = [] }) {
@@ -27,7 +28,7 @@ function Pagination({ links = [] }) {
     );
 }
 
-export default function ManagementTableAccordion({ title, columns, rows, filters, permissions = {}, onEdit, onDelete, onSearch, onLock, onUnlock, extraActions, defaultOpen = true }) {
+export default function ManagementTableAccordion({ title, columns, rows, filters, permissions = {}, onEdit, onDelete, onSearch, onLock, onUnlock, extraActions, defaultOpen = true, showDetailAction = true }) {
     const [open, setOpen] = useState(defaultOpen);
     const [search, setSearch] = useState(filters.search ?? '');
     const [detail, setDetail] = useState(null);
@@ -35,6 +36,17 @@ export default function ManagementTableAccordion({ title, columns, rows, filters
         event.preventDefault();
         onSearch(search);
     };
+    const displayColumns = columns.reduce((carry, column, index) => {
+        if (column.key === 'updated_by' && columns[index - 1]?.key === 'created_by') {
+            return carry;
+        }
+
+        if (column.key === 'created_by' && columns[index + 1]?.key === 'updated_by') {
+            return [...carry, { key: 'audit', label: 'Audit', type: 'audit' }];
+        }
+
+        return [...carry, column];
+    }, []);
 
     return (
         <>
@@ -70,7 +82,7 @@ export default function ManagementTableAccordion({ title, columns, rows, filters
                         <table className="min-w-full divide-y divide-silver-deep/60 text-xs dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
                                 <tr>
-                                    {columns.map((column) => (
+                                    {displayColumns.map((column) => (
                                         <th className="px-4 py-3 font-extrabold" key={column.key}>{column.label}</th>
                                     ))}
                                     <th className="w-28 px-4 py-3 text-right font-extrabold">Aksi</th>
@@ -79,16 +91,22 @@ export default function ManagementTableAccordion({ title, columns, rows, filters
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
                                 {rows.data.map((row) => (
                                     <tr className="transition hover:bg-silver/70 dark:hover:bg-white/5" key={row.id}>
-                                        {columns.map((column) => (
+                                        {displayColumns.map((column) => (
                                             <td className="max-w-[280px] px-4 py-3 font-semibold text-ink/80 dark:text-white/72" key={column.key}>
-                                                <span className="line-clamp-2">{row[column.key] ?? '-'}</span>
+                                                {column.type === 'audit' ? (
+                                                    <AuditCell createdBy={row.created_by} updatedBy={row.updated_by} />
+                                                ) : (
+                                                    <span className="line-clamp-2">{row[column.key] ?? '-'}</span>
+                                                )}
                                             </td>
                                         ))}
                                         <td className="px-4 py-3">
                                             <div className="flex justify-end gap-2">
-                                                <Button variant="outline" size="sm" type="button" title="Detail Data" onClick={() => setDetail(row)}>
-                                                    <Eye size={15} />
-                                                </Button>
+                                                {showDetailAction && (
+                                                    <Button variant="outline" size="sm" type="button" title="Detail Data" onClick={() => setDetail(row)}>
+                                                        <Eye size={15} />
+                                                    </Button>
+                                                )}
                                                 {extraActions?.(row)}
                                                 {row.record_status === 'locked' ? (
                                                     permissions.canUnlock && (
@@ -121,7 +139,7 @@ export default function ManagementTableAccordion({ title, columns, rows, filters
                                 ))}
                                 {rows.data.length === 0 && (
                                     <tr>
-                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={columns.length + 1}>
+                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={displayColumns.length + 1}>
                                             Belum ada data.
                                         </td>
                                     </tr>

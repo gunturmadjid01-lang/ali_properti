@@ -14,6 +14,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
+use Spatie\Permission\PermissionRegistrar;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -93,6 +94,7 @@ class RolePermissionController extends Controller
             ->get();
 
         $role->syncPermissions($permissions);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
     protected function modelClass(): string
@@ -161,15 +163,17 @@ class RolePermissionController extends Controller
         $roleOrder = [
             'super_admin' => 1,
             'owner' => 2,
-            'manajer_pimpro' => 3,
-            'admin' => 4,
-            'keuangan' => 5,
-            'pengawas' => 6,
-            'marketing' => 7,
+            'manager' => 3,
+            'manajer_pimpro' => 4,
+            'admin' => 5,
+            'keuangan' => 6,
+            'pengawas' => 7,
+            'marketing' => 8,
         ];
         $roleLabels = [
             'super_admin' => 'Super Admin',
             'owner' => 'Owner',
+            'manager' => 'Manager',
             'manajer_pimpro' => 'Pimpro',
             'admin' => 'Admin',
             'keuangan' => 'Keuangan',
@@ -271,7 +275,7 @@ class RolePermissionController extends Controller
                     $module('dokumen-customer', 'Dokumen Customer'),
                     $module('master-bank', 'Master Bank', ['view', 'create', 'update', 'delete', 'unlock']),
                     $module('tipe-post', 'Tipe Post', ['view', 'create', 'update', 'delete', 'unlock']),
-                    $module('kelompok-hpp', 'Kelompok HPP', ['view', 'create', 'update', 'delete', 'unlock']),
+                    $module('tukang', 'Daftar Tukang', ['view', 'create', 'update', 'delete']),
                 ],
             ],
             [
@@ -298,6 +302,8 @@ class RolePermissionController extends Controller
                 'key' => 'project',
                 'label' => 'Proyek',
                 'modules' => [
+                    $module('rab-perumahan', 'Management RAB Perumahan', ['view', 'create', 'update', 'delete', 'manage']),
+                    $module('rab-unit', 'Management RAB Unit Rumah', ['view', 'create', 'update', 'delete', 'manage']),
                     $module('progress', 'Progress Pembangunan'),
                     $module('site-schedule', 'Jadwal Lapangan'),
                     $module('site-report', 'Laporan Lapangan'),
@@ -310,6 +316,8 @@ class RolePermissionController extends Controller
                 'label' => 'Keuangan Proyek',
                 'modules' => [
                     $module('spk-kontraktor', 'SPK Kontraktor'),
+                    $module('spk-template-perumahan', 'Template Pekerjaan SPK Perumahan'),
+                    $module('spk-template-unit', 'Template Pekerjaan SPK Unit'),
                     [
                         'key' => 'spk-payment',
                         'label' => 'Pembayaran SPK',

@@ -2,19 +2,15 @@
 
 namespace App\Services;
 
-use App\Models\AppNotification;
 use App\Models\User;
+use App\Jobs\StoreAppNotificationJob;
+use Illuminate\Support\Facades\Cache;
 
 class AppNotificationService
 {
     public function toRole(string $role, string $title, ?string $message = null, ?string $url = null): void
     {
-        AppNotification::query()->create([
-            'role' => $role,
-            'title' => $title,
-            'message' => $message,
-            'url' => $url,
-        ]);
+        StoreAppNotificationJob::dispatch(null, $role, $title, $message, $url)->afterCommit();
     }
 
     public function toRoles(array $roles, string $title, ?string $message = null, ?string $url = null): void
@@ -30,11 +26,19 @@ class AppNotificationService
             return;
         }
 
-        AppNotification::query()->create([
-            'user_id' => $user->id,
-            'title' => $title,
-            'message' => $message,
-            'url' => $url,
-        ]);
+        StoreAppNotificationJob::dispatch((int) $user->id, null, $title, $message, $url)->afterCommit();
+        $this->flushSidebarCache($user->id);
+    }
+
+    public function flushSidebarCache(?int $userId = null): void
+    {
+        if ($userId !== null) {
+            Cache::forget($this->cacheKey($userId));
+        }
+    }
+
+    private function cacheKey(int $userId): string
+    {
+        return 'sidebar-notifications:'.$userId;
     }
 }

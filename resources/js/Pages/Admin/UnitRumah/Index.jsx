@@ -1,8 +1,9 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import { Edit3, Eye, LoaderCircle, Lock, PlusCircle, RotateCcw, Search, Trash2, Unlock, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import Accordion from '../../../Components/UI/Accordion';
 import { Button, CurrencyInput, Dropdown, Form, Input, Textarea } from '../../../Components/UI';
+import AuditCell from '../../../Components/UI/AuditCell';
 import AdminLayout from '../../../Layouts/AdminLayout';
 import { useResourcePermissions } from '../../../Utils/permissions';
 
@@ -31,22 +32,6 @@ function FormErrorSummary({ errors }) {
             </ul>
         </div>
     );
-}
-
-function buildHppItems(groups = [], source = []) {
-    return groups.map((group) => {
-        const item = source.find((row) => String(row.kelompok_hpp_id) === String(group.value));
-
-        return {
-            kelompok_hpp_id: String(group.value ?? ''),
-            kelompok_hpp_nama: group.label ?? '-',
-            kategori: group.kategori ?? '-',
-            volume: item?.volume ?? '0',
-            satuan: item?.satuan ?? '',
-            harga_satuan: item?.harga_satuan ?? '0',
-            jumlah_rab: item?.jumlah_rab ?? 0,
-        };
-    });
 }
 
 function Pagination({ links = [] }) {
@@ -79,7 +64,6 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
     const [type, setType] = useState(filters.type ?? '');
     const [perPage, setPerPage] = useState(filters.per_page ?? '10');
     const [editing, setEditing] = useState(null);
-    const hppGroups = options.kelompokHpps ?? [];
     const canCreateUnit = resourcePermissions.canCreate;
     const canUpdateUnit = resourcePermissions.canUpdate;
     const canDeleteUnit = resourcePermissions.canDelete;
@@ -109,12 +93,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
         spesifikasi: '',
         catatan: '',
         status: 'aktif',
-        hpp_items: buildHppItems(hppGroups),
     });
-    const hppTotal = useMemo(
-        () => form.data.hpp_items.reduce((sum, item) => sum + Number(item.volume || 0) * Number(item.harga_satuan || 0), 0),
-        [form.data.hpp_items],
-    );
     const resetForm = () => {
         setEditing(null);
         form.reset();
@@ -149,7 +128,6 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
             spesifikasi: row.spesifikasi ?? '',
             catatan: row.catatan ?? '',
             status: row.status ?? 'aktif',
-            hpp_items: buildHppItems(hppGroups, row.hpp_items ?? []),
         });
     };
 
@@ -222,7 +200,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
             <Head title={title} />
             <div className="grid gap-6">
                 <section className="rounded-lg border border-white/80 bg-white/78 p-6 shadow-soft dark:border-white/10 dark:bg-white/8">
-                    <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Management Proyek</p>
+                    <p className="text-xs font-extrabold uppercase text-ink-soft">Data Proyek</p>
                     <h2 className="mt-2 font-display text-3xl font-extrabold">{title}</h2>
                     <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">{description}</p>
                 </section>
@@ -325,55 +303,6 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         </div>
                                     ),
                                 },
-                                {
-                                    title: 'HPP Unit Rumah',
-                                    content: (
-                                        <div className="grid gap-4">
-                                            <div className="grid gap-3 md:grid-cols-3">
-                                                <div className="rounded-lg bg-silver-soft p-4 dark:bg-white/8">
-                                                    <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft">Total HPP</p>
-                                                    <p className="mt-1 text-xl font-extrabold">{money(hppTotal)}</p>
-                                                </div>
-                                                <div className="rounded-lg bg-silver-soft p-4 dark:bg-white/8 md:col-span-2">
-                                                    <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft">Petunjuk</p>
-                                                    <p className="mt-1 text-sm font-semibold text-ink-soft">Isi volume dan harga satuan untuk tiap kelompok HPP. Data ini akan tersimpan bersama unit rumah, termasuk saat membuat banyak unit sekaligus.</p>
-                                                </div>
-                                            </div>
-                                            <div className="grid gap-3">
-                                                {form.data.hpp_items.map((item, index) => (
-                                                    <div className="grid gap-3 rounded-lg border border-silver-deep/50 bg-silver-soft/40 p-4 dark:border-white/10 dark:bg-white/5 lg:grid-cols-[1.2fr_0.5fr_0.5fr_0.7fr]" key={item.kelompok_hpp_id || index}>
-                                                        <div className="grid gap-1">
-                                                            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft">Kelompok HPP</p>
-                                                            <div className="rounded-lg border border-silver-deep/60 bg-white px-4 py-3 text-sm font-extrabold text-ink dark:border-white/10 dark:bg-white/8 dark:text-white">
-                                                                <p>{item.kelompok_hpp_nama}</p>
-                                                                <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">{item.kategori}</p>
-                                                            </div>
-                                                        </div>
-                                                        <Input
-                                                            label="Volume"
-                                                            type="number"
-                                                            value={item.volume}
-                                                            error={form.errors[`hpp_items.${index}.volume`]}
-                                                            onChange={(event) => form.setData('hpp_items', form.data.hpp_items.map((row, rowIndex) => (rowIndex === index ? { ...row, volume: event.target.value } : row)))}
-                                                        />
-                                                        <Input
-                                                            label="Satuan"
-                                                            value={item.satuan}
-                                                            error={form.errors[`hpp_items.${index}.satuan`]}
-                                                            onChange={(event) => form.setData('hpp_items', form.data.hpp_items.map((row, rowIndex) => (rowIndex === index ? { ...row, satuan: event.target.value } : row)))}
-                                                        />
-                                                        <CurrencyInput
-                                                            label="Harga Satuan"
-                                                            value={item.harga_satuan}
-                                                            error={form.errors[`hpp_items.${index}.harga_satuan`]}
-                                                            onChange={(value) => form.setData('hpp_items', form.data.hpp_items.map((row, rowIndex) => (rowIndex === index ? { ...row, harga_satuan: value } : row)))}
-                                                        />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ),
-                                },
                             ]}
                         />
                     </Form>
@@ -403,7 +332,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-silver-deep/60 text-sm dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
-                                <tr>{['Perumahan', 'Blok', 'Nomor', 'Tipe', 'Progress', 'Status Bangun', 'Harga Jual', 'Dibuat Oleh', 'Diupdate Oleh', 'Lock', 'Status', 'Aksi'].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
+                                <tr>{['Perumahan', 'Blok', 'Nomor', 'Tipe', 'Progress', 'Status Bangun', 'Harga Jual', 'Audit', 'Lock', 'Status', 'Aksi'].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
                             </thead>
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
                                 {rows.data.map((row) => (
@@ -415,8 +344,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-5 py-4 font-semibold">{row.progress_terakhir}%</td>
                                         <td className="px-5 py-4 font-semibold">{row.status_pembangunan}</td>
                                         <td className="px-5 py-4 font-extrabold">{money(row.harga_jual)}</td>
-                                        <td className="px-5 py-4 font-semibold">{row.created_by}</td>
-                                        <td className="px-5 py-4 font-semibold">{row.updated_by}</td>
+                                        <td className="px-5 py-4 font-semibold"><AuditCell createdBy={row.created_by} updatedBy={row.updated_by} /></td>
                                         <td className="px-5 py-4">
                                             <span className={`rounded-full px-3 py-1 text-xs font-extrabold ${statusBadge(row.record_status)}`}>{row.record_status_label}</span>
                                         </td>
@@ -427,7 +355,6 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                                 <Button as={Link} href={row.detail_url} size="sm" variant="outline">
                                                     <Eye size={15} /> Detail
                                                 </Button>
-                                                {canUpdateUnit && row.can_edit && <Button as={Link} href={row.hpp_url} size="sm" variant="outline"><Edit3 size={15} /> Edit HPP</Button>}
                                                 {canDeleteUnit && row.can_delete && <Button type="button" size="sm" variant="outline" onClick={() => destroyRow(row)}><Trash2 size={15} /> Hapus</Button>}
                                                 {row.record_status === 'locked' ? (
                                                     permissions.canManageLocked && <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>
@@ -438,7 +365,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         </td>
                                     </tr>
                                 ))}
-                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={12}>Belum ada unit rumah.</td></tr>}
+                                {rows.data.length === 0 && <tr><td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={11}>Belum ada kapling atau unit rumah.</td></tr>}
                             </tbody>
                         </table>
                     </div>
@@ -449,4 +376,4 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
     );
 }
 
-Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Management Proyek'}>{page}</AdminLayout>;
+Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Kapling / Unit'}>{page}</AdminLayout>;

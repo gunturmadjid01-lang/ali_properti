@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
 import { Button, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
+import { scopedTahapanOptions } from '../../../Utils/tahapanOptions';
 
 const itemTemplate = () => ({ site_material_stock_id: '', qty: '', satuan: '' });
 
@@ -40,8 +41,20 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
     const tahapanPembangunansKawasan = options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? [];
     const resolveScopedValue = (selectedValue, fallbackValue) => ((selectedValue !== undefined && selectedValue !== null && selectedValue !== '') ? selectedValue : fallbackValue);
     const tahapanPembangunans = useMemo(
-        () => (form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan),
-        [form.data.detail_rumah_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+        () => scopedTahapanOptions(
+            form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan,
+            form.data.perumahan_id,
+            form.data.detail_rumah_id,
+        ),
+        [form.data.detail_rumah_id, form.data.perumahan_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+    );
+    const filterTahapanOptions = useMemo(
+        () => scopedTahapanOptions(
+            filterUnit ? tahapanPembangunansUnit : tahapanPembangunansKawasan,
+            filterPerumahan,
+            filterUnit,
+        ),
+        [filterPerumahan, filterUnit, tahapanPembangunansKawasan, tahapanPembangunansUnit],
     );
     const unitOptions = useMemo(() => (options.detailRumahs ?? []).filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, options.detailRumahs]);
     const filterUnitOptions = useMemo(() => (options.detailRumahs ?? []).filter((row) => !filterPerumahan || row.perumahan_id === String(filterPerumahan)), [filterPerumahan, options.detailRumahs]);
@@ -118,7 +131,7 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                {canCreate ? (
+                {(canCreate || (editing && canUpdate)) ? (
                 <Form collapsible title={editing ? `Edit ${editing.kode_pemakaian}` : 'Catat Pemakaian Material'} description="Pemakaian wajib dihubungkan ke progress yang telah disetujui agar konsumsi material dan pekerjaan fisik dapat dibandingkan." onSubmit={submit} actions={<>{editing && canUpdate && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}<Button type="submit" disabled={form.processing}><PackageCheck size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan Pemakaian'}</Button></>}>
                     <ErrorSummary errors={form.errors} />
                     <div className="grid gap-4 md:grid-cols-4">
@@ -188,7 +201,7 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                         </div>
                         <div className="grid gap-2">
                             <span className="text-sm font-extrabold">Filter Tahapan</span>
-                            <Dropdown label="Semua Tahapan" value={filterTahapan} options={[{ value: '', label: 'Semua Tahapan' }, ...tahapanPembangunansUnit, ...tahapanPembangunansKawasan]} onChange={setFilterTahapan} />
+                            <Dropdown label="Semua Tahapan" value={filterTahapan} options={[{ value: '', label: 'Semua Tahapan' }, ...filterTahapanOptions]} onChange={setFilterTahapan} />
                         </div>
                         <div className="flex items-end"><Button type="submit"><Search size={16} /> Cari</Button></div>
                     </form>

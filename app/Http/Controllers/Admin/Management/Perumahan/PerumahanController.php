@@ -23,6 +23,7 @@ use App\Models\TransaksiLogistik;
 use App\Models\TahapanPembangunan;
 use App\Models\User;
 use App\Services\ApprovalWorkflowService;
+use App\Services\HppTemplateService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -35,6 +36,23 @@ use Inertia\Response;
 
 class PerumahanController extends Controller
 {
+    private const REQUIRED_KAWASAN_HPP_STAGES = [
+        'IV RAB BANGUNAN',
+    ];
+
+    private const UNIT_HPP_STAGES = [
+        'PEK. PERSIAPAN & PONDASI',
+        'PEK. DINDING',
+        'PEK. FINISHING AWAL',
+        'PEK. PIPA AIR BERSIH & KOTOR',
+        'PEK. KERAMIK, SANITASI, PINTU & KAMAR MANDI',
+        'PEK. PAGAR & CAR PORT',
+        'PEK. TAMAN, PROFIL DAN PENGECATAN',
+        'PEK. PEMASANGAN ATAP',
+        'PEK. PEMASANGAN PLAFON',
+        'PEK. INSTALASI LISTRIK',
+    ];
+
     use HandlesCrudLock;
 
     public function index(Request $request): Response
@@ -76,7 +94,7 @@ class PerumahanController extends Controller
         $kelompokHpps = KelompokHpp::query()->orderBy('nama_hpp')->get(['id', 'nama_hpp']);
 
         $rumahs = DetailRumah::query()
-            ->with(['detailRumahHpps.items.kelompokHpp', 'creator:id,name', 'updater:id,name'])
+            ->with(['detailRumahHpps.items.kelompokHpp', 'detailRumahHpps.items.tahapanPembangunan', 'creator:id,name', 'updater:id,name'])
             ->where('perumahan_id', $perumahan->id)
             ->latest('id')
             ->paginate(10)
@@ -157,11 +175,9 @@ class PerumahanController extends Controller
             ->findOrFail($id);
 
         $rumah = DetailRumah::query()
-            ->with(['creator:id,name', 'updater:id,name', 'detailRumahHpps.items.kelompokHpp'])
+            ->with(['creator:id,name', 'updater:id,name'])
             ->where('perumahan_id', $perumahan->id)
             ->findOrFail($rumahId);
-        $kelompokHpps = KelompokHpp::query()->orderBy('nama_hpp')->get(['id', 'nama_hpp']);
-        $hppRows = $this->rumahHppRows($rumah, $kelompokHpps);
 
         $progress = ProgressPembangunan::query()
             ->with(['tahapanPembangunan:id,nama_tahapan,bobot_persen', 'user:id,name', 'approvedBy:id,name', 'lockedBy:id,name'])
@@ -293,25 +309,9 @@ class PerumahanController extends Controller
                 'created_by' => $rumah->creator?->name ?? '-',
                 'updated_by' => $rumah->updater?->name ?? '-',
             ],
-            'hppRows' => $hppRows,
-            'hppSummary' => [
-                'jumlah_rab' => $hppRows->sum('jumlah_rab'),
-                'jumlah_realisasi' => $hppRows->sum('jumlah_realisasi'),
-                'sisa_anggaran' => $hppRows->sum('sisa_anggaran'),
-            ],
             'progressRows' => $progress,
             'materialRows' => $materialRequests,
             'logistikRows' => $logistik,
-            'options' => [
-                'statusPembangunan' => $this->statusPembangunanOptions(),
-                'statusPenjualan' => $this->statusPenjualanOptions(),
-                'kelompokHpps' => $this->kelompokHppOptions(),
-            ],
-            'permissions' => [
-                'canManageHpp' => auth()->user()?->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro']) ?? false,
-            ],
-            'hppUrl' => route('admin.management.perumahan.rumah.hpp.update', [$perumahan->id, $rumah->id], false),
-            'hppDetailUrl' => route('admin.management.perumahan.rumah.hpp.detail', [$perumahan->id, $rumah->id], false),
             'filters' => ['search' => $search],
         ]);
     }
@@ -409,12 +409,13 @@ class PerumahanController extends Controller
 
     public function hpp(string $id): Response
     {
+        $this->authorizeRab('kawasan', 'view');
         $perumahan = Perumahan::query()
             ->with('cabang')
             ->findOrFail($id);
 
         $hpp = PerumahanHpp::query()
-            ->with('detailPerumahanHpps.kelompokHpp')
+            ->with(['detailPerumahanHpps.kelompokHpp', 'detailPerumahanHpps.tahapanPembangunan'])
             ->where('perumahan_id', $perumahan->id)
             ->first();
         $kelompokHpps = KelompokHpp::query()->orderBy('nama_hpp')->get(['id', 'nama_hpp']);
@@ -436,45 +437,26 @@ class PerumahanController extends Controller
             ],
             'options' => [
                 'kelompokHpps' => $this->kelompokHppOptions(),
+                'tahapanHpps' => $this->tahapanHppOptions('kawasan', $perumahan->id),
             ],
             'baseUrl' => route('admin.management.perumahan.index', absolute: false),
             'detailUrl' => route('admin.management.perumahan.detail', $perumahan->id, false),
             'hppUrl' => route('admin.management.perumahan.hpp.update', $perumahan->id, false),
+            'stageUrl' => route('admin.management.tahapan-hpp.store', absolute: false),
+            'stageBaseUrl' => url('/admin/management/tahapan-hpp'),
+            'hppContext' => 'kawasan',
+            'hppOwner' => ['perumahan_id' => (string) $perumahan->id, 'detail_rumah_id' => null],
         ]);
     }
 
-    public function rumahHpp(string $id, string $rumahId): Response
+    public function rumahHpp(string $id, string $rumahId): RedirectResponse
     {
-        $perumahan = Perumahan::query()
-            ->with('cabang')
-            ->findOrFail($id);
+        $this->authorizeRab('unit', 'view');
         $rumah = DetailRumah::query()
-            ->where('perumahan_id', $perumahan->id)
+            ->where('perumahan_id', $id)
             ->findOrFail($rumahId);
-        $kelompokHpps = KelompokHpp::query()->orderBy('nama_hpp')->get(['id', 'nama_hpp']);
-        $rows = $this->rumahHppRows($rumah, $kelompokHpps);
 
-        return Inertia::render('Admin/Management/Perumahan/Hpp', [
-            'title' => 'HPP Unit Rumah',
-            'perumahan' => [
-                'id' => $perumahan->id,
-                'nama_perusahaan' => trim($rumah->kode_nlok.' '.$rumah->nomor_rumah).' - '.$perumahan->nama_perusahaan,
-                'cabang' => $perumahan->cabang?->nama_cabang,
-                'alamat' => $perumahan->alamat,
-            ],
-            'rows' => $rows,
-            'summary' => [
-                'jumlah_rab' => $rows->sum('jumlah_rab'),
-                'jumlah_realisasi' => $rows->sum('jumlah_realisasi'),
-                'sisa_anggaran' => $rows->sum('sisa_anggaran'),
-            ],
-            'options' => [
-                'kelompokHpps' => $this->kelompokHppOptions(),
-            ],
-            'baseUrl' => route('admin.management.perumahan.index', absolute: false),
-            'detailUrl' => route('admin.management.perumahan.detail', $perumahan->id, false),
-            'hppUrl' => route('admin.management.perumahan.rumah.hpp.update', [$perumahan->id, $rumah->id], false),
-        ]);
+        return redirect()->route('admin.unit-rumah.hpp.detail', $rumah->id);
     }
 
     public function store(StorePerumahanRequest $request, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
@@ -509,6 +491,7 @@ class PerumahanController extends Controller
 
     public function updateHpp(UpdatePerumahanHppRequest $request, string $id): RedirectResponse
     {
+        $this->authorizeRabEditor('kawasan');
         $perumahan = Perumahan::query()->findOrFail($id);
 
         DB::transaction(function () use ($request, $perumahan) {
@@ -521,13 +504,18 @@ class PerumahanController extends Controller
 
             foreach ($request->validated('items') as $item) {
                 $hpp->detailPerumahanHpps()->create([
-                    'kelompok_hpp_id' => $item['kelompok_hpp_id'],
+                    'kelompok_hpp_id' => $this->resolveKelompokHppId($item['kelompok_hpp_id'] ?? null),
+                    'tahapan_pembangunan_id' => $item['tahapan_pembangunan_id'] ?? null,
+                    'nama_pekerjaan' => $item['nama_pekerjaan'] ?? null,
                     'volume' => $item['volume'],
                     'satuan' => $item['satuan'] ?? '',
                     'harga_satuan' => $item['harga_satuan'],
-                    'jumlah_rab' => (float) $item['volume'] * (float) $item['harga_satuan'],
+                    'jumlah_rab' => $this->calculateHppAmount($item),
+                    'urutan' => $item['urutan'] ?? 0,
                 ]);
             }
+
+            app(HppTemplateService::class)->syncBuildingTypeSummary((int) $perumahan->id);
         });
 
         return back()->with('success', 'HPP perumahan berhasil diperbarui.');
@@ -535,6 +523,7 @@ class PerumahanController extends Controller
 
     public function updateHppItem(UpdatePerumahanHppRequest $request, string $id, string $itemId): RedirectResponse
     {
+        $this->authorizeRabEditor('kawasan');
         $perumahan = Perumahan::query()->findOrFail($id);
         $payload = $request->validated('items.0');
 
@@ -550,14 +539,19 @@ class PerumahanController extends Controller
                 ->first();
 
             $data = [
-                'kelompok_hpp_id' => $payload['kelompok_hpp_id'],
+                'kelompok_hpp_id' => $this->resolveKelompokHppId($payload['kelompok_hpp_id'] ?? $item?->kelompok_hpp_id),
+                'tahapan_pembangunan_id' => $payload['tahapan_pembangunan_id'] ?? null,
+                'nama_pekerjaan' => $payload['nama_pekerjaan'] ?? null,
                 'volume' => $payload['volume'],
                 'satuan' => $payload['satuan'] ?? '',
                 'harga_satuan' => $payload['harga_satuan'],
-                'jumlah_rab' => (float) $payload['volume'] * (float) $payload['harga_satuan'],
+                'jumlah_rab' => $this->calculateHppAmount($payload),
+                'urutan' => $payload['urutan'] ?? 0,
             ];
 
             $item ? $item->update($data) : $hpp->detailPerumahanHpps()->create($data);
+
+            app(HppTemplateService::class)->syncBuildingTypeSummary((int) $perumahan->id);
         });
 
         return back()->with('success', 'Item HPP perumahan berhasil diperbarui.');
@@ -565,7 +559,7 @@ class PerumahanController extends Controller
 
     public function updateRumahHpp(UpdatePerumahanHppRequest $request, string $id, string $rumahId, ?string $itemId = null): RedirectResponse
     {
-        $this->authorizeOwnerOrManager();
+        $this->authorizeRabEditor('unit');
         $rumah = DetailRumah::query()
             ->where('perumahan_id', $id)
             ->findOrFail($rumahId);
@@ -581,29 +575,251 @@ class PerumahanController extends Controller
             }
 
             foreach ($request->validated('items') as $item) {
+                $existing = $itemId !== null
+                    ? DetailRumahHppItem::query()
+                        ->where('detail_rumah_hpp_id', $hpp->id)
+                        ->where('id', $itemId)
+                        ->first()
+                    : null;
+
                 $data = [
-                    'kelompok_hpp_id' => $item['kelompok_hpp_id'],
+                    'kelompok_hpp_id' => $this->resolveKelompokHppId($item['kelompok_hpp_id'] ?? $existing?->kelompok_hpp_id),
+                    'tahapan_pembangunan_id' => $item['tahapan_pembangunan_id'] ?? null,
+                    'nama_pekerjaan' => $item['nama_pekerjaan'] ?? null,
                     'volume' => $item['volume'],
                     'satuan' => $item['satuan'] ?? '',
                     'harga_satuan' => $item['harga_satuan'],
-                    'jumlah_rab' => (float) $item['volume'] * (float) $item['harga_satuan'],
+                    'jumlah_rab' => $this->calculateHppAmount($item),
+                    'urutan' => $item['urutan'] ?? 0,
                 ];
 
                 if ($itemId !== null) {
-                    $existing = DetailRumahHppItem::query()
-                        ->where('detail_rumah_hpp_id', $hpp->id)
-                        ->where('id', $itemId)
-                        ->first();
-
                     $existing ? $existing->update($data) : $hpp->items()->create($data);
                     continue;
                 }
 
                 $hpp->items()->create($data);
             }
+
+            app(HppTemplateService::class)->syncBuildingTypeSummary((int) $rumah->perumahan_id);
         });
 
         return back()->with('success', 'HPP rumah berhasil diperbarui.');
+    }
+
+    public function storeHppStage(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'konteks' => ['required', 'in:kawasan,unit'],
+            'nama_tahapan' => ['required', 'string', 'max:255'],
+            'urutan' => ['required', 'integer', 'min:1'],
+            'perumahan_id' => ['required', 'exists:perumahans,id'],
+            'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
+            'target_detail_rumah_ids' => ['nullable', 'array'],
+            'target_detail_rumah_ids.*' => ['required', 'exists:detail_rumahs,id'],
+            'items' => ['nullable', 'array'],
+            'items.*.kelompok_hpp_id' => ['nullable', 'exists:kelompok_hpps,id'],
+            'items.*.nama_pekerjaan' => ['required_with:items', 'string', 'max:255'],
+            'items.*.volume' => ['required_with:items', 'numeric', 'min:0'],
+            'items.*.satuan' => ['nullable', 'string', 'max:50'],
+            'items.*.harga_satuan' => ['required_with:items', 'numeric', 'min:0'],
+        ]);
+
+        $this->authorizeRab($validated['konteks'], 'create');
+        $this->validateHppStageOwner($validated);
+        $detailRumahIds = $validated['konteks'] === 'unit'
+            ? collect($validated['target_detail_rumah_ids'] ?? [])
+                ->push($validated['detail_rumah_id'] ?? null)
+                ->filter()
+                ->unique()
+                ->values()
+            : collect([null]);
+
+        if ($validated['konteks'] === 'unit') {
+            $validTargetCount = DetailRumah::query()
+                ->where('perumahan_id', $validated['perumahan_id'])
+                ->whereIn('id', $detailRumahIds)
+                ->count();
+            abort_unless($validTargetCount === $detailRumahIds->count(), 422, 'Semua unit target harus berada pada perumahan yang sama.');
+        }
+
+        DB::transaction(function () use ($validated, $detailRumahIds): void {
+            foreach ($detailRumahIds as $detailRumahId) {
+                $this->hppStageScope($validated['perumahan_id'], $detailRumahId)
+                    ->where('urutan', '>=', $validated['urutan'])
+                    ->increment('urutan');
+
+                $stage = TahapanPembangunan::query()->create([
+                    'konteks' => $validated['konteks'],
+                    'nama_tahapan' => $validated['nama_tahapan'],
+                    'urutan' => $validated['urutan'],
+                    'perumahan_id' => $validated['perumahan_id'],
+                    'detail_rumah_id' => $detailRumahId,
+                    'bobot_persen' => 0,
+                    'status' => 'aktif',
+                ]);
+
+                $items = collect($validated['items'] ?? [])
+                    ->values()
+                    ->filter(fn (array $item) => filled($item['nama_pekerjaan'] ?? null))
+                    ->map(function (array $item, int $index) use ($stage): array {
+                        $volume = (float) ($item['volume'] ?? 0);
+                        $hargaSatuan = (float) ($item['harga_satuan'] ?? 0);
+
+                        return [
+                            'kelompok_hpp_id' => $this->resolveKelompokHppId($item['kelompok_hpp_id'] ?? null),
+                            'tahapan_pembangunan_id' => $stage->id,
+                            'nama_pekerjaan' => $item['nama_pekerjaan'],
+                            'volume' => $volume,
+                            'satuan' => $item['satuan'] ?? '',
+                            'harga_satuan' => $hargaSatuan,
+                            'jumlah_rab' => $this->calculateHppAmount($item),
+                            'urutan' => $item['urutan'] ?? (($index + 1) * 100),
+                        ];
+                    })
+                    ->all();
+
+                if (empty($items)) {
+                    continue;
+                }
+
+                if ($validated['konteks'] === 'kawasan') {
+                    $hpp = PerumahanHpp::query()->firstOrCreate(
+                        ['perumahan_id' => $validated['perumahan_id']],
+                        ['user_id' => $this->userId(), 'tanggal_dibuat' => now()->toDateString()],
+                    );
+
+                    foreach ($items as $item) {
+                        $hpp->detailPerumahanHpps()->create($item);
+                    }
+                    continue;
+                }
+
+                $rumah = DetailRumah::query()->find($detailRumahId);
+                if (! $rumah) {
+                    continue;
+                }
+
+                $hpp = DetailRumahHpp::query()->firstOrCreate(
+                    ['detail_rumah_id' => $rumah->id],
+                    ['user_id' => $this->userId(), 'tanggal_dibuat' => now()->toDateString()],
+                );
+
+                foreach ($items as $item) {
+                    $hpp->items()->create($item);
+                }
+            }
+        });
+
+        return back()->with('success', 'Tahapan HPP berhasil ditambahkan.');
+    }
+
+    public function updateHppStage(Request $request, TahapanPembangunan $stage): RedirectResponse
+    {
+        $this->authorizeRab($stage->konteks, 'update');
+        abort_if(
+            $this->isRequiredHppStage($stage),
+            422,
+            'Tahap IV RAB BANGUNAN wajib otomatis dari total RAB unit dan tidak dapat diubah manual.',
+        );
+
+        $validated = $request->validate([
+            'nama_tahapan' => ['required', 'string', 'max:255'],
+            'urutan' => ['required', 'integer', 'min:1'],
+            'target_detail_rumah_ids' => ['nullable', 'array'],
+            'target_detail_rumah_ids.*' => ['required', 'exists:detail_rumahs,id'],
+        ]);
+
+        abort_unless($stage->perumahan_id || $stage->detail_rumah_id, 422, 'Tahap master tidak dapat diubah dari halaman HPP.');
+        $targetIds = $stage->konteks === 'unit'
+            ? collect($validated['target_detail_rumah_ids'] ?? [])
+                ->push($stage->detail_rumah_id)
+                ->filter()
+                ->unique()
+                ->values()
+            : collect([$stage->detail_rumah_id]);
+        $stages = $stage->konteks === 'unit'
+            ? TahapanPembangunan::query()
+                ->where('konteks', 'unit')
+                ->where('perumahan_id', $stage->perumahan_id)
+                ->whereIn('detail_rumah_id', $targetIds)
+                ->where('nama_tahapan', $stage->nama_tahapan)
+                ->get()
+            : collect([$stage]);
+
+        DB::transaction(function () use ($stages, $validated): void {
+            foreach ($stages as $targetStage) {
+                $oldOrder = (int) $targetStage->urutan;
+                $newOrder = (int) $validated['urutan'];
+                $scope = $this->hppStageScope($targetStage->perumahan_id, $targetStage->detail_rumah_id)->where('id', '!=', $targetStage->id);
+
+                if ($newOrder < $oldOrder) {
+                    $scope->whereBetween('urutan', [$newOrder, $oldOrder - 1])->increment('urutan');
+                } elseif ($newOrder > $oldOrder) {
+                    $scope->whereBetween('urutan', [$oldOrder + 1, $newOrder])->decrement('urutan');
+                }
+
+                $targetStage->update([
+                    'nama_tahapan' => $validated['nama_tahapan'],
+                    'urutan' => $validated['urutan'],
+                ]);
+            }
+        });
+
+        return back()->with('success', 'Tahap HPP berhasil diperbarui.');
+    }
+
+    public function destroyHppStage(TahapanPembangunan $stage): RedirectResponse
+    {
+        $this->authorizeRab($stage->konteks, 'delete');
+        abort_unless($stage->perumahan_id || $stage->detail_rumah_id, 422, 'Tahap master tidak dapat dihapus dari halaman HPP.');
+        abort_if(
+            $this->isRequiredHppStage($stage),
+            422,
+            'Tahap IV RAB BANGUNAN wajib ada karena menjadi sinkronisasi total RAB per unit.',
+        );
+
+        DB::transaction(function () use ($stage): void {
+            $order = (int) $stage->urutan;
+            $perumahanId = $stage->perumahan_id;
+            $detailRumahId = $stage->detail_rumah_id;
+            $stage->detailPerumahanHpps()->get()->each->delete();
+            $stage->detailRumahHppItems()->get()->each->delete();
+            $stage->delete();
+            $this->hppStageScope($perumahanId, $detailRumahId)
+                ->where('urutan', '>', $order)
+                ->decrement('urutan');
+        });
+
+        return back()->with('success', 'Tahap dan seluruh uraian pekerjaannya berhasil dihapus.');
+    }
+
+    public function destroyHppItem(string $id, string $itemId): RedirectResponse
+    {
+        $this->authorizeRab('kawasan', 'delete');
+
+        $item = DetailPerumahanHpp::query()
+            ->whereHas('perumahanHpp', fn (Builder $query) => $query->where('perumahan_id', $id))
+            ->findOrFail($itemId);
+        $item->delete();
+        app(HppTemplateService::class)->syncBuildingTypeSummary((int) $id);
+
+        return back()->with('success', 'Uraian pekerjaan berhasil dihapus.');
+    }
+
+    public function destroyRumahHppItem(string $id, string $rumahId, string $itemId): RedirectResponse
+    {
+        $this->authorizeRab('unit', 'delete');
+
+        $item = DetailRumahHppItem::query()
+            ->whereHas('detailRumahHpp.detailRumah', fn (Builder $query) => $query
+                ->where('perumahan_id', $id)
+                ->where('id', $rumahId))
+            ->findOrFail($itemId);
+        $item->delete();
+        app(HppTemplateService::class)->syncBuildingTypeSummary((int) $id);
+
+        return back()->with('success', 'Uraian pekerjaan berhasil dihapus.');
     }
 
     protected function modelClass(): string
@@ -711,32 +927,24 @@ class PerumahanController extends Controller
 
     protected function perumahanHppRows(Perumahan $perumahan, ?PerumahanHpp $hpp, $kelompokHpps)
     {
-        $items = collect($hpp?->detailPerumahanHpps ?? [])->keyBy('kelompok_hpp_id');
         $realisasi = HppRealisasi::query()
             ->where('perumahan_id', $perumahan->id)
             ->whereNull('detail_rumah_id')
-            ->selectRaw('kelompok_hpp_id, SUM(nominal) as total')
-            ->groupBy('kelompok_hpp_id')
-            ->pluck('total', 'kelompok_hpp_id');
+            ->selectRaw('COALESCE(tahapan_pembangunan_id, 0) as tahap_id, COALESCE(kelompok_hpp_id, 0) as kelompok_id, SUM(nominal) as total')
+            ->groupBy('tahap_id', 'kelompok_id')
+            ->get()
+            ->keyBy(fn (HppRealisasi $row) => $row->tahap_id.'-'.$row->kelompok_id);
 
-        return $kelompokHpps->map(function (KelompokHpp $kelompokHpp) use ($hpp, $items, $realisasi) {
-            $item = $items->get($kelompokHpp->id);
-            $jumlahRab = (float) ($item?->jumlah_rab ?? 0);
-            $jumlahRealisasi = (float) ($realisasi[$kelompokHpp->id] ?? 0);
+        return collect($hpp?->detailPerumahanHpps ?? [])
+            ->sortBy([['tahapanPembangunan.urutan', 'asc'], ['urutan', 'asc'], ['id', 'asc']])
+            ->map(function (DetailPerumahanHpp $item) use ($hpp, $realisasi) {
+                $jumlahRab = (float) $item->jumlah_rab;
+                $realisasiKey = ((int) ($item->tahapan_pembangunan_id ?? 0)).'-'.((int) ($item->kelompok_hpp_id ?? 0));
+                $jumlahRealisasi = (float) ($realisasi->get($realisasiKey)?->total ?? 0);
 
-            return [
-                'id' => $item?->id,
-                'tanggal' => $item ? $hpp?->tanggal_dibuat : null,
-                'kelompok_hpp_id' => (string) $kelompokHpp->id,
-                'kelompok_hpp_nama' => $kelompokHpp->nama_hpp,
-                'volume' => (float) ($item?->volume ?? 0),
-                'satuan' => $item?->satuan ?? '',
-                'harga_satuan' => (float) ($item?->harga_satuan ?? 0),
-                'jumlah_rab' => $jumlahRab,
-                'jumlah_realisasi' => $jumlahRealisasi,
-                'sisa_anggaran' => $jumlahRab - $jumlahRealisasi,
-            ];
-        })->values();
+                return $this->formatHppRow($item, $hpp?->tanggal_dibuat, $jumlahRealisasi);
+            })
+            ->values();
     }
 
     protected function userId(): int
@@ -748,65 +956,147 @@ class PerumahanController extends Controller
         return (int) $userId;
     }
 
+    protected function tahapanHppOptions(string $konteks, int|string $perumahanId, int|string|null $detailRumahId = null): array
+    {
+        $query = TahapanPembangunan::query()
+            ->where('status', 'aktif')
+            ->where('konteks', $konteks);
+
+        if ($konteks === 'unit') {
+            $query->where('perumahan_id', $perumahanId)
+                ->where('detail_rumah_id', $detailRumahId);
+        } else {
+            $query->where('perumahan_id', $perumahanId)
+                ->whereNull('detail_rumah_id');
+        }
+
+        return $query
+            ->orderBy('urutan')
+            ->orderBy('nama_tahapan')
+            ->get(['id', 'nama_tahapan', 'bobot_persen', 'urutan'])
+            ->unique('nama_tahapan')
+            ->map(fn (TahapanPembangunan $row) => [
+                'value' => (string) $row->id,
+                'nama_tahapan' => $row->nama_tahapan,
+                'label' => $row->nama_tahapan.($row->bobot_persen > 0 ? ' ('.$row->bobot_persen.'%)' : ''),
+                'urutan' => $row->urutan,
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected function validateHppStageOwner(array $validated): void
+    {
+        if ($validated['konteks'] === 'kawasan') {
+            return;
+        }
+
+        $validUnit = DetailRumah::query()
+            ->where('id', $validated['detail_rumah_id'] ?? null)
+            ->where('perumahan_id', $validated['perumahan_id'])
+            ->exists();
+
+        abort_unless($validUnit, 422, 'Unit rumah tidak sesuai dengan perumahan yang dipilih.');
+    }
+
+    protected function hppStageScope(int|string $perumahanId, int|string|null $detailRumahId): Builder
+    {
+        return TahapanPembangunan::query()
+            ->where('perumahan_id', $perumahanId)
+            ->when(
+                $detailRumahId,
+                fn (Builder $query) => $query->where('detail_rumah_id', $detailRumahId),
+                fn (Builder $query) => $query->whereNull('detail_rumah_id'),
+            );
+    }
+
+    protected function isRequiredHppStage(TahapanPembangunan $stage): bool
+    {
+        return $stage->konteks === 'kawasan'
+            && in_array($stage->nama_tahapan, self::REQUIRED_KAWASAN_HPP_STAGES, true);
+    }
+
+    protected function resolveKelompokHppId(mixed $preferred = null): int
+    {
+        if ($preferred && KelompokHpp::query()->whereKey($preferred)->exists()) {
+            return (int) $preferred;
+        }
+
+        $id = KelompokHpp::query()->where('status', 'aktif')->orderBy('id')->value('id')
+            ?? KelompokHpp::query()->orderBy('id')->value('id');
+
+        abort_if(! $id, 422, 'Data internal HPP belum tersedia.');
+
+        return (int) $id;
+    }
+
     protected function rumahHppItems(DetailRumah $rumah, $kelompokHpps)
     {
         $hpp = $rumah->detailRumahHpps->first();
-        $items = collect($hpp?->items ?? [])->keyBy('kelompok_hpp_id');
         $realisasi = HppRealisasi::query()
             ->where('detail_rumah_id', $rumah->id)
-            ->selectRaw('kelompok_hpp_id, SUM(nominal) as total')
-            ->groupBy('kelompok_hpp_id')
-            ->pluck('total', 'kelompok_hpp_id');
+            ->selectRaw('COALESCE(tahapan_pembangunan_id, 0) as tahap_id, COALESCE(kelompok_hpp_id, 0) as kelompok_id, SUM(nominal) as total')
+            ->groupBy('tahap_id', 'kelompok_id')
+            ->get()
+            ->keyBy(fn (HppRealisasi $row) => $row->tahap_id.'-'.$row->kelompok_id);
 
-        return $kelompokHpps->map(function (KelompokHpp $kelompokHpp) use ($items, $realisasi) {
-            $item = $items->get($kelompokHpp->id);
-            $jumlahRab = (float) ($item?->jumlah_rab ?? 0);
-            $jumlahRealisasi = (float) ($realisasi[$kelompokHpp->id] ?? 0);
+        return collect($hpp?->items ?? [])->map(function (DetailRumahHppItem $item) use ($hpp, $realisasi) {
+            $realisasiKey = ((int) ($item->tahapan_pembangunan_id ?? 0)).'-'.((int) ($item->kelompok_hpp_id ?? 0));
 
-            return [
-                'kelompok_hpp_id' => (string) $kelompokHpp->id,
-                'kelompok_hpp_nama' => $kelompokHpp->nama_hpp,
-                'volume' => (float) ($item?->volume ?? 0),
-                'satuan' => $item?->satuan ?? '',
-                'harga_satuan' => (float) ($item?->harga_satuan ?? 0),
-                'jumlah_rab' => $jumlahRab,
-                'jumlah_realisasi' => $jumlahRealisasi,
-                'sisa_anggaran' => $jumlahRab - $jumlahRealisasi,
-            ];
+            return $this->formatHppRow($item, $hpp?->tanggal_dibuat, (float) ($realisasi->get($realisasiKey)?->total ?? 0));
         })->values();
     }
 
     protected function rumahHppRows(DetailRumah $rumah, $kelompokHpps)
     {
         $hpp = DetailRumahHpp::query()
-            ->with('items.kelompokHpp')
+            ->with(['items.kelompokHpp', 'items.tahapanPembangunan'])
             ->where('detail_rumah_id', $rumah->id)
             ->first();
-        $items = collect($hpp?->items ?? [])->keyBy('kelompok_hpp_id');
         $realisasi = HppRealisasi::query()
             ->where('detail_rumah_id', $rumah->id)
-            ->selectRaw('kelompok_hpp_id, SUM(nominal) as total')
-            ->groupBy('kelompok_hpp_id')
-            ->pluck('total', 'kelompok_hpp_id');
+            ->selectRaw('COALESCE(tahapan_pembangunan_id, 0) as tahap_id, COALESCE(kelompok_hpp_id, 0) as kelompok_id, SUM(nominal) as total')
+            ->groupBy('tahap_id', 'kelompok_id')
+            ->get()
+            ->keyBy(fn (HppRealisasi $row) => $row->tahap_id.'-'.$row->kelompok_id);
 
-        return $kelompokHpps->map(function (KelompokHpp $kelompokHpp) use ($hpp, $items, $realisasi) {
-            $item = $items->get($kelompokHpp->id);
-            $jumlahRab = (float) ($item?->jumlah_rab ?? 0);
-            $jumlahRealisasi = (float) ($realisasi[$kelompokHpp->id] ?? 0);
+        return collect($hpp?->items ?? [])
+            ->sortBy([['tahapanPembangunan.urutan', 'asc'], ['urutan', 'asc'], ['id', 'asc']])
+            ->map(function (DetailRumahHppItem $item) use ($hpp, $realisasi) {
+                $realisasiKey = ((int) ($item->tahapan_pembangunan_id ?? 0)).'-'.((int) ($item->kelompok_hpp_id ?? 0));
 
-            return [
-                'id' => $item?->id,
-                'tanggal' => $item ? $hpp?->tanggal_dibuat : null,
-                'kelompok_hpp_id' => (string) $kelompokHpp->id,
-                'kelompok_hpp_nama' => $kelompokHpp->nama_hpp,
-                'volume' => (float) ($item?->volume ?? 0),
-                'satuan' => $item?->satuan ?? '',
-                'harga_satuan' => (float) ($item?->harga_satuan ?? 0),
-                'jumlah_rab' => $jumlahRab,
-                'jumlah_realisasi' => $jumlahRealisasi,
-                'sisa_anggaran' => $jumlahRab - $jumlahRealisasi,
-            ];
-        })->values();
+                return $this->formatHppRow($item, $hpp?->tanggal_dibuat, (float) ($realisasi->get($realisasiKey)?->total ?? 0));
+            })
+            ->values();
+    }
+
+    protected function formatHppRow(DetailPerumahanHpp|DetailRumahHppItem $item, mixed $tanggal, float $jumlahRealisasi): array
+    {
+        $jumlahRab = (float) $item->jumlah_rab;
+
+        return [
+            'id' => $item->id,
+            'tanggal' => optional($tanggal)->format('Y-m-d'),
+            'tahapan_pembangunan_id' => (string) ($item->tahapan_pembangunan_id ?? ''),
+            'tahapan_nama' => $item->tahapanPembangunan?->nama_tahapan ?? 'Tanpa Tahap',
+            'kelompok_hpp_id' => (string) $item->kelompok_hpp_id,
+            'kelompok_hpp_nama' => $item->kelompokHpp?->nama_hpp ?? '-',
+            'nama_pekerjaan' => $item->nama_pekerjaan ?: ($item->kelompokHpp?->nama_hpp ?? '-'),
+            'volume' => (float) $item->volume,
+            'satuan' => $item->satuan ?? '',
+            'harga_satuan' => (float) $item->harga_satuan,
+            'jumlah_rab' => $jumlahRab,
+            'jumlah_realisasi' => $jumlahRealisasi,
+            'sisa_anggaran' => $jumlahRab - $jumlahRealisasi,
+            'urutan' => (int) ($item->urutan ?? 0),
+        ];
+    }
+
+    protected function calculateHppAmount(array $item): float
+    {
+        $amount = (float) ($item['volume'] ?? 0) * (float) ($item['harga_satuan'] ?? 0);
+
+        return trim((string) ($item['satuan'] ?? '')) === '%' ? $amount / 100 : $amount;
     }
 
     protected function authorizeOwnerOrManager(): void
@@ -818,6 +1108,30 @@ class PerumahanController extends Controller
         }
 
         abort_unless($user->hasAnyRole(['owner', 'super_admin', 'manajer_pimpro']), 403, 'Hanya owner atau manager yang dapat mengelola unit/HPP dari halaman ini.');
+    }
+
+    protected function authorizeRabEditor(string $context): void
+    {
+        $user = auth()->user();
+        $key = $context === 'unit' ? 'rab-unit' : 'rab-perumahan';
+
+        abort_unless(
+            ! $user || $user->hasRole('super_admin') || $user->can("{$key}.manage"),
+            403,
+            'Anda tidak memiliki permission manage untuk mengedit isi RAB.',
+        );
+    }
+
+    protected function authorizeRab(string $context, string $action): void
+    {
+        $user = auth()->user();
+        $key = $context === 'unit' ? 'rab-unit' : 'rab-perumahan';
+
+        abort_unless(
+            ! $user || $user->hasRole('super_admin') || $user->can("{$key}.{$action}"),
+            403,
+            'Anda tidak memiliki permission untuk mengelola RAB.',
+        );
     }
 
     protected function options(): array

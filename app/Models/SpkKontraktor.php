@@ -19,12 +19,12 @@ class SpkKontraktor extends Model
         'nomor_spk',
         'judul_pekerjaan',
         'jenis_pekerjaan',
+        'sumber_tenaga_kerja',
         'tanggal_spk',
         'tanggal_mulai',
         'tanggal_selesai',
         'nilai_kontrak_dasar',
         'nilai_kontrak',
-        'total_penambahan',
         'metode_pembayaran',
         'approval_role',
         'lingkup_pekerjaan',
@@ -33,6 +33,8 @@ class SpkKontraktor extends Model
         'record_status',
         'locked_at',
         'locked_by',
+        'approved_at',
+        'approved_by',
         'created_by',
         'updated_by',
     ];
@@ -43,15 +45,14 @@ class SpkKontraktor extends Model
         'tanggal_selesai' => 'date',
         'nilai_kontrak_dasar' => 'float',
         'nilai_kontrak' => 'float',
-        'total_penambahan' => 'float',
         'locked_at' => 'datetime',
+        'approved_at' => 'datetime',
     ];
 
     protected static function booted(): void
     {
         static::deleting(function (SpkKontraktor $spkKontraktor) {
             $spkKontraktor->payments()->get()->each->delete();
-            $spkKontraktor->additions()->get()->each->delete();
         });
     }
 
@@ -75,9 +76,14 @@ class SpkKontraktor extends Model
         return $this->hasMany(SpkKontraktorPayment::class);
     }
 
-    public function additions(): HasMany
+    public function siteSchedules(): HasMany
     {
-        return $this->hasMany(SpkKontraktorAddition::class);
+        return $this->hasMany(SiteSchedule::class);
+    }
+
+    public function items(): HasMany
+    {
+        return $this->hasMany(SpkKontraktorItem::class);
     }
 
     public function creator(): BelongsTo

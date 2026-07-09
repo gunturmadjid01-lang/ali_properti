@@ -12,8 +12,8 @@ const resourceFromUrl = (baseUrl = '') => {
         ['/management/master-bank', 'master-bank'],
         ['/management/bank-kredit', 'master-bank'],
         ['/management/tipe-post', 'tipe-post'],
-        ['/management/kelompok-hpp', 'kelompok-hpp'],
         ['/unit-rumah', 'detail-rumah'],
+        ['/tukang', 'tukang'],
     ];
 
     return pairs.find(([path]) => baseUrl.includes(path))?.[1] ?? null;
@@ -27,6 +27,13 @@ export function useResourcePermissions(permissionKey, baseUrl) {
     const superUser = roles.includes('super_admin');
 
     const has = (name) => superUser || permissions.includes(name);
+    const hasExact = (action) => {
+        if (!key) {
+            return true;
+        }
+
+        return has(`${key}.${action}`);
+    };
     const can = (action) => {
         if (!key) {
             return true;
@@ -41,6 +48,12 @@ export function useResourcePermissions(permissionKey, baseUrl) {
         canCreate: can('create'),
         canUpdate: can('update'),
         canDelete: can('delete'),
+        canManage: hasExact('manage'),
         canUnlock: can('unlock'),
+        canViewExact: hasExact('view'),
+        canCreateExact: hasExact('create'),
+        canUpdateExact: hasExact('update'),
+        canDeleteExact: hasExact('delete'),
+        canUnlockExact: hasExact('unlock'),
     };
 }

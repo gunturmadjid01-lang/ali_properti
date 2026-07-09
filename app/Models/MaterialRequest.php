@@ -27,7 +27,9 @@ class MaterialRequest extends Model
         'perumahan_id',
         'detail_rumah_id',
         'tahapan_pembangunan_id',
-        'kelompok_hpp_id',
+        'site_schedule_id',
+        'progress_diakui',
+        'progress_pembangunan_id',
         'status',
         'keterangan',
         'requested_by',
@@ -52,6 +54,7 @@ class MaterialRequest extends Model
         'approved_at_gudang' => 'datetime',
         'approved_at_owner' => 'datetime',
         'issued_at' => 'datetime',
+        'progress_diakui' => 'float',
     ];
 
     public function details(): HasMany
@@ -79,9 +82,14 @@ class MaterialRequest extends Model
         return $this->belongsTo(TahapanPembangunan::class);
     }
 
-    public function kelompokHpp(): BelongsTo
+    public function siteSchedule(): BelongsTo
     {
-        return $this->belongsTo(KelompokHpp::class);
+        return $this->belongsTo(SiteSchedule::class);
+    }
+
+    public function progressPembangunan(): BelongsTo
+    {
+        return $this->belongsTo(ProgressPembangunan::class);
     }
 
     public function approvedByGudang(): BelongsTo

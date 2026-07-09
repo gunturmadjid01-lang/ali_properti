@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
 import { Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
+import { scopedTahapanOptions } from '../../../Utils/tahapanOptions';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -34,9 +35,13 @@ function FieldInput({ field, value, error, options, form, filteredUnits }) {
     const fieldLabel = field.name === 'jumlah_periode'
         ? `Jumlah ${form.data.tipe_upah === 'mingguan' ? 'Minggu' : form.data.tipe_upah === 'bulanan' ? 'Bulan' : 'Hari'}`
         : field.label;
-    const tahapanOptions = form.data.detail_rumah_id
-        ? (options.tahapanPembangunansUnit ?? options.tahapanPembangunans ?? [])
-        : (options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? []);
+    const tahapanOptions = scopedTahapanOptions(
+        form.data.detail_rumah_id
+            ? (options.tahapanPembangunansUnit ?? options.tahapanPembangunans ?? [])
+            : (options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? []),
+        form.data.perumahan_id,
+        form.data.detail_rumah_id,
+    );
 
     if (field.name === 'detail_rumah_id') {
         return (
@@ -303,7 +308,7 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
                     <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">Data ini tersambung ke unit, progress, SPK, dan approval lapangan sesuai kebutuhan menu.</p>
                 </section>
 
-                {canCreate && (
+                {(canCreate || (editing && canUpdate)) && (
                 <Form
                     collapsible
                     title={editing ? `Edit ${editing.kode}` : `Input ${title}`}

@@ -14,17 +14,21 @@ class DetailRumahHppItem extends Model
     protected $fillable = [
         'detail_rumah_hpp_id',
         'kelompok_hpp_id',
+        'tahapan_pembangunan_id',
+        'nama_pekerjaan',
         'barang_material_id',
         'volume',
         'satuan',
         'harga_satuan',
         'jumlah_rab',
+        'urutan',
     ];
 
     protected $casts = [
         'volume' => 'float',
         'harga_satuan' => 'float',
         'jumlah_rab' => 'float',
+        'urutan' => 'integer',
     ];
 
     public function detailRumahHpp(): BelongsTo
@@ -35,6 +39,11 @@ class DetailRumahHppItem extends Model
     public function kelompokHpp(): BelongsTo
     {
         return $this->belongsTo(KelompokHpp::class);
+    }
+
+    public function tahapanPembangunan(): BelongsTo
+    {
+        return $this->belongsTo(TahapanPembangunan::class);
     }
 
     public function barangMaterial(): BelongsTo

@@ -27,6 +27,9 @@ class ProgressPembangunan extends Model
         'approved_by',
         'approved_at',
         'approved_note',
+        'source_type',
+        'source_id',
+        'source_label',
         'record_status',
         'locked_at',
         'locked_by',
@@ -72,5 +75,10 @@ class ProgressPembangunan extends Model
     public function lockedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'locked_by');
+    }
+
+    public function source()
+    {
+        return $this->morphTo(__FUNCTION__, 'source_type', 'source_id');
     }
 }

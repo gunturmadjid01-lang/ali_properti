@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
 import { Button, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
+import { scopedTahapanOptions } from '../../../Utils/tahapanOptions';
 
 function FormErrorSummary({ errors }) {
     const messages = Object.values(errors ?? {}).filter(Boolean);
@@ -65,8 +66,20 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
     const tahapanPembangunansUnit = options.tahapanPembangunansUnit ?? options.tahapanPembangunans ?? [];
     const tahapanPembangunansKawasan = options.tahapanPembangunansKawasan ?? options.tahapanPembangunans ?? [];
     const tahapanPembangunans = useMemo(
-        () => (form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan),
-        [form.data.detail_rumah_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+        () => scopedTahapanOptions(
+            form.data.detail_rumah_id ? tahapanPembangunansUnit : tahapanPembangunansKawasan,
+            form.data.perumahan_id,
+            form.data.detail_rumah_id,
+        ),
+        [form.data.detail_rumah_id, form.data.perumahan_id, tahapanPembangunansKawasan, tahapanPembangunansUnit],
+    );
+    const filterTahapanOptions = useMemo(
+        () => scopedTahapanOptions(
+            filterUnit ? tahapanPembangunansUnit : tahapanPembangunansKawasan,
+            filterPerumahan,
+            filterUnit,
+        ),
+        [filterPerumahan, filterUnit, tahapanPembangunansKawasan, tahapanPembangunansUnit],
     );
     const scheduleOptions = useMemo(() => (options.siteSchedules ?? []).filter((item) => {
         if (form.data.perumahan_id && item.perumahan_id !== String(form.data.perumahan_id)) {
@@ -307,7 +320,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                         />
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown value={filterPerumahan} label="Semua Perumahan" options={[{ value: '', label: 'Semua Perumahan' }, ...options.perumahans]} onChange={(value) => { setFilterPerumahan(value); setFilterUnit(''); }} /></div>
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Unit</span><Dropdown value={filterUnit} label="Semua Unit" options={[{ value: '', label: 'Semua Unit' }, ...options.detailRumahs.filter((item) => !filterPerumahan || item.perumahan_id === String(filterPerumahan))]} onChange={setFilterUnit} /></div>
-                        <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown value={filterTahapan} label="Semua Tahapan" options={[{ value: '', label: 'Semua Tahapan' }, ...options.tahapanPembangunans]} onChange={setFilterTahapan} /></div>
+                        <div className="grid gap-2"><span className="text-sm font-extrabold">Tahapan</span><Dropdown value={filterTahapan} label="Semua Tahapan" options={[{ value: '', label: 'Semua Tahapan' }, ...filterTahapanOptions]} onChange={setFilterTahapan} /></div>
                         <div className="flex items-end"><Button className="w-full" type="submit"><Search size={17} /> Cari</Button></div>
                     </form>
 
@@ -315,7 +328,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                         <table className="min-w-full divide-y divide-silver-deep/60 text-sm dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
                                 <tr>
-                                    {['Tanggal', 'Progress', 'Perumahan', 'Unit', 'Tahapan', 'Nilai', 'Approval', 'Audit', 'Aksi'].map((column) => (
+                                    {['Tanggal', 'Progress', 'Sumber', 'Perumahan', 'Unit', 'Tahapan', 'Nilai', 'Approval', 'Audit', 'Aksi'].map((column) => (
                                         <th className="px-5 py-4 font-extrabold" key={column}>
                                             {column}
                                         </th>
@@ -327,6 +340,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                     <tr key={row.id}>
                                         <td className="px-5 py-4 font-bold">{row.tanggal}</td>
                                         <td className="px-5 py-4 font-bold">{row.nama_progress}</td>
+                                        <td className="px-5 py-4 text-xs font-bold text-ink-soft">{row.source_label || 'Input Manual'}</td>
                                         <td className="px-5 py-4">{row.perumahan}</td>
                                         <td className="px-5 py-4">{row.unit}</td>
                                         <td className="px-5 py-4">{row.tahapan}</td>
@@ -390,6 +404,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                         <div><p className="text-xs font-bold uppercase text-ink-soft">Approval</p><p className="font-extrabold">{detail.approval_label}</p></div>
                         <div><p className="text-xs font-bold uppercase text-ink-soft">Lokasi</p><p className="font-extrabold">{detail.perumahan} - {detail.unit}</p></div>
                         <div><p className="text-xs font-bold uppercase text-ink-soft">Tahapan</p><p className="font-extrabold">{detail.tahapan}</p></div>
+                        <div><p className="text-xs font-bold uppercase text-ink-soft">Sumber</p><p className="font-extrabold">{detail.source_label || 'Input Manual'}</p></div>
                         <div><p className="text-xs font-bold uppercase text-ink-soft">Progress Input</p><p className="font-extrabold">{detail.persentase}%</p></div>
                         <div><p className="text-xs font-bold uppercase text-ink-soft">Kontribusi Total</p><p className="font-extrabold">{Number(detail.persentase_total ?? 0).toFixed(2)}%</p></div>
                     </div>

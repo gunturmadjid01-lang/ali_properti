@@ -18,6 +18,7 @@ class MaterialWorkflowService
     public function __construct(
         private readonly LogistikService $logistik,
         private readonly AppNotificationService $notifications,
+        private readonly ProgressRealizationService $progressRealization,
     ) {
     }
 
@@ -430,6 +431,23 @@ class MaterialWorkflowService
                 'transaksi_logistik_id' => $transaction->id,
                 'updated_by' => auth()->id(),
             ]);
+
+        if ((float) ($request->progress_diakui ?? 0) > 0) {
+            $progress = $this->progressRealization->recordFromSource($request->fresh(), [
+                'detail_rumah_id' => $request->detail_rumah_id,
+                'tahapan_pembangunan_id' => $request->tahapan_pembangunan_id,
+                'site_schedule_id' => $request->site_schedule_id,
+                'nama_progress' => $request->tahapanPembangunan?->nama_tahapan ?? 'Pengambilan Material',
+                'tanggal' => now()->toDateString(),
+                'persentase' => (float) $request->progress_diakui,
+                'keterangan' => "Progress otomatis dari pengambilan material {$request->kode_request}",
+                'source_label' => "Material {$request->kode_request}",
+            ]);
+
+            if ($progress) {
+                $request->update(['progress_pembangunan_id' => $progress->id]);
+            }
+        }
 
         $this->notifications->toRoles(
             ['pengawas', 'user_area_gudang', 'owner', 'super_admin'],

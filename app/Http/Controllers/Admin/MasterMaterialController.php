@@ -42,11 +42,14 @@ class MasterMaterialController extends Controller
             ]);
 
         return Inertia::render('Admin/Logistik/MasterMaterial', [
-            'title' => 'Master Material',
+            'title' => 'Kelola Item Material',
             'baseUrl' => route('admin.master-material.index', absolute: false),
             'rows' => $rows,
             'filters' => ['search' => $search],
-            'options' => ['status' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']]],
+            'options' => [
+                'kategoriMaterial' => $this->kategoriMaterialOptions(),
+                'status' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']],
+            ],
         ]);
     }
 
@@ -120,6 +123,42 @@ class MasterMaterialController extends Controller
             'status' => 'aktif',
             'created_by' => auth()->id(),
         ]);
+    }
+
+    protected function kategoriMaterialOptions(): array
+    {
+        $defaults = [
+            'Struktur',
+            'Dinding',
+            'Atap',
+            'Plafon',
+            'Lantai & Keramik',
+            'Sanitair',
+            'Pipa & Plumbing',
+            'Listrik',
+            'Cat & Finishing',
+            'Pintu, Jendela & Kusen',
+            'Besi & Baja',
+            'Kayu & Papan',
+            'Pasir, Batu & Semen',
+            'Alat Kerja',
+            'Lainnya',
+        ];
+
+        $existing = BarangMaterial::query()
+            ->whereNotNull('kategori_material')
+            ->where('kategori_material', '!=', '')
+            ->distinct()
+            ->orderBy('kategori_material')
+            ->pluck('kategori_material')
+            ->all();
+
+        return collect(['' => 'Tanpa Kategori'])
+            ->merge(collect($defaults)->combine($defaults))
+            ->merge(collect($existing)->combine($existing))
+            ->map(fn (string $label, string $value) => ['value' => $value, 'label' => $label])
+            ->values()
+            ->all();
     }
 
     protected function modelClass(): string

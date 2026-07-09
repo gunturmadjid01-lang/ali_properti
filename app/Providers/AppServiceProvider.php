@@ -2,6 +2,10 @@
 
 namespace App\Providers;
 
+use App\Models\DetailRumah;
+use App\Models\Perumahan;
+use App\Observers\DetailRumahObserver;
+use App\Observers\PerumahanObserver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
@@ -22,6 +26,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Perumahan::observe(PerumahanObserver::class);
+        DetailRumah::observe(DetailRumahObserver::class);
+
         Event::listen('eloquent.saving: *', function (string $eventName, array $data): void {
             $model = $data[0] ?? null;
 

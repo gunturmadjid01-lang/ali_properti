@@ -2,6 +2,7 @@ import { Head, Link, router, useForm } from '@inertiajs/react';
 import { ArrowRight, Lock, MessageSquarePlus, PencilLine, Search, Save, Unlock, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
+import AuditCell from '../../../Components/UI/AuditCell';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
 function money(value) {
@@ -217,7 +218,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                         <table className="min-w-full divide-y divide-silver-deep/60 text-xs dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
                                 <tr>
-                                    {['Kode KPR', 'SPR', 'Customer', 'Unit', 'Bank', 'Nilai', 'Dibuat', 'Diupdate', 'Lock', 'Status', 'Follow Up', 'Aksi'].map((column) => (
+                                    {['Kode KPR', 'SPR', 'Customer', 'Unit', 'Bank', 'Nilai', 'Audit', 'Lock', 'Status', 'Follow Up', 'Aksi'].map((column) => (
                                         <th className={`px-4 py-3 font-extrabold ${column === 'Aksi' ? 'text-right' : ''}`} key={column}>{column}</th>
                                     ))}
                                 </tr>
@@ -231,8 +232,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-4 py-3 font-semibold">{row.unit}</td>
                                         <td className="px-4 py-3 font-semibold">{row.bank}</td>
                                         <td className="px-4 py-3 font-semibold">{money(row.nilai_pengajuan)}</td>
-                                        <td className="px-4 py-3 font-semibold">{row.created_at ?? '-'}</td>
-                                        <td className="px-4 py-3 font-semibold">{row.updated_at ?? '-'}</td>
+                                        <td className="px-4 py-3 font-semibold"><AuditCell createdBy={row.created_at} updatedBy={row.updated_at} /></td>
                                         <td className="px-4 py-3 font-semibold">{row.record_status_label}</td>
                                         <td className="px-4 py-3 font-semibold">{row.status_label}</td>
                                         <td className="px-4 py-3 font-semibold">{row.follow_ups_count}</td>
@@ -253,7 +253,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                 ))}
                                 {rows.data.length === 0 && (
                                     <tr>
-                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={12}>Belum ada pengajuan KPR.</td>
+                                        <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={11}>Belum ada pengajuan KPR.</td>
                                     </tr>
                                 )}
                             </tbody>

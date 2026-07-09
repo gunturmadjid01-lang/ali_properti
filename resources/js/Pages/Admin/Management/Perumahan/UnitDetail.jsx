@@ -1,10 +1,9 @@
-import { Head, Link, router, usePage } from '@inertiajs/react';
-import { CheckCircle2, ChevronRight, ClipboardList, PackageSearch, Search } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { CheckCircle2, ChevronRight, PackageSearch, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import Accordion from '../../../../Components/UI/Accordion';
 import { Button, Input } from '../../../../Components/UI';
 import AdminLayout from '../../../../Layouts/AdminLayout';
-import HppFormModal from './HppFormModal';
 
 function money(value) {
     return new Intl.NumberFormat('id-ID', {
@@ -30,11 +29,6 @@ function badgeClass(status) {
 export default function UnitDetail({
     title,
     baseUrl,
-    hppDetailUrl,
-    hppRows = [],
-    hppSummary = { jumlah_rab: 0, jumlah_realisasi: 0, sisa_anggaran: 0 },
-    hppUrl,
-    permissions = {},
     perumahan = {},
     rumah = {},
     progressRows = [],
@@ -43,10 +37,6 @@ export default function UnitDetail({
     filters = {},
 }) {
     const [search, setSearch] = useState(filters.search ?? '');
-    const [editingHpp, setEditingHpp] = useState(null);
-    const { options = {} } = usePage().props;
-    const canManageHpp = Boolean(permissions?.canManageHpp);
-    const showHppSection = rumah?.status_pembangunan !== 'kapling';
 
     const keyword = search.trim().toLowerCase();
 
@@ -84,20 +74,6 @@ export default function UnitDetail({
         ].some((value) => String(value ?? '').toLowerCase().includes(keyword)));
     }, [keyword, logistikRows]);
 
-    const filteredHppRows = useMemo(() => {
-        if (!keyword) return hppRows;
-        return hppRows.filter((row) => [
-            row.tanggal,
-            row.kelompok_hpp_nama,
-            row.volume,
-            row.satuan,
-            row.harga_satuan,
-            row.jumlah_rab,
-            row.jumlah_realisasi,
-            row.sisa_anggaran,
-        ].some((value) => String(value ?? '').toLowerCase().includes(keyword)));
-    }, [keyword, hppRows]);
-
     const tahapanSummary = useMemo(() => {
         const grouped = {};
 
@@ -124,74 +100,6 @@ export default function UnitDetail({
 
     const requestApprove = (row) => {
         router.post(row.approve_url, {}, { preserveScroll: true });
-    };
-
-    const hppAccordion = {
-        title: 'HPP Unit Rumah',
-        content: (
-            <div className="grid gap-5">
-                <div className="grid gap-3 md:grid-cols-3">
-                    <div className="rounded-lg border border-silver-deep/50 bg-silver-soft/50 p-4 dark:border-white/10 dark:bg-white/5">
-                        <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-soft">Jumlah RAB</p>
-                        <p className="mt-1 text-lg font-extrabold text-ink dark:text-white">{money(hppSummary.jumlah_rab)}</p>
-                    </div>
-                    <div className="rounded-lg border border-silver-deep/50 bg-silver-soft/50 p-4 dark:border-white/10 dark:bg-white/5">
-                        <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-soft">Jumlah Realisasi</p>
-                        <p className="mt-1 text-lg font-extrabold text-ink dark:text-white">{money(hppSummary.jumlah_realisasi)}</p>
-                    </div>
-                    <div className="rounded-lg border border-silver-deep/50 bg-silver-soft/50 p-4 dark:border-white/10 dark:bg-white/5">
-                        <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-ink-soft">Sisa Anggaran</p>
-                        <p className="mt-1 text-lg font-extrabold text-ink dark:text-white">{money(hppSummary.sisa_anggaran)}</p>
-                    </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                    <Button as={Link} href={hppDetailUrl} variant="outline" size="sm">
-                        Lihat Halaman HPP Penuh
-                    </Button>
-                </div>
-
-                <div className="overflow-x-auto rounded-lg border border-silver-deep/50 dark:border-white/10">
-                    <table className="min-w-full divide-y divide-silver-deep/60 text-xs dark:divide-white/10">
-                        <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
-                            <tr>
-                                {['Tanggal', 'Kelompok', 'Volume', 'Satuan', 'Harga Satuan', 'Jumlah RAB', 'Jumlah Realisasi', 'Sisa Anggaran', ...(canManageHpp ? ['Aksi'] : [])].map((column) => (
-                                    <th className="px-4 py-3 font-extrabold" key={column}>{column}</th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
-                            {filteredHppRows.map((row) => (
-                                <tr className="transition hover:bg-silver/70 dark:hover:bg-white/5" key={row.id ? `hpp-item-${row.id}` : `hpp-master-${row.kelompok_hpp_id}`}>
-                                    <td className="px-4 py-3 font-semibold">{row.tanggal ?? '-'}</td>
-                                    <td className="px-4 py-3 font-semibold">{row.kelompok_hpp_nama ?? '-'}</td>
-                                    <td className="px-4 py-3 font-semibold">{row.volume}</td>
-                                    <td className="px-4 py-3 font-semibold">{row.satuan}</td>
-                                    <td className="px-4 py-3 font-semibold">{money(row.harga_satuan)}</td>
-                                    <td className="px-4 py-3 font-extrabold">{money(row.jumlah_rab)}</td>
-                                    <td className="px-4 py-3 font-extrabold">{money(row.jumlah_realisasi)}</td>
-                                    <td className="px-4 py-3 font-extrabold">{money(row.sisa_anggaran)}</td>
-                                    {canManageHpp && (
-                                        <td className="px-4 py-3">
-                                            <Button type="button" size="sm" variant="outline" onClick={() => setEditingHpp(row)}>
-                                                <ClipboardList size={15} /> Edit HPP
-                                            </Button>
-                                        </td>
-                                    )}
-                                </tr>
-                            ))}
-                            {filteredHppRows.length === 0 && (
-                                <tr>
-                                    <td className="px-5 py-10 text-center font-bold text-ink-soft dark:text-white/50" colSpan={canManageHpp ? 9 : 8}>
-                                        Data HPP tidak ditemukan.
-                                    </td>
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        ),
     };
 
     const profileAccordion = {
@@ -229,8 +137,7 @@ export default function UnitDetail({
                     {
                         title: 'Audit & Catatan',
                         items: [
-                            ['Dibuat Oleh', rumah.created_by ?? '-'],
-                            ['Diupdate Oleh', rumah.updated_by ?? '-'],
+                            ['Audit', `Dibuat: ${rumah.created_by ?? '-'} | Diubah: ${rumah.updated_by ?? '-'}`],
                             ['Tanggal Mulai', rumah.tanggal_mulai_bangun ?? '-'],
                             ['Tanggal Selesai', rumah.tanggal_selesai_bangun ?? '-'],
                         ],
@@ -359,7 +266,7 @@ export default function UnitDetail({
         ),
     };
 
-    const items = [profileAccordion, ...(showHppSection ? [hppAccordion] : []), progressAccordion, logistikAccordion];
+    const items = [profileAccordion, progressAccordion, logistikAccordion];
 
     return (
         <>
@@ -409,17 +316,6 @@ export default function UnitDetail({
                         </Button>
                     </form>
                 </section>
-
-                {showHppSection && editingHpp && canManageHpp && (
-                    <HppFormModal
-                        open={Boolean(editingHpp)}
-                        title={`Edit HPP ${editingHpp.kelompok_hpp_nama}`}
-                        actionUrl={`${hppUrl}/${editingHpp.id ?? `new-${editingHpp.kelompok_hpp_id}`}`}
-                        items={[editingHpp]}
-                        options={options}
-                        onClose={() => setEditingHpp(null)}
-                    />
-                )}
 
                 <Accordion items={items} defaultOpen={0} />
             </div>

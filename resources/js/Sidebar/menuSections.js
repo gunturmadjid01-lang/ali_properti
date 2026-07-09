@@ -159,6 +159,12 @@ const projectUnitItems = [
         link: "/admin/unit-rumah",
     },
     {
+        title: "HPP Unit Rumah",
+        icon: FileText,
+        link: "/admin/hpp-unit-rumah",
+        permission: "rab-unit.view",
+    },
+    {
         title: "Progress Pembangunan",
         icon: Boxes,
         link: "/admin/progress-pembangunan",
@@ -180,6 +186,12 @@ const projectContractItems = [
                 icon: FileText,
                 link: "/admin/spk-kontraktor",
                 exact: true,
+            },
+            {
+                title: "Template Pekerjaan SPK",
+                icon: FileText,
+                link: "/admin/spk-template",
+                permissionsAny: ["spk-template-perumahan.view", "spk-template-unit.view"],
             },
             {
                 title: "Pencairan Pembayaran SPK",
@@ -297,11 +309,6 @@ const masterDataItems = [
                 icon: FileText,
                 link: "/admin/management/dokumen-legalitas-rumah",
             },
-            {
-                title: "Kelompok HPP Perumahan",
-                icon: FileCheck2,
-                link: "/admin/management/kelompok-hpp",
-            },
         ],
     },
     {
@@ -335,6 +342,12 @@ const masterDataItems = [
         icon: Banknote,
         link: "/admin/management/tipe-post",
     },
+    {
+        title: "Daftar Tukang",
+        icon: Wrench,
+        link: "/admin/tukang",
+        permission: "tukang.view",
+    },
 ];
 
 const warehouseItems = [
@@ -344,19 +357,28 @@ const warehouseItems = [
         link: "/admin/gudang",
     },
     {
-        title: "Master Material",
+        title: "Kelola Item Material",
         icon: Boxes,
         link: "/admin/master-material",
+        permission: "master-material.view",
     },
     {
         title: "Harga Material",
         icon: Banknote,
         link: "/admin/harga-material",
+        permission: "material-price.view",
+    },
+    {
+        title: "Saldo Awal Material",
+        icon: Boxes,
+        link: "/admin/saldo-awal-material",
+        permission: "material-opening-balance.view",
     },
     {
         title: "Stok Material",
         icon: Boxes,
         link: "/admin/stok-material",
+        permission: "site-material-stock.view",
     },
     {
         title: "Stok Opname",
