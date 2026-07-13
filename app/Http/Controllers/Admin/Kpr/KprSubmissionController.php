@@ -107,6 +107,27 @@ class KprSubmissionController extends Controller
         ]);
     }
 
+    public function edit(Request $request, string $id): Response
+    {
+        $submission = $this->submissionQueryFor($request)->findOrFail($id);
+        $this->abortIfLocked($submission);
+
+        return Inertia::render('Admin/Kpr/FormPage', [
+            'title' => 'Edit Pengajuan KPR '.$submission->kode_kpr,
+            'baseUrl' => route('admin.kpr.index', absolute: false),
+            'actionUrl' => route('admin.kpr.update', $submission->id, false),
+            'row' => [
+                'bank_kredit_id' => (string) ($submission->bank_kredit_id ?? ''),
+                'tanggal_pengajuan' => optional($submission->tanggal_pengajuan)->format('Y-m-d'),
+                'nilai_pengajuan' => (string) ($submission->nilai_pengajuan ?? ''),
+                'status' => $submission->status,
+                'catatan' => $submission->catatan ?? '',
+            ],
+            'banks' => $this->bankOptions(),
+            'statusOptions' => $this->statusOptions(),
+        ]);
+    }
+
     public function update(Request $request, string $id): RedirectResponse
     {
         $validated = $request->validate([
@@ -132,7 +153,7 @@ class KprSubmissionController extends Controller
             $request->user()?->id,
         );
 
-        return back()->with('success', 'Data KPR berhasil diperbarui.');
+        return to_route('admin.kpr.index')->with('success', 'Data KPR berhasil diperbarui.');
     }
 
     public function storeFollowUp(Request $request, string $id): RedirectResponse
@@ -323,6 +344,7 @@ class KprSubmissionController extends Controller
             'unit' => $unit,
             'perumahan' => $submission->spr?->detailRumah?->perumahan?->nama_perusahaan ?? '-',
             'detail_url' => route('admin.kpr.show', $submission->id, absolute: false),
+            'edit_url' => route('admin.kpr.edit', $submission->id, false),
             'bank_kredit_id' => $submission->bank_kredit_id,
             'bank' => $submission->bank?->nama_bank ?? '-',
             'tanggal_pengajuan' => optional($submission->tanggal_pengajuan)->format('Y-m-d'),

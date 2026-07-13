@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class DetailRumah extends Model
@@ -95,6 +96,19 @@ class DetailRumah extends Model
     public function sprs(): HasMany
     {
         return $this->hasMany(Spr::class);
+    }
+
+    public function ownerships(): HasMany
+    {
+        return $this->hasMany(UnitOwnership::class);
+    }
+
+    public function currentOwnership(): HasOne
+    {
+        return $this->hasOne(UnitOwnership::class)->ofMany(
+            ['acquired_at' => 'max', 'id' => 'max'],
+            fn ($query) => $query->where('is_active', true),
+        );
     }
 
     public function bookingSpr(): BelongsTo

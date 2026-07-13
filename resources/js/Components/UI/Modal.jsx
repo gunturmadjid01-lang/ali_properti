@@ -3,10 +3,10 @@ import Button from './Button';
 
 export default function Modal({ open, onClose, title, children, footer, size = 'md' }) {
     const sizes = {
-        sm: 'max-w-md',
-        md: 'max-w-xl',
-        lg: 'max-w-3xl',
-        xl: 'max-w-5xl',
+        sm: 'max-w-xl',
+        md: 'max-w-[72rem]',
+        lg: 'max-w-[88rem]',
+        xl: 'max-w-[110rem]',
         full: 'h-[100vh] max-w-none w-[100vw] rounded-none',
     };
 

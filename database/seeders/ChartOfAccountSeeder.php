@@ -11,6 +11,7 @@ class ChartOfAccountSeeder extends Seeder
     {
         $accounts = [
             [ChartOfAccount::KAS_BANK, 'Kas dan Bank', 'aset', 'debit'],
+            [ChartOfAccount::KAS_KECIL, 'Kas Kecil', 'aset', 'debit'],
             [ChartOfAccount::PIUTANG_CUSTOMER, 'Piutang Usaha Customer', 'aset', 'debit'],
             ['1-1200', 'Piutang Lain-lain', 'aset', 'debit'],
             [ChartOfAccount::PERSEDIAAN_MATERIAL, 'Persediaan Material', 'aset', 'debit'],

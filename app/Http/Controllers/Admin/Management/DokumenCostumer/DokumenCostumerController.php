@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Management\DokumenCostumer;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\RendersSeparatedManagementForm;
 use App\Http\Requests\Admin\DokumenCostumer\StoreDokumenCostumerRequest;
 use App\Http\Requests\Admin\DokumenCostumer\UpdateDokumenCostumerRequest;
 use App\Models\DokumenCostumer;
@@ -16,7 +17,7 @@ use Inertia\Response;
 
 class DokumenCostumerController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, RendersSeparatedManagementForm;
 
     public function index(Request $request): Response
     {
@@ -47,12 +48,15 @@ class DokumenCostumerController extends Controller
                 'status_label' => ucfirst($row->status),
                 'record_status' => $row->record_status,
                 'record_status_label' => $row->record_status === 'locked' ? 'Locked' : 'Draft',
+                'edit_url' => route('admin.management.master-dokumen-customer.edit', $row->id, false),
             ]);
 
         return Inertia::render('Admin/Management/DokumenCostumer/Index', [
-            'title' => 'Master Dokumen Customer',
-            'description' => 'Kelola daftar jenis dokumen yang harus diupload customer saat proses SPR atau KPR.',
+            'title' => $this->title(),
+            'description' => $this->description(),
             'baseUrl' => route('admin.management.master-dokumen-customer.index', absolute: false),
+            'createUrl' => route('admin.management.master-dokumen-customer.create', absolute: false),
+            'permissionKey' => 'dokumen-customer',
             'filters' => ['search' => $search],
             'rows' => $rows,
             'columns' => [
@@ -62,24 +66,6 @@ class DokumenCostumerController extends Controller
                 ['key' => 'wajib', 'label' => 'Upload'],
                 ['key' => 'record_status_label', 'label' => 'Lock'],
                 ['key' => 'status_label', 'label' => 'Status'],
-            ],
-            'fields' => [
-                ['name' => 'nama_dokumen', 'label' => 'Nama Dokumen', 'type' => 'text'],
-                ['name' => 'kategori_pengajuan', 'label' => 'Kategori Pengajuan', 'type' => 'select', 'optionsKey' => 'categoryOptions'],
-                ['name' => 'wajib', 'label' => 'Status Upload', 'type' => 'select', 'optionsKey' => 'requiredOptions'],
-                ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'statusOptions'],
-                ['name' => 'keterangan', 'label' => 'Keterangan', 'type' => 'textarea', 'full' => true],
-            ],
-            'options' => [
-                'categoryOptions' => $this->categoryOptions(),
-                'requiredOptions' => [
-                    ['value' => '1', 'label' => 'Wajib'],
-                    ['value' => '0', 'label' => 'Opsional'],
-                ],
-                'statusOptions' => [
-                    ['value' => 'aktif', 'label' => 'Aktif'],
-                    ['value' => 'nonaktif', 'label' => 'Nonaktif'],
-                ],
             ],
         ]);
     }
@@ -91,7 +77,7 @@ class DokumenCostumerController extends Controller
             'kode_dokumen' => CodeGenerator::next(DokumenCostumer::class, 'kode_dokumen', 'DOK'),
         ]);
 
-        return back()->with('success', 'Master dokumen customer berhasil ditambahkan.');
+        return to_route('admin.management.master-dokumen-customer.index')->with('success', 'Master dokumen customer berhasil ditambahkan.');
     }
 
     public function update(UpdateDokumenCostumerRequest $request, string $id): RedirectResponse
@@ -100,7 +86,7 @@ class DokumenCostumerController extends Controller
         $this->abortIfLocked($row);
         $row->update($request->validated());
 
-        return back()->with('success', 'Master dokumen customer berhasil diperbarui.');
+        return to_route('admin.management.master-dokumen-customer.index')->with('success', 'Master dokumen customer berhasil diperbarui.');
     }
 
     public function destroy(string $id): RedirectResponse
@@ -115,6 +101,30 @@ class DokumenCostumerController extends Controller
     protected function modelClass(): string
     {
         return DokumenCostumer::class;
+    }
+
+    protected function routeName(): string { return 'admin.management.master-dokumen-customer'; }
+    protected function title(): string { return 'Master Dokumen Pelanggan'; }
+    protected function description(): string { return 'Kelola persyaratan dokumen pelanggan untuk proses SPR, KPR, dan transaksi lainnya.'; }
+
+    protected function fields(): array
+    {
+        return [
+            ['name' => 'nama_dokumen', 'label' => 'Nama Dokumen', 'type' => 'text', 'required' => true],
+            ['name' => 'kategori_pengajuan', 'label' => 'Kategori Pengajuan', 'type' => 'select', 'optionsKey' => 'categoryOptions', 'required' => true],
+            ['name' => 'wajib', 'label' => 'Status Upload', 'type' => 'select', 'optionsKey' => 'requiredOptions', 'required' => true],
+            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'statusOptions', 'required' => true],
+            ['name' => 'keterangan', 'label' => 'Keterangan', 'type' => 'textarea', 'full' => true],
+        ];
+    }
+
+    protected function options(): array
+    {
+        return [
+            'categoryOptions' => $this->categoryOptions(),
+            'requiredOptions' => [['value' => '1', 'label' => 'Wajib'], ['value' => '0', 'label' => 'Opsional']],
+            'statusOptions' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']],
+        ];
     }
 
     protected function categoryOptions(): array

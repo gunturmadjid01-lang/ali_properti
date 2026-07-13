@@ -16,6 +16,12 @@ class SiteMaterialStockController extends Controller
 
     public function index(Request $request): Response
     {
+        abort_unless(
+            auth()->user()?->hasAnyRole(['pengawas', 'manajer_pimpro', 'owner', 'super_admin']),
+            403,
+            'Hanya pengawas yang dapat mengakses sisa material lokasi.'
+        );
+
         $search = trim((string) $request->query('search', ''));
         $perumahanId = $request->query('perumahan_id');
         $detailRumahId = $request->query('detail_rumah_id');

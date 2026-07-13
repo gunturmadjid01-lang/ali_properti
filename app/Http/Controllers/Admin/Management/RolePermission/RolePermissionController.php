@@ -136,7 +136,7 @@ class RolePermissionController extends Controller
     protected function fields(): array
     {
         return [
-            ['name' => 'name', 'label' => 'Nama Role', 'type' => 'text'],
+            ['name' => 'name', 'label' => 'Nama Role', 'type' => 'text', 'required' => true],
             ['name' => 'permission_ids', 'label' => 'Permission', 'type' => 'checkboxes', 'optionsKey' => 'permissions', 'full' => true],
         ];
     }
@@ -166,9 +166,10 @@ class RolePermissionController extends Controller
             'manager' => 3,
             'manajer_pimpro' => 4,
             'admin' => 5,
-            'keuangan' => 6,
-            'pengawas' => 7,
-            'marketing' => 8,
+            'petugas' => 6,
+            'keuangan' => 7,
+            'pengawas' => 8,
+            'marketing' => 9,
         ];
         $roleLabels = [
             'super_admin' => 'Super Admin',
@@ -176,6 +177,7 @@ class RolePermissionController extends Controller
             'manager' => 'Manager',
             'manajer_pimpro' => 'Pimpro',
             'admin' => 'Admin',
+            'petugas' => 'Petugas',
             'keuangan' => 'Keuangan',
             'pengawas' => 'Pengawas',
             'marketing' => 'Marketing',
@@ -355,12 +357,15 @@ class RolePermissionController extends Controller
                 'label' => 'Gudang & Logistik',
                 'modules' => [
                     $module('master-material', 'Master Material'),
+                    $module('supplier', 'Supplier'),
                     $module('site-material-stock', 'Stok Material', ['view']),
+                    $module('material-stock-opname', 'Stock Opname Material'),
                     $module('material-request', 'Permintaan Material'),
-                    $module('material-purchase', 'Permintaan Pembelian Gudang'),
+                    $module('material-purchase', 'Pembelian Material'),
                     $module('material-usage', 'Pemakaian Material'),
                     $module('material-return', 'Pengembalian Material'),
-                    $module('asset-inventory', 'Inventaris Aset', ['view', 'create', 'update', 'delete', 'unlock']),
+                    $module('company-inventory', 'Inventaris Perusahaan', ['view', 'create', 'update', 'delete', 'export', 'verify']),
+                    $module('heavy-equipment', 'Alat Berat', ['view', 'create', 'update', 'delete', 'export']),
                 ],
             ],
             [
@@ -375,6 +380,24 @@ class RolePermissionController extends Controller
                     $module('arus-kas', 'Arus Kas', ['view']),
                     $module('piutang', 'Piutang Customer', ['view']),
                     $module('hutang', 'Hutang Supplier & Kontraktor', ['view']),
+                ],
+            ],
+            [
+                'key' => 'reports',
+                'label' => 'Laporan',
+                'modules' => [
+                    [
+                        'key' => 'laporan',
+                        'label' => 'Pusat Laporan',
+                        'permissions' => [
+                            ['action' => 'view', 'label' => 'Buka', 'name' => 'laporan.view'],
+                            ['action' => 'export', 'label' => 'Cetak/Export', 'name' => 'laporan.export'],
+                        ],
+                    ],
+                    $module('laporan-master-data', 'Laporan Master Data', ['view']),
+                    $module('laporan-pembelian', 'Laporan Pembelian', ['view']),
+                    $module('laporan-persediaan-material', 'Laporan Persediaan Material', ['view']),
+                    $module('laporan-marketing', 'Laporan Marketing', ['view']),
                 ],
             ],
             [

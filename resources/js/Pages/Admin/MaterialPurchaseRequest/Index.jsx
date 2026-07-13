@@ -1,159 +1,175 @@
-import { Head, router, useForm } from '@inertiajs/react';
-import { Edit3, Lock, MinusCircle, PlusCircle, Save, Search, Trash2, Unlock, X } from 'lucide-react';
+import { Head, router } from '@inertiajs/react';
+import { ArrowDownAZ, ArrowUpAZ, CheckCircle2, Eye, Lock, Pencil, Plus, RefreshCw, Search, ShoppingCart, Trash2, Unlock, XCircle } from 'lucide-react';
 import { useState } from 'react';
-import { Button, Dropdown, Form, Input, Textarea } from '../../../Components/UI';
+import Pagination from '../../../Components/Pagination';
+import { Button, Dropdown, Input, Modal } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
-function itemTemplate() {
-    return { barang_material_id: '', qty: '', satuan: '', catatan: '' };
+const decimal = (value) => Number(value ?? 0).toLocaleString('id-ID');
+
+function IconButton({ title, icon: Icon, onClick, disabled = false, danger = false }) {
+    return (
+        <button
+            type="button"
+            title={title}
+            disabled={disabled}
+            onClick={onClick}
+            className={`grid h-9 w-9 place-items-center rounded-lg border transition disabled:pointer-events-none disabled:opacity-45 ${
+                danger
+                    ? 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-400/20 dark:bg-red-400/10 dark:text-red-200'
+                    : 'border-silver-deep/70 bg-white/80 text-ink-soft hover:bg-silver-soft hover:text-ink dark:border-white/10 dark:bg-white/8 dark:text-white/70 dark:hover:bg-white/12'
+            }`}
+        >
+            <Icon size={16} />
+        </button>
+    );
 }
 
-export default function Index({ title, baseUrl, rows = { data: [] }, filters = {}, options = {}, permissions = {} }) {
+export default function Index({ title, baseUrl, createUrl, purchaseCreateUrl, rows = { data: [], links: [] }, filters = {}, options = {}, permissions = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
-    const [editing, setEditing] = useState(null);
-    const canCreate = permissions.canCreate ?? false;
-    const canUpdate = permissions.canUpdate ?? false;
-    const canDelete = permissions.canDelete ?? false;
-    const form = useForm({
-        tanggal: new Date().toISOString().slice(0, 10),
-        gudang_id: '',
-        keterangan: '',
-        items: [itemTemplate()],
-    });
+    const [gudangId, setGudangId] = useState(filters.gudangId ?? '');
+    const [status, setStatus] = useState(filters.status ?? '');
+    const [sort, setSort] = useState(filters.sort ?? 'tanggal');
+    const [direction, setDirection] = useState(filters.direction ?? 'desc');
+    const [detail, setDetail] = useState(null);
 
-    const setItem = (index, key, value) => {
-        form.setData('items', form.data.items.map((item, itemIndex) => {
-            if (itemIndex !== index) return item;
-            const next = { ...item, [key]: value };
-            if (key === 'barang_material_id') {
-                next.satuan = options.barangMaterials?.find((option) => option.value === String(value))?.satuan ?? '';
-            }
-            return next;
-        }));
-    };
-
-    const resetForm = () => {
-        setEditing(null);
-        form.clearErrors();
-        form.setData({
-            tanggal: new Date().toISOString().slice(0, 10),
-            gudang_id: '',
-            keterangan: '',
-            items: [itemTemplate()],
-        });
-    };
-
-    const submit = (event) => {
+    const filter = (event) => {
         event.preventDefault();
-        const requestOptions = { preserveScroll: true, onSuccess: resetForm };
-        if (editing) {
-            form.put(`${baseUrl}/${editing.id}`, requestOptions);
-            return;
-        }
-        form.post(baseUrl, requestOptions);
+        router.get(baseUrl, { search, gudang_id: gudangId, status, sort, direction }, { preserveScroll: true, preserveState: true, replace: true });
     };
 
-    const editRow = (row) => {
-        setEditing(row);
-        form.clearErrors();
-        form.setData({
-            tanggal: row.tanggal ?? '',
-            gudang_id: row.gudang_id ?? '',
-            keterangan: row.keterangan ?? '',
-            items: row.items?.length ? row.items : [itemTemplate()],
-        });
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+    const reset = () => {
+        setSearch('');
+        setGudangId('');
+        setStatus('');
+        setSort('tanggal');
+        setDirection('desc');
+        router.get(baseUrl, {}, { preserveScroll: true, preserveState: true, replace: true });
     };
+
+    const post = (url) => router.post(url, {}, { preserveScroll: true });
+    const destroy = (row) => window.confirm(`Hapus permintaan ${row.kode_request}?`) && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true });
+    const process = (row) => router.visit(`${purchaseCreateUrl}?purchase_request_id=${row.id}`);
+    const isLocked = (row) => row.record_status === 'locked';
 
     return (
         <>
             <Head title={title} />
-            <div className="grid gap-6">
-                {canCreate && (
-                    <Form
-                        collapsible
-                        title={editing ? `Edit ${editing.kode_request}` : title}
-                        description="Gudang mengajukan kebutuhan restock. Permintaan ini tidak menambah HPP proyek dan tidak langsung mengubah stok."
-                        onSubmit={submit}
-                        actions={(
-                            <>
-                                {editing && canUpdate && <Button type="button" variant="outline" onClick={resetForm}><X size={16} /> Batal</Button>}
-                                <Button type="submit" disabled={form.processing}><Save size={17} /> {editing ? 'Simpan' : 'Kirim Permintaan'}</Button>
-                            </>
-                        )}
-                    >
-                        <div className="grid gap-4 md:grid-cols-2">
-                            <Input label="Tanggal" type="date" value={form.data.tanggal} error={form.errors.tanggal} onChange={(event) => form.setData('tanggal', event.target.value)} />
-                            <div className="grid gap-2">
-                                <span className="text-sm font-extrabold">Gudang Tujuan</span>
-                                <Dropdown value={form.data.gudang_id} label="Pilih Gudang" options={options.gudangs ?? []} onChange={(value) => form.setData('gudang_id', value)} />
-                                {form.errors.gudang_id && <p className="text-xs font-bold text-red-500">{form.errors.gudang_id}</p>}
+            <section className="overflow-hidden rounded-2xl border border-white/70 bg-white/85 shadow-soft dark:border-white/10 dark:bg-white/6">
+                <div className="border-b border-silver-deep/50 bg-silver-soft/55 px-4 py-3 dark:border-white/10 dark:bg-white/4">
+                    <form className="grid gap-2 xl:grid-cols-[1fr_240px_210px_210px_auto]" onSubmit={filter}>
+                        <Input label="Kata Kunci" value={search} onChange={(event) => setSearch(event.target.value)} inputClassName="h-9 min-h-9 text-xs" />
+                        <label className="grid gap-1 text-xs font-extrabold text-ink-soft dark:text-white/60">
+                            Dept. / Gudang
+                            <Dropdown value={gudangId} label="Semua Gudang" options={[{ value: '', label: 'Semua Gudang' }, ...(options.gudangs ?? [])]} onChange={setGudangId} buttonClassName="min-h-9 text-xs" />
+                        </label>
+                        <label className="grid gap-1 text-xs font-extrabold text-ink-soft dark:text-white/60">
+                            Status
+                            <Dropdown value={status} label="Semua Status" options={options.statuses ?? []} onChange={setStatus} searchable={false} buttonClassName="min-h-9 text-xs" />
+                        </label>
+                        <label className="grid gap-1 text-xs font-extrabold text-ink-soft dark:text-white/60">
+                            Urut Berdasar
+                            <div className="flex gap-1">
+                                <Dropdown value={sort} options={[{ value: 'tanggal', label: 'Tanggal' }, { value: 'kode_request', label: 'No Transaksi' }, { value: 'status', label: 'Status' }]} onChange={setSort} searchable={false} buttonClassName="min-h-9 text-xs" />
+                                <button type="button" title="Urut naik" onClick={() => setDirection('asc')} className={`grid h-9 w-10 place-items-center rounded-lg border border-silver-deep/70 ${direction === 'asc' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-200' : 'bg-white/80 text-ink-soft dark:bg-white/8 dark:text-white/65'}`}><ArrowUpAZ size={16} /></button>
+                                <button type="button" title="Urut turun" onClick={() => setDirection('desc')} className={`grid h-9 w-10 place-items-center rounded-lg border border-silver-deep/70 ${direction === 'desc' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/20 dark:text-emerald-200' : 'bg-white/80 text-ink-soft dark:bg-white/8 dark:text-white/65'}`}><ArrowDownAZ size={16} /></button>
                             </div>
+                        </label>
+                        <div className="flex items-end justify-end gap-2">
+                            <Button type="submit" size="sm" variant="outline" title="Cari"><Search size={16} /></Button>
+                            <Button type="button" size="sm" variant="outline" onClick={reset} title="Refresh"><RefreshCw size={16} /></Button>
+                            {permissions.canCreate && <Button as="a" href={createUrl} size="sm"><Plus size={16} /> Tambah</Button>}
                         </div>
-
-                        <div className="grid gap-3">
-                            <div className="flex items-center justify-between gap-3">
-                                <h3 className="text-sm font-extrabold">Material yang Dibutuhkan</h3>
-                                <Button type="button" variant="outline" size="sm" onClick={() => form.setData('items', [...form.data.items, itemTemplate()])}><PlusCircle size={15} /> Tambah Item</Button>
-                            </div>
-                            {form.errors.items && <p className="text-xs font-bold text-red-500">{form.errors.items}</p>}
-                            {form.data.items.map((item, index) => (
-                                <div className="grid gap-3 rounded-lg border border-silver-deep/70 p-3 md:grid-cols-[1.5fr_0.6fr_0.6fr_1fr_auto]" key={index}>
-                                    <div className="grid gap-2">
-                                        <span className="text-xs font-extrabold text-ink-soft">Material</span>
-                                        <Dropdown value={item.barang_material_id} label="Pilih Material" options={options.barangMaterials ?? []} onChange={(value) => setItem(index, 'barang_material_id', value)} />
-                                    </div>
-                                    <Input label="Qty" type="number" value={item.qty} onChange={(event) => setItem(index, 'qty', event.target.value)} />
-                                    <Input label="Satuan" value={item.satuan} onChange={(event) => setItem(index, 'satuan', event.target.value)} />
-                                    <Input label="Catatan Item" value={item.catatan} onChange={(event) => setItem(index, 'catatan', event.target.value)} />
-                                    <div className="flex items-end">
-                                        <Button type="button" variant="ghost" size="sm" className="text-red-600" disabled={form.data.items.length === 1} onClick={() => form.setData('items', form.data.items.filter((_, itemIndex) => itemIndex !== index))}><MinusCircle size={16} /></Button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <Textarea label="Keterangan Permintaan" value={form.data.keterangan} error={form.errors.keterangan} onChange={(event) => form.setData('keterangan', event.target.value)} />
-                    </Form>
-                )}
-
-                <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
-                    <form className="flex flex-col gap-3 p-5 md:flex-row md:items-end md:justify-between" onSubmit={(event) => { event.preventDefault(); router.get(baseUrl, { search }, { preserveScroll: true, preserveState: true, replace: true }); }}>
-                        <Input className="md:max-w-md" label="Cari Permintaan" value={search} onChange={(event) => setSearch(event.target.value)} />
-                        <Button type="submit"><Search size={17} /> Cari</Button>
                     </form>
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-silver-deep/60 text-sm">
-                            <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft">
-                                <tr>{['Kode', 'Tanggal', 'Gudang', 'Material', 'Pemohon', 'Status', 'Lock', 'Aksi'].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
-                            </thead>
-                            <tbody className="divide-y divide-silver-deep/50">
-                                {rows.data.map((row) => (
-                                    <tr key={row.id}>
-                                        <td className="px-5 py-4 font-bold">{row.kode_request}</td>
-                                        <td className="px-5 py-4">{row.tanggal}</td>
-                                        <td className="px-5 py-4">{row.gudang}</td>
-                                        <td className="min-w-72 px-5 py-4">{row.items_text}</td>
-                                        <td className="px-5 py-4">{row.pemohon}</td>
-                                        <td className="px-5 py-4 font-bold">{row.status}</td>
-                                        <td className="px-5 py-4 font-bold">{row.record_status === 'locked' ? 'Locked' : 'Draft'}</td>
-                                        <td className="px-5 py-4">
-                                            <div className="flex flex-wrap gap-2">
-                                                {canUpdate && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>}
-                                                {canDelete && row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm(`Hapus ${row.kode_request}?`) && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={15} /> Hapus</Button>}
-                                                {row.record_status === 'locked'
-                                                    ? <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={15} /> Unlock</Button>
-                                                    : <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={15} /> Lock</Button>}
-                                            </div>
-                                        </td>
-                                    </tr>
+                    <div className="mt-3 text-right text-xs font-black text-ink dark:text-white">Total data yang ditemukan: {rows.total ?? rows.data.length}</div>
+                </div>
+
+                <div className="max-h-[64vh] overflow-auto">
+                    <table className="w-full min-w-[1120px] divide-y divide-silver-deep/60 text-xs">
+                        <thead className="sticky top-0 z-10 bg-silver-soft/95 text-left uppercase tracking-[0.12em] text-ink-soft backdrop-blur dark:bg-[#232930] dark:text-white">
+                            <tr>
+                                {['No Transaksi', 'Tanggal', 'Gudang', 'Status', 'Item', 'Keterangan', 'Diminta Oleh', 'Approval', 'Diproses Oleh', 'Aksi'].map((column) => (
+                                    <th className="px-3 py-3 font-extrabold" key={column}>{column}</th>
                                 ))}
-                            </tbody>
-                        </table>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
+                            {rows.data.map((row) => (
+                                <tr key={row.id} onDoubleClick={() => setDetail(row)} className="cursor-pointer hover:bg-silver-soft/70 dark:hover:bg-white/8">
+                                    <td className="px-3 py-2 font-black text-ink dark:text-white">{row.kode_request}</td>
+                                    <td className="px-3 py-2">{row.tanggal}</td>
+                                    <td className="px-3 py-2 font-bold">{row.gudang}</td>
+                                    <td className="px-3 py-2 font-black uppercase">{row.status_label}</td>
+                                    <td className="px-3 py-2">{row.items_count} item</td>
+                                    <td className="px-3 py-2">{row.keterangan}</td>
+                                    <td className="px-3 py-2">{row.requested_by_name}</td>
+                                    <td className="px-3 py-2">{row.approved_by_name}</td>
+                                    <td className="px-3 py-2">{row.processed_by_name}</td>
+                                    <td className="px-3 py-2">
+                                        <div className="flex flex-wrap gap-1.5">
+                                            <IconButton title="Detail" icon={Eye} onClick={() => setDetail(row)} />
+                                            {isLocked(row) ? (
+                                                <>
+                                                    {permissions.canUnlock && row.can_unlock && <IconButton title="Unlock" icon={Unlock} onClick={() => post(`${baseUrl}/${row.id}/unlock`)} />}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    {permissions.canUpdate && row.can_edit && <IconButton title="Edit" icon={Pencil} onClick={() => router.visit(`${baseUrl}/${row.id}/edit`)} />}
+                                                    {permissions.canApprove && row.can_approve && <IconButton title="Approve" icon={CheckCircle2} onClick={() => post(`${baseUrl}/${row.id}/approve`)} />}
+                                                    {permissions.canApprove && row.can_approve && <IconButton title="Tolak" icon={XCircle} danger onClick={() => post(`${baseUrl}/${row.id}/reject`)} />}
+                                                    {permissions.canProcess && row.can_process && <IconButton title="Proses ke Pembelian" icon={ShoppingCart} onClick={() => process(row)} />}
+                                                    {permissions.canDelete && row.can_delete && <IconButton title="Hapus" icon={Trash2} danger onClick={() => destroy(row)} />}
+                                                    {permissions.canLock && row.can_lock && <IconButton title="Lock" icon={Lock} onClick={() => post(`${baseUrl}/${row.id}/lock`)} />}
+                                                </>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                            {rows.data.length === 0 && (
+                                <tr>
+                                    <td colSpan={10} className="px-4 py-10 text-center font-semibold text-ink-soft dark:text-white/55">Belum ada permintaan pembelian.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+                <Pagination links={rows.links} />
+            </section>
+
+            <Modal open={Boolean(detail)} onClose={() => setDetail(null)} title={detail ? `Detail ${detail.kode_request}` : 'Detail Permintaan'} size="xl">
+                {detail && (
+                    <div className="grid gap-4">
+                        <div className="grid gap-3 rounded-lg border border-silver-deep/60 bg-silver-soft/60 p-4 dark:border-white/10 dark:bg-white/5 md:grid-cols-4">
+                            <div><p className="text-xs font-bold uppercase text-ink-soft">Tanggal</p><p className="mt-1 font-black">{detail.tanggal}</p></div>
+                            <div><p className="text-xs font-bold uppercase text-ink-soft">Gudang</p><p className="mt-1 font-black">{detail.gudang}</p></div>
+                            <div><p className="text-xs font-bold uppercase text-ink-soft">Status</p><p className="mt-1 font-black uppercase">{detail.status}</p></div>
+                            <div><p className="text-xs font-bold uppercase text-ink-soft">Diminta Oleh</p><p className="mt-1 font-black">{detail.requested_by_name}</p></div>
+                        </div>
+                        <div className="overflow-auto rounded-lg border border-silver-deep/60 dark:border-white/10">
+                            <table className="w-full min-w-[760px] divide-y divide-silver-deep/60 text-xs">
+                                <thead className="bg-silver-soft/80 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/70">
+                                    <tr>{['No', 'Kode Item', 'Material', 'Jumlah', 'Satuan', 'Catatan'].map((column) => <th className="px-3 py-3 font-extrabold" key={column}>{column}</th>)}</tr>
+                                </thead>
+                                <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
+                                    {detail.items.map((item, index) => (
+                                        <tr key={item.id}>
+                                            <td className="px-3 py-2 font-bold">{index + 1}</td>
+                                            <td className="px-3 py-2">{item.kode_barang}</td>
+                                            <td className="px-3 py-2 font-bold">{item.barang}</td>
+                                            <td className="px-3 py-2 text-right">{decimal(item.qty)}</td>
+                                            <td className="px-3 py-2">{item.satuan}</td>
+                                            <td className="px-3 py-2">{item.catatan ?? '-'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                </section>
-            </div>
+                )}
+            </Modal>
         </>
     );
 }
 
-Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Permintaan Pembelian Barang'}>{page}</AdminLayout>;
+Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Permintaan Pembelian Material'}>{page}</AdminLayout>;

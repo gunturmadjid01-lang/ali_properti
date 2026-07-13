@@ -9,15 +9,11 @@ use App\Models\DetailRumah;
 use App\Models\Gudang;
 use App\Models\MaterialRequest;
 use App\Models\Perumahan;
-use App\Models\SiteSchedule;
-use App\Models\TahapanPembangunan;
 use App\Services\AppNotificationService;
 use App\Services\MaterialWorkflowService;
-use App\Services\MaterialRequestTemplateService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -36,6 +32,7 @@ class MaterialRequestController extends Controller
         return Inertia::render('Admin/MaterialRequest/Index', [
             'title' => 'Permintaan Barang',
             'baseUrl' => route('admin.material-request.index', absolute: false),
+            'createUrl' => route('admin.material-request.create', absolute: false),
             'permissions' => [
                 'canCreate' => $this->canCreateRequest(),
                 'canUpdate' => $this->canUpdateRequest(),
@@ -50,8 +47,6 @@ class MaterialRequestController extends Controller
                 ->with([
                     'gudang:id,nama_gudang',
                     'detailRumah:id,kode_nlok,nomor_rumah',
-                    'siteSchedule:id,nama_pekerjaan',
-                    'tahapanPembangunan:id,nama_tahapan',
                     'details.barangMaterial:id,nama_barang',
                     'creator:id,name',
                     'updater:id,name',
@@ -71,14 +66,8 @@ class MaterialRequestController extends Controller
                     'gudang_id' => (string) ($row->gudang_id ?? ''),
                     'perumahan_id' => (string) ($row->perumahan_id ?? ''),
                     'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
-                    'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
-                    'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),
-                    'progress_diakui' => (float) ($row->progress_diakui ?? 0),
-                    'progress_pembangunan_id' => (string) ($row->progress_pembangunan_id ?? ''),
                     'gudang' => $row->gudang?->nama_gudang ?? 'Gudang Umum',
                     'unit' => $row->detailRumah ? "{$row->detailRumah->kode_nlok} {$row->detailRumah->nomor_rumah}" : '-',
-                    'tahapan' => $row->tahapanPembangunan?->nama_tahapan ?? '-',
-                    'jadwal' => $row->siteSchedule?->nama_pekerjaan ?? '-',
                     'status' => $row->status,
                     'created_by_name' => $row->creator?->name ?? $row->requestedBy?->name ?? '-',
                     'updated_by_name' => $row->updater?->name ?? '-',
@@ -108,46 +97,28 @@ class MaterialRequestController extends Controller
             ]),
             'filters' => ['search' => $search],
             'options' => $this->options(),
-            'templateEndpoint' => route('admin.material-request.templates', absolute: false),
             'canCreate' => $this->canCreateRequest(),
         ]);
     }
 
-    public function templates(Request $request, MaterialRequestTemplateService $templates): JsonResponse
+    public function create(Request $request): Response
     {
-        $validated = $request->validate([
-            'perumahan_id' => ['required', 'exists:perumahans,id'],
-            'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
-            'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'],
-        ]);
+        return Inertia::render('Admin/MaterialRequest/Create', $this->formProps($request));
+    }
 
-        return response()->json([
-            'data' => $templates->build(
-                perumahanId: $validated['perumahan_id'],
-                detailRumahId: $validated['detail_rumah_id'] ?? null,
-                tahapanPembangunanId: $validated['tahapan_pembangunan_id'] ?? null,
-            ),
-        ]);
+    public function edit(Request $request, string $id): Response
+    {
+        $materialRequest = MaterialRequest::query()
+            ->with(['details', 'gudang:id,nama_gudang', 'perumahan:id,nama_perusahaan', 'detailRumah:id,perumahan_id,kode_nlok,nomor_rumah'])
+            ->findOrFail($id);
+
+        return Inertia::render('Admin/MaterialRequest/Create', $this->formProps($request, $materialRequest));
     }
 
     public function store(Request $request, AppNotificationService $notifications): RedirectResponse
     {
         abort_unless($this->canCreateRequest(), 403, 'Hanya pengawas yang dapat membuat permintaan barang.');
-        $validated = $request->validate([
-            'tanggal' => ['required', 'date'],
-            'gudang_id' => ['nullable', 'exists:gudangs,id'],
-            'perumahan_id' => ['nullable', 'exists:perumahans,id'],
-            'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
-            'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'],
-            'site_schedule_id' => ['nullable', 'exists:site_schedules,id'],
-            'progress_diakui' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'keterangan' => ['nullable', 'string'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.barang_material_id' => ['required', 'exists:barang_materials,id'],
-            'items.*.qty' => ['required', 'numeric', 'min:0.01'],
-            'items.*.satuan' => ['nullable', 'string'],
-            'items.*.catatan' => ['nullable', 'string'],
-        ]);
+        $validated = $this->validatePayload($request);
 
         DB::transaction(function () use ($validated, $notifications) {
             $detailRumah = ! empty($validated['detail_rumah_id']) ? DetailRumah::query()->find($validated['detail_rumah_id']) : null;
@@ -308,23 +279,36 @@ class MaterialRequestController extends Controller
             'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
             'gudangs' => Gudang::query()->where('status', 'aktif')->orderBy('nama_gudang')->get(['id', 'nama_gudang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])->values(),
             'detailRumahs' => DetailRumah::query()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}", 'perumahan_id' => (string) $row->perumahan_id])->values(),
-            'tahapanPembangunans' => app(\App\Services\TahapanOptionService::class)->forContext('unit'),
-            'siteSchedules' => SiteSchedule::query()
-                ->with(['detailRumah:id,kode_nlok,nomor_rumah', 'spkKontraktor:id,nomor_spk,judul_pekerjaan,status,approved_at'])
-                ->whereHas('spkKontraktor', fn (Builder $query) => $query->where('status', '!=', 'batal')->whereNotNull('approved_at'))
-                ->orderByDesc('tanggal_target')
-                ->limit(500)
-                ->get(['id', 'perumahan_id', 'detail_rumah_id', 'spk_kontraktor_id', 'tahapan_pembangunan_id', 'kode_jadwal', 'nama_pekerjaan', 'target_progress', 'realisasi_progress'])
-                ->map(fn (SiteSchedule $row) => [
-                    'value' => (string) $row->id,
-                    'label' => trim(($row->kode_jadwal ?? 'Jadwal').' - '.($row->detailRumah ? trim(($row->detailRumah->kode_nlok ?? '').' '.($row->detailRumah->nomor_rumah ?? '')) : 'Kawasan').' - '.$row->nama_pekerjaan).' (target '.$row->target_progress.'%, realisasi '.$row->realisasi_progress.'%)',
-                    'perumahan_id' => (string) $row->perumahan_id,
-                    'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
-                    'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
-                    'spk_label' => $row->spkKontraktor ? trim($row->spkKontraktor->nomor_spk.' '.$row->spkKontraktor->judul_pekerjaan) : '-',
-                ])
-                ->values(),
-            'barangMaterials' => BarangMaterial::query()->orderBy('nama_barang')->get(['id', 'nama_barang', 'satuan', 'harga_hpp'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_barang, 'satuan' => $row->satuan, 'harga_hpp' => $row->harga_hpp])->values(),
+            'barangMaterials' => BarangMaterial::query()->where('status', 'aktif')->orderBy('nama_barang')->get(['id', 'kode_barang', 'nama_barang', 'satuan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->kode_barang} - {$row->nama_barang}", 'satuan' => $row->satuan])->values(),
+        ];
+    }
+
+    protected function formProps(Request $request, ?MaterialRequest $row = null): array
+    {
+        return [
+            'title' => $row ? 'Edit Permintaan Barang' : 'Tambah Permintaan Barang',
+            'baseUrl' => $row ? route('admin.material-request.update', $row->id, absolute: false) : route('admin.material-request.store', absolute: false),
+            'indexUrl' => route('admin.material-request.index', absolute: false),
+            'nextCode' => $row?->kode_request ?? ('REQ-'.now()->format('YmdHisv').'-'.str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT)),
+            'request' => $row ? [
+                'id' => (string) $row->id,
+                'kode_request' => $row->kode_request,
+                'tanggal' => optional($row->tanggal)->format('Y-m-d'),
+                'gudang_id' => (string) ($row->gudang_id ?? ''),
+                'perumahan_id' => (string) ($row->perumahan_id ?? ''),
+                'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
+                'keterangan' => $row->keterangan ?? '',
+                'items' => $row->details->map(fn ($detail) => [
+                    'barang_material_id' => (string) $detail->barang_material_id,
+                    'kode_barang' => $detail->barangMaterial?->kode_barang ?? '',
+                    'nama_barang' => $detail->barangMaterial?->nama_barang ?? '',
+                    'satuan' => $detail->satuan ?? $detail->barangMaterial?->satuan ?? '',
+                    'qty' => $detail->qty,
+                    'catatan' => $detail->catatan ?? '',
+                ])->values(),
+            ] : null,
+            'options' => $this->options(),
+            'canCreate' => $this->canCreateRequest(),
         ];
     }
 
@@ -355,9 +339,6 @@ class MaterialRequestController extends Controller
             'gudang_id' => ['required', 'exists:gudangs,id'],
             'perumahan_id' => ['nullable', 'exists:perumahans,id'],
             'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
-            'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'],
-            'site_schedule_id' => ['nullable', 'exists:site_schedules,id'],
-            'progress_diakui' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'keterangan' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.barang_material_id' => ['required', 'exists:barang_materials,id'],

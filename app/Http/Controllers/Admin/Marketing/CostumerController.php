@@ -202,20 +202,20 @@ class CostumerController extends Controller
     protected function fields(): array
     {
         return [
-            ['name' => 'nama', 'label' => 'Nama Lengkap', 'type' => 'text', 'group' => 'profile'],
+            ['name' => 'nama', 'label' => 'Nama Lengkap', 'type' => 'text', 'group' => 'profile', 'required' => true],
             ['name' => 'marketing_lead_source_id', 'label' => 'Sumber Lead', 'type' => 'select', 'optionsKey' => 'leadSourceOptions', 'group' => 'profile'],
             ['name' => 'marketing_campaign_id', 'label' => 'Campaign Promosi', 'type' => 'select', 'optionsKey' => 'campaignOptions', 'group' => 'profile'],
-            ['name' => 'jenis_kelamin', 'label' => 'Jenis Kelamin', 'type' => 'select', 'optionsKey' => 'genderOptions', 'group' => 'profile'],
-            ['name' => 'jenis_identitas', 'label' => 'Jenis Identitas', 'type' => 'select', 'optionsKey' => 'identityOptions', 'group' => 'profile'],
-            ['name' => 'no_identitas', 'label' => 'No Identitas', 'type' => 'text', 'group' => 'profile'],
+            ['name' => 'jenis_kelamin', 'label' => 'Jenis Kelamin', 'type' => 'select', 'optionsKey' => 'genderOptions', 'group' => 'profile', 'required' => true],
+            ['name' => 'jenis_identitas', 'label' => 'Jenis Identitas', 'type' => 'select', 'optionsKey' => 'identityOptions', 'group' => 'profile', 'required' => true],
+            ['name' => 'no_identitas', 'label' => 'No Identitas', 'type' => 'text', 'group' => 'profile', 'required' => true],
             ['name' => 'tanggal_lahir', 'label' => 'Tanggal Lahir', 'type' => 'date', 'group' => 'profile'],
             ['name' => 'tempat_lahir', 'label' => 'Tempat Lahir', 'type' => 'text', 'group' => 'profile'],
-            ['name' => 'status_perkawinan', 'label' => 'Status Perkawinan', 'type' => 'select', 'optionsKey' => 'maritalOptions', 'group' => 'profile'],
+            ['name' => 'status_perkawinan', 'label' => 'Status Perkawinan', 'type' => 'select', 'optionsKey' => 'maritalOptions', 'group' => 'profile', 'required' => true],
             ['name' => 'telepon', 'label' => 'Telepon', 'type' => 'text', 'group' => 'profile'],
             ['name' => 'email', 'label' => 'Email', 'type' => 'email', 'group' => 'profile'],
             ['name' => 'npwp', 'label' => 'NPWP', 'type' => 'text', 'group' => 'profile'],
             ['name' => 'file_identitas', 'label' => 'File Identitas', 'type' => 'text', 'group' => 'profile', 'placeholder' => 'Nama file/path identitas'],
-            ['name' => 'alamat', 'label' => 'Alamat', 'type' => 'textarea', 'group' => 'profile', 'full' => true],
+            ['name' => 'alamat', 'label' => 'Alamat', 'type' => 'textarea', 'group' => 'profile', 'full' => true, 'required' => true],
             ['name' => 'keterangan', 'label' => 'Keterangan Customer', 'type' => 'textarea', 'group' => 'profile', 'full' => true],
 
             ['name' => 'pekerjaan', 'label' => 'Pekerjaan', 'type' => 'text', 'group' => 'pekerjaan'],

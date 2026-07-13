@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             RolePermissionSeeder::class,
             CabangPerusahaanSeeder::class,
             UserSeeder::class,
+            GudangSeeder::class,
             BarangMaterialSeeder::class,
             HppReferenceSeeder::class,
             OperationalSettingSeeder::class,
@@ -30,6 +31,7 @@ class DatabaseSeeder extends Seeder
             BankKreditSeeder::class,
             TipePostSeeder::class,
             KelompokHppSeeder::class,
+            InventoryHeavyEquipmentSeeder::class,
         ]);
     }
 }

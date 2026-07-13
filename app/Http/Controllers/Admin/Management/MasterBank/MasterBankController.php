@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Management\MasterBank;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\RendersSeparatedManagementForm;
 use App\Http\Requests\Admin\MasterBank\StoreMasterBankRequest;
 use App\Http\Requests\Admin\MasterBank\UpdateMasterBankRequest;
 use App\Models\MasterBank;
@@ -17,7 +18,7 @@ use Inertia\Response;
 
 class MasterBankController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, RendersSeparatedManagementForm;
 
     public function index(Request $request): Response
     {
@@ -39,12 +40,15 @@ class MasterBankController extends Controller
                 ...$row->toArray(),
                 'perumahan_nama' => $row->perumahan?->nama_perusahaan ?? '-',
                 'record_status_label' => $row->record_status === 'locked' ? 'Locked' : 'Draft',
+                'edit_url' => route($this->routeName().'.edit', $row->id, false),
             ]);
 
         return Inertia::render($this->component(), [
             'title' => $this->title(),
             'description' => $this->description(),
             'baseUrl' => route($this->routeName().'.index', absolute: false),
+            'createUrl' => route($this->routeName().'.create', absolute: false),
+            'permissionKey' => 'master-bank',
             'routeName' => $this->routeName(),
             'filters' => ['search' => $search],
             'rows' => $rows,
@@ -61,7 +65,7 @@ class MasterBankController extends Controller
             'kode_bank' => CodeGenerator::next(MasterBank::class, 'kode_bank', 'BNK'),
         ]);
 
-        return back()->with('success', $this->title().' berhasil ditambahkan.');
+        return to_route($this->routeName().'.index')->with('success', $this->title().' berhasil ditambahkan.');
     }
 
     public function update(UpdateMasterBankRequest $request, string $id): RedirectResponse
@@ -70,7 +74,7 @@ class MasterBankController extends Controller
         $this->abortIfLocked($row);
         $row->update($request->validated());
 
-        return back()->with('success', $this->title().' berhasil diperbarui.');
+        return to_route($this->routeName().'.index')->with('success', $this->title().' berhasil diperbarui.');
     }
 
     public function destroy(string $id): RedirectResponse
@@ -99,7 +103,7 @@ class MasterBankController extends Controller
 
     protected function title(): string
     {
-        return 'Management Master Bank';
+        return 'Master Rekening Bank';
     }
 
     protected function columns(): array
@@ -118,11 +122,11 @@ class MasterBankController extends Controller
     protected function fields(): array
     {
         return [
-            ['name' => 'perumahan_id', 'label' => 'Perumahan', 'type' => 'select', 'optionsKey' => 'perumahan'],
-            ['name' => 'nama_bank', 'label' => 'Nama Bank', 'type' => 'text'],
+            ['name' => 'perumahan_id', 'label' => 'Perumahan', 'type' => 'select', 'optionsKey' => 'perumahan', 'required' => true],
+            ['name' => 'nama_bank', 'label' => 'Nama Bank', 'type' => 'text', 'required' => true],
             ['name' => 'nomor_rekening', 'label' => 'Nomor Rekening', 'type' => 'text'],
             ['name' => 'nama_rekening', 'label' => 'Nama Rekening', 'type' => 'text'],
-            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status'],
+            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status', 'required' => true],
         ];
     }
 

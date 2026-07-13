@@ -1,32 +1,63 @@
-import { Head, useForm } from '@inertiajs/react';
-import { PlusCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { Button } from '../../../../Components/UI';
-import AdminLayout from '../../../../Layouts/AdminLayout';
-import { useResourcePermissions } from '../../../../Utils/permissions';
+import { Head, useForm } from "@inertiajs/react";
+import { PlusCircle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Button } from "../../../../Components/UI";
+import AdminLayout from "../../../../Layouts/AdminLayout";
+import { useResourcePermissions } from "../../../../Utils/permissions";
 
 function defaultValues(fields) {
     return fields.reduce((values, field) => {
-        values[field.name] = field.type === 'checkboxes' ? [] : (field.defaultValue ?? '');
+        values[field.name] =
+            field.type === "checkboxes"
+                ? []
+                : field.type === "checkbox"
+                  ? Boolean(field.defaultValue)
+                  : (field.defaultValue ?? "");
         return values;
     }, {});
 }
 
 function valuesFromRow(fields, row) {
     return fields.reduce((values, field) => {
-        values[field.name] = row[field.name] ?? (field.type === 'checkboxes' ? [] : '');
+        values[field.name] =
+            row[field.name] ??
+            (field.type === "checkboxes"
+                ? []
+                : field.type === "checkbox"
+                  ? false
+                  : "");
         return values;
     }, {});
 }
 
-function ManagementPageContent({ title, description, baseUrl, permissionKey, readOnly = false, columns, fields, rows, filters, options, TableComponent, FormComponent, requestService }) {
+function ManagementPageContent({
+    title,
+    description,
+    baseUrl,
+    permissionKey,
+    readOnly = false,
+    columns,
+    fields,
+    rows,
+    filters,
+    options,
+    TableComponent,
+    FormComponent,
+    requestService,
+}) {
     const defaults = useMemo(() => defaultValues(fields), [fields]);
     const form = useForm(defaults);
     const [selected, setSelected] = useState(null);
     const [formOpen, setFormOpen] = useState(false);
     const resourcePermissions = useResourcePermissions(permissionKey, baseUrl);
     const permissions = readOnly
-        ? { ...resourcePermissions, canCreate: false, canUpdate: false, canDelete: false, canUnlock: false }
+        ? {
+              ...resourcePermissions,
+              canCreate: false,
+              canUpdate: false,
+              canDelete: false,
+              canUnlock: false,
+          }
         : resourcePermissions;
 
     const resetForm = () => {
@@ -62,7 +93,10 @@ function ManagementPageContent({ title, description, baseUrl, permissionKey, rea
 
     const submit = (event) => {
         event.preventDefault();
-        if ((selected && !permissions.canUpdate) || (!selected && !permissions.canCreate)) {
+        if (
+            (selected && !permissions.canUpdate) ||
+            (!selected && !permissions.canCreate)
+        ) {
             return;
         }
 
@@ -82,9 +116,15 @@ function ManagementPageContent({ title, description, baseUrl, permissionKey, rea
                 <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                         <div>
-                            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">Master Data</p>
-                            <h2 className="mt-1 text-xl font-extrabold">{title}</h2>
-                            <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-soft dark:text-white/60">{description}</p>
+                            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">
+                                Master Data
+                            </p>
+                            <h2 className="mt-1 text-xl font-extrabold">
+                                {title}
+                            </h2>
+                            <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-soft dark:text-white/60">
+                                {description}
+                            </p>
                         </div>
                         {permissions.canCreate && (
                             <Button type="button" onClick={openCreate}>
@@ -103,10 +143,18 @@ function ManagementPageContent({ title, description, baseUrl, permissionKey, rea
                     options={options}
                     permissions={permissions}
                     onEdit={editRow}
-                    onDelete={(row) => permissions.canDelete && requestService.destroy({ baseUrl, row })}
+                    onDelete={(row) =>
+                        permissions.canDelete &&
+                        requestService.destroy({ baseUrl, row })
+                    }
                     onLock={(row) => requestService.lock?.({ baseUrl, row })}
-                    onUnlock={(row) => permissions.canUnlock && requestService.unlock?.({ baseUrl, row })}
-                    onSearch={(search) => requestService.search({ baseUrl, search })}
+                    onUnlock={(row) =>
+                        permissions.canUnlock &&
+                        requestService.unlock?.({ baseUrl, row })
+                    }
+                    onSearch={(search) =>
+                        requestService.search({ baseUrl, search })
+                    }
                 />
 
                 {(permissions.canCreate || permissions.canUpdate) && (
@@ -129,7 +177,16 @@ function ManagementPageContent({ title, description, baseUrl, permissionKey, rea
 export default function ManagementPage(props) {
     const { TableComponent, FormComponent, requestService } = props;
 
-    return <ManagementPageContent {...props} TableComponent={TableComponent} FormComponent={FormComponent} requestService={requestService} />;
+    return (
+        <ManagementPageContent
+            {...props}
+            TableComponent={TableComponent}
+            FormComponent={FormComponent}
+            requestService={requestService}
+        />
+    );
 }
 
-ManagementPage.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Admin'}>{page}</AdminLayout>;
+ManagementPage.layout = (page) => (
+    <AdminLayout title={page?.props?.title ?? "Admin"}>{page}</AdminLayout>
+);

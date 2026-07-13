@@ -5,11 +5,15 @@ import { Button, Dropdown, Input, Modal } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
 const statusLabel = {
+    menunggu_approval: 'Menunggu Approval',
     pending: 'Belum Diperiksa',
     sesuai: 'Sesuai',
     tidak_sesuai: 'Tidak Sesuai',
+    approved: 'Approved',
     dibeli: 'Sudah Dibeli',
+    menunggu_pengecekan: 'Menunggu Pengecekan',
     menunggu_pemeriksaan_gudang: 'Menunggu Pemeriksaan',
+    pengecekan_selesai: 'Pengecekan Selesai',
     diterima_logistik: 'Diterima Logistik',
     diterima_sebagian: 'Diterima Sebagian',
     ditolak_gudang: 'Ditolak Gudang',
@@ -41,6 +45,8 @@ export default function Inspection({ title, baseUrl, rows = { data: [], links: [
     const [status, setStatus] = useState(filters.status ?? '');
     const [gudangId, setGudangId] = useState(filters.gudang_id ?? '');
     const [detail, setDetail] = useState(null);
+    const [inspectionInputs, setInspectionInputs] = useState({});
+    const [arrivalDate, setArrivalDate] = useState('');
 
     const applyFilter = (event) => {
         event.preventDefault();
@@ -57,12 +63,42 @@ export default function Inspection({ title, baseUrl, rows = { data: [], links: [
         });
     };
 
-    const inspect = (purchase, item, inspectionStatus) => {
-        const label = inspectionStatus === 'sesuai' ? 'sesuai' : 'tidak sesuai';
-        if (!window.confirm(`Nyatakan ${item.barang} ${label}? Keputusan ini tidak dapat diproses dua kali.`)) return;
-        const catatan = window.prompt(`Catatan pemeriksaan ${item.barang} (opsional):`, '') ?? '';
+    const openDetail = (purchase) => {
+        const nextInputs = {};
+        purchase.items.forEach((item) => {
+            nextInputs[item.id] = {
+                qty_diterima: item.inspection_status === 'pending' ? item.qty : item.qty_diterima,
+                catatan: item.inspection_note ?? '',
+            };
+        });
+        setInspectionInputs(nextInputs);
+        setArrivalDate(purchase.tanggal_barang_masuk || purchase.tanggal || '');
+        setDetail(purchase);
+    };
 
-        router.post(`${baseUrl}/${purchase.id}/item/${item.id}`, { status: inspectionStatus, catatan }, {
+    const setInspectionInput = (itemId, key, value) => {
+        setInspectionInputs((current) => ({
+            ...current,
+            [itemId]: {
+                ...(current[itemId] ?? {}),
+                [key]: value,
+            },
+        }));
+    };
+
+    const inspect = (purchase, item, inspectionStatus, forcedQty = null) => {
+        const input = inspectionInputs[item.id] ?? {};
+        const qtyDiterima = forcedQty !== null ? forcedQty : (inspectionStatus === 'sesuai' ? item.qty : Number(input.qty_diterima ?? 0));
+        const label = qtyDiterima > 0 && qtyDiterima < Number(item.qty) ? `terima sebagian ${qtyDiterima} ${item.satuan}` : (inspectionStatus === 'sesuai' ? 'terima sesuai' : 'tolak/tidak sesuai');
+
+        if (!window.confirm(`Proses ${item.barang}: ${label}? Keputusan ini tidak dapat diproses dua kali.`)) return;
+
+        router.post(`${baseUrl}/${purchase.id}/item/${item.id}`, {
+            status: inspectionStatus,
+            qty_diterima: qtyDiterima,
+            tanggal_barang_masuk: arrivalDate,
+            catatan: input.catatan ?? '',
+        }, {
             preserveScroll: true,
             onSuccess: () => setDetail(null),
         });
@@ -98,17 +134,18 @@ export default function Inspection({ title, baseUrl, rows = { data: [], links: [
                         <table className="min-w-full divide-y divide-silver-deep/60 text-sm dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5">
                                 <tr>
-                                    {['Tanggal', 'Kode Pembelian', 'Gudang', 'Supplier', 'Item', 'Pemeriksaan', 'Penerima', 'Status', 'Aksi'].map((column) => (
+                                    {['Tanggal', 'Barang Masuk', 'Kode Pembelian', 'Gudang', 'Supplier', 'Item', 'Pemeriksaan', 'Penerima', 'Status', 'Aksi'].map((column) => (
                                         <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
                                 {rows.data.map((purchase) => (
-                                    <tr key={purchase.id}>
-                                        <td className="px-5 py-4 font-bold">{purchase.tanggal}</td>
-                                        <td className="px-5 py-4 font-extrabold">{purchase.kode_pembelian}</td>
-                                        <td className="px-5 py-4">{purchase.gudang}</td>
+                                        <tr key={purchase.id}>
+                                            <td className="px-5 py-4 font-bold">{purchase.tanggal}</td>
+                                            <td className="px-5 py-4 font-bold">{purchase.tanggal_barang_masuk || '-'}</td>
+                                            <td className="px-5 py-4 font-extrabold">{purchase.kode_pembelian}</td>
+                                            <td className="px-5 py-4">{purchase.gudang}</td>
                                         <td className="px-5 py-4">{purchase.supplier}</td>
                                         <td className="px-5 py-4 font-bold">{purchase.items_count} item</td>
                                         <td className="px-5 py-4 text-xs font-bold">
@@ -121,13 +158,13 @@ export default function Inspection({ title, baseUrl, rows = { data: [], links: [
                                         <td className="px-5 py-4">{purchase.received_by_name}</td>
                                         <td className="px-5 py-4 font-extrabold">{statusLabel[purchase.status] ?? purchase.status}</td>
                                         <td className="px-5 py-4">
-                                            <Button type="button" size="sm" variant="outline" onClick={() => setDetail(purchase)}><Eye size={15} /> Detail</Button>
+                                            <Button type="button" size="sm" variant="outline" onClick={() => openDetail(purchase)}><Eye size={15} /> Detail</Button>
                                         </td>
                                     </tr>
                                 ))}
                                 {rows.data.length === 0 && (
                                     <tr>
-                                        <td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={9}>Belum ada pembelian yang perlu diperiksa.</td>
+                                        <td className="px-5 py-10 text-center font-bold text-ink-soft" colSpan={10}>Belum ada pembelian yang perlu diperiksa.</td>
                                     </tr>
                                 )}
                             </tbody>
@@ -146,8 +183,17 @@ export default function Inspection({ title, baseUrl, rows = { data: [], links: [
             >
                 {detail && (
                     <div className="grid gap-5">
-                        <div className="grid gap-3 rounded-lg border border-silver-deep/60 bg-silver-soft/60 p-4 dark:border-white/10 dark:bg-white/5 md:grid-cols-4">
+                        <div className="grid gap-3 rounded-lg border border-silver-deep/60 bg-silver-soft/60 p-4 dark:border-white/10 dark:bg-white/5 md:grid-cols-5">
                             <div><p className="text-xs font-bold uppercase text-ink-soft">Tanggal</p><p className="mt-1 font-extrabold">{detail.tanggal}</p></div>
+                            <label className="grid gap-1">
+                                <span className="text-xs font-bold uppercase text-ink-soft">Tanggal Barang Masuk</span>
+                                <input
+                                    className="h-10 rounded-lg border border-silver-deep/70 bg-white/85 px-3 text-sm font-bold text-ink outline-none dark:border-white/10 dark:bg-white/8 dark:text-white"
+                                    type="date"
+                                    value={arrivalDate}
+                                    onChange={(event) => setArrivalDate(event.target.value)}
+                                />
+                            </label>
                             <div><p className="text-xs font-bold uppercase text-ink-soft">Gudang</p><p className="mt-1 font-extrabold">{detail.gudang}</p></div>
                             <div><p className="text-xs font-bold uppercase text-ink-soft">Supplier</p><p className="mt-1 font-extrabold">{detail.supplier}</p></div>
                             <div><p className="text-xs font-bold uppercase text-ink-soft">Status</p><p className="mt-1 font-extrabold">{statusLabel[detail.status] ?? detail.status}</p></div>
@@ -171,9 +217,29 @@ export default function Inspection({ title, baseUrl, rows = { data: [], links: [
                                             <td className="px-4 py-3">{item.inspection_note || '-'}</td>
                                             <td className="px-4 py-3">
                                                 {item.inspection_status === 'pending' ? (
-                                                    <div className="flex flex-wrap gap-2">
-                                                        <Button type="button" size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => inspect(detail, item, 'sesuai')}><Check size={16} /> Sesuai</Button>
-                                                        <Button type="button" size="sm" className="bg-red-600 text-white hover:bg-red-700" onClick={() => inspect(detail, item, 'tidak_sesuai')}><X size={16} /> Tidak</Button>
+                                                    <div className="grid min-w-72 gap-2">
+                                                        <div className="grid grid-cols-[110px_1fr] gap-2">
+                                                            <input
+                                                                className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-3 text-right text-xs font-bold text-ink outline-none dark:border-white/10 dark:bg-white/8 dark:text-white"
+                                                                type="number"
+                                                                min="0"
+                                                                max={item.qty}
+                                                                step="0.01"
+                                                                value={inspectionInputs[item.id]?.qty_diterima ?? item.qty}
+                                                                onChange={(event) => setInspectionInput(item.id, 'qty_diterima', event.target.value)}
+                                                            />
+                                                            <input
+                                                                className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-3 text-xs font-bold text-ink outline-none dark:border-white/10 dark:bg-white/8 dark:text-white"
+                                                                placeholder="Catatan rusak/kurang"
+                                                                value={inspectionInputs[item.id]?.catatan ?? ''}
+                                                                onChange={(event) => setInspectionInput(item.id, 'catatan', event.target.value)}
+                                                            />
+                                                        </div>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <Button type="button" size="sm" className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => inspect(detail, item, 'sesuai')}><Check size={16} /> Semua Sesuai</Button>
+                                                            <Button type="button" size="sm" className="bg-amber-600 text-white hover:bg-amber-700" onClick={() => inspect(detail, item, 'tidak_sesuai')}><Check size={16} /> Terima Qty</Button>
+                                                            <Button type="button" size="sm" className="bg-red-600 text-white hover:bg-red-700" onClick={() => inspect(detail, item, 'tidak_sesuai', 0)}><X size={16} /> Tolak</Button>
+                                                        </div>
                                                     </div>
                                                 ) : (
                                                     <span className="text-xs font-bold text-ink-soft">{item.checked_at || 'Sudah dicek'}</span>

@@ -27,7 +27,8 @@ class FinanceController extends Controller
 {
     protected array $sections = [
         'dashboard' => 'Dashboard Keuangan',
-        'transaksi-kas-bank' => 'Input Kas Masuk / Kas Keluar',
+        'pemasukan' => 'Pemasukan Kas & Bank',
+        'pengeluaran' => 'Pengeluaran Kas & Bank',
         'daftar-akun' => 'Daftar Akun',
         'jurnal-umum' => 'Jurnal Umum',
         'buku-besar' => 'Buku Besar',
@@ -78,6 +79,7 @@ class FinanceController extends Controller
                     ->where('status', 'aktif')
                     ->whereNotNull('debit_account_id')
                     ->whereNotNull('credit_account_id')
+                    ->when(in_array($section, ['pemasukan', 'pengeluaran'], true), fn (Builder $query) => $query->where('jenis', $section))
                     ->orderBy('jenis')
                     ->orderBy('nama_post')
                     ->get()
@@ -138,6 +140,21 @@ class FinanceController extends Controller
 
     public function storeTransaction(Request $request, AccountingService $accounting): RedirectResponse
     {
+        return $this->storeTransactionForType($request, $accounting);
+    }
+
+    public function storeIncome(Request $request, AccountingService $accounting): RedirectResponse
+    {
+        return $this->storeTransactionForType($request, $accounting, 'pemasukan');
+    }
+
+    public function storeExpense(Request $request, AccountingService $accounting): RedirectResponse
+    {
+        return $this->storeTransactionForType($request, $accounting, 'pengeluaran');
+    }
+
+    protected function storeTransactionForType(Request $request, AccountingService $accounting, ?string $expectedType = null): RedirectResponse
+    {
         $this->authorizeFinanceWrite($request);
         $validated = $request->validate([
             'perumahan_id' => ['required', 'exists:perumahans,id'],
@@ -157,6 +174,7 @@ class FinanceController extends Controller
             ->firstOrFail();
         $post = TipePost::query()
             ->whereKey($validated['tipe_post_id'])
+            ->when($expectedType, fn (Builder $query, string $type) => $query->where('jenis', $type))
             ->where('status', 'aktif')
             ->whereNotNull('debit_account_id')
             ->whereNotNull('credit_account_id')
@@ -206,7 +224,8 @@ class FinanceController extends Controller
     {
         return match ($section) {
             'dashboard' => $this->dashboardData($from, $to, $perumahanId),
-            'transaksi-kas-bank' => $this->manualTransactionData($from, $to, $perumahanId),
+            'pemasukan' => $this->manualTransactionData($from, $to, $perumahanId, 'pemasukan'),
+            'pengeluaran' => $this->manualTransactionData($from, $to, $perumahanId, 'pengeluaran'),
             'daftar-akun' => $this->accountData(),
             'jurnal-umum' => $this->journalData($from, $to, $perumahanId),
             'buku-besar' => $this->ledgerData($request, $from, $to, $perumahanId),
@@ -219,7 +238,7 @@ class FinanceController extends Controller
         };
     }
 
-    protected function manualTransactionData(Carbon $from, Carbon $to, ?int $perumahanId): array
+    protected function manualTransactionData(Carbon $from, Carbon $to, ?int $perumahanId, ?string $type = null): array
     {
         return [
             'rows' => TransaksiKeuangan::query()
@@ -230,6 +249,7 @@ class FinanceController extends Controller
                     'user:id,name',
                 ])
                 ->whereBetween('tanggal', [$from, $to])
+                ->when($type, fn (Builder $query, string $type) => $query->whereHas('tipePost', fn (Builder $postQuery) => $postQuery->where('jenis', $type)))
                 ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))
                 ->latest('tanggal')
                 ->latest('id')

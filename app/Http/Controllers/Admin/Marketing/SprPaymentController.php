@@ -239,7 +239,53 @@ class SprPaymentController extends Controller
             ]);
         });
 
-        return back()->with('success', 'Pengajuan refund berhasil dikirim ke manajer.');
+        return to_route('admin.refund-spr.index')->with('success', 'Pengajuan refund berhasil dikirim ke manajer.');
+    }
+
+    public function createRefundRequest(Request $request, string $sprId): Response
+    {
+        abort_unless($this->canRequestRefund($request), 403, 'Hanya admin keuangan yang dapat mengajukan refund.');
+        $spr = Spr::query()->with(['costumer', 'detailRumah.perumahan', 'payments'])->findOrFail($sprId);
+        $row = $this->refundRow($spr, $request);
+        abort_unless($row['can_request'], 422, 'SPR ini tidak dapat diajukan refund.');
+
+        return Inertia::render('Admin/Marketing/SprPayment/RefundFormPage', [
+            'title' => 'Ajukan Refund '.$spr->kode_spr,
+            'mode' => 'request',
+            'baseUrl' => route('admin.refund-spr.index', absolute: false),
+            'actionUrl' => route('admin.keuangan.refund-spr.store', $spr->id, false),
+            'row' => $row,
+            'bankOptions' => $this->bankOptions(),
+        ]);
+    }
+
+    public function reviewRefund(Request $request, string $sprId, string $action): Response
+    {
+        abort_unless(in_array($action, ['manager', 'owner', 'reject'], true), 404);
+        $spr = Spr::query()->with(['costumer', 'detailRumah.perumahan', 'payments'])->findOrFail($sprId);
+        $row = $this->refundRow($spr, $request);
+        abort_unless(
+            ($action === 'manager' && $row['can_approve_manager'])
+            || ($action === 'owner' && $row['can_approve_owner'])
+            || ($action === 'reject' && $row['can_reject']),
+            403,
+        );
+
+        $actionUrl = match ($action) {
+            'manager' => route('admin.refund-spr.approve-manager', $spr->id, false),
+            'owner' => route('admin.refund-spr.approve-owner', $spr->id, false),
+            default => route('admin.refund-spr.reject', $spr->id, false),
+        };
+
+        return Inertia::render('Admin/Marketing/SprPayment/RefundFormPage', [
+            'title' => ($action === 'reject' ? 'Tolak' : 'Approval').' Refund '.$spr->kode_spr,
+            'mode' => 'review',
+            'action' => $action,
+            'baseUrl' => route('admin.refund-spr.index', absolute: false),
+            'actionUrl' => $actionUrl,
+            'row' => $row,
+            'bankOptions' => [],
+        ]);
     }
 
     public function approveRefundManager(Request $request, string $sprId): RedirectResponse
@@ -259,7 +305,7 @@ class SprPaymentController extends Controller
             'refund_approval_note' => $this->appendApprovalNote($spr->refund_approval_note, 'Manajer', $validated['note'] ?? null),
         ]);
 
-        return back()->with('success', 'Refund disetujui manajer dan menunggu owner.');
+        return to_route('admin.refund-spr.index')->with('success', 'Refund disetujui manajer dan menunggu owner.');
     }
 
     public function approveRefundOwner(Request $request, string $sprId): RedirectResponse
@@ -301,7 +347,7 @@ class SprPaymentController extends Controller
             ]);
         });
 
-        return back()->with('success', 'Refund disetujui owner dan transaksi pengeluaran sudah dibuat.');
+        return to_route('admin.refund-spr.index')->with('success', 'Refund disetujui owner dan transaksi pengeluaran sudah dibuat.');
     }
 
     public function rejectRefund(Request $request, string $sprId): RedirectResponse
@@ -320,7 +366,7 @@ class SprPaymentController extends Controller
             'refund_approval_note' => $this->appendApprovalNote($spr->refund_approval_note, 'Reject', $validated['note']),
         ]);
 
-        return back()->with('success', 'Refund ditolak.');
+        return to_route('admin.refund-spr.index')->with('success', 'Refund ditolak.');
     }
 
     public function storeBookingFee(Request $request, string $sprId): RedirectResponse

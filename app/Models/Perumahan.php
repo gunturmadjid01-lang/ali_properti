@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class Perumahan extends Model
 {
@@ -52,6 +53,12 @@ class Perumahan extends Model
 
     protected static function booted(): void
     {
+        static::creating(function (Perumahan $perumahan): void {
+            if (blank($perumahan->kode_proyek)) {
+                $perumahan->kode_proyek = static::nextKodeProyek();
+            }
+        });
+
         static::deleting(function (Perumahan $perumahan) {
             $perumahan->detailRumahs()->get()->each->delete();
             $perumahan->perumahanHpps()->get()->each->delete();
@@ -59,6 +66,18 @@ class Perumahan extends Model
             $perumahan->dokumenLegalitas()->get()->each->delete();
             $perumahan->dokumenLegalitasRumahs()->get()->each->delete();
         });
+    }
+
+    public static function nextKodeProyek(): string
+    {
+        $number = (int) (static::withTrashed()->max('id') ?? 0) + 1;
+
+        do {
+            $code = 'PRJ-'.Str::padLeft((string) $number, 5, '0');
+            $number++;
+        } while (static::withTrashed()->where('kode_proyek', $code)->exists());
+
+        return $code;
     }
 
     public function cabang(): BelongsTo

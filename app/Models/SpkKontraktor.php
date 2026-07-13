@@ -95,4 +95,14 @@ class SpkKontraktor extends Model
     {
         return $this->belongsTo(User::class, 'updated_by');
     }
+
+    public function approvedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'approved_by');
+    }
+
+    public function lockedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'locked_by');
+    }
 }

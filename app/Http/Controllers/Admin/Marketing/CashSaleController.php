@@ -14,6 +14,7 @@ use App\Models\TipePost;
 use App\Models\TransaksiKeuangan;
 use App\Services\AccountingService;
 use App\Services\Marketing\MarketingLeadStatusService;
+use App\Services\UnitOwnershipService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -183,6 +184,7 @@ class CashSaleController extends Controller
 
         $sale->update(['status_pembayaran' => CashSale::STATUS_SERAH_TERIMA]);
         $sale->detailRumah?->update(['status_penjualan' => 'terjual']);
+        app(UnitOwnershipService::class)->syncCashHandover($sale);
         if ($sale->spr) {
             $leadStatus->markSpr($sale->spr, MarketingLeadStatusService::CLOSING);
         }

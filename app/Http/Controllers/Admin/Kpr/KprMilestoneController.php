@@ -7,6 +7,7 @@ use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\KprFollowUp;
 use App\Models\KprMilestone;
 use App\Models\KprMilestoneDocument;
+use App\Services\UnitOwnershipService;
 use App\Models\KprSubmission;
 use App\Services\Marketing\MarketingLeadStatusService;
 use App\Services\Marketing\MarketingOperationsService;
@@ -64,10 +65,25 @@ class KprMilestoneController extends Controller
                 : 'Catat penyerahan unit, kunci, dan dokumentasi kepada customer.',
             'type' => $type,
             'baseUrl' => route('admin.kpr.milestone.index', $type, absolute: false),
+            'createUrl' => route('admin.kpr.milestone.create', $type, false),
             'filters' => ['search' => $search],
             'rows' => $rows,
             'submissionOptions' => $this->submissionOptions($type),
         ]);
+    }
+
+    public function create(Request $request, string $type): Response
+    {
+        return $this->formResponse($this->validatedType($type), null, (string) $request->query('submission', ''));
+    }
+
+    public function edit(Request $request, string $type, string $id): Response
+    {
+        $type = $this->validatedType($type);
+        $milestone = $this->milestoneQueryFor($request, $type)->findOrFail($id);
+        abort_if($milestone->record_status === 'locked', 422, 'Data yang sudah di-lock tidak dapat diedit.');
+
+        return $this->formResponse($type, $milestone);
     }
 
     public function storeSelected(Request $request, string $type): RedirectResponse
@@ -108,7 +124,7 @@ class KprMilestoneController extends Controller
             $this->syncKpr($submission, $type, $validated['catatan'] ?? null, $request->user()?->id);
         });
 
-        return back()->with('success', ($type === KprMilestone::AKAD ? 'Akad' : 'Serah terima').' berhasil dicatat.');
+        return to_route('admin.kpr.milestone.index', $type)->with('success', ($type === KprMilestone::AKAD ? 'Akad' : 'Serah terima').' berhasil dicatat.');
     }
 
     public function update(Request $request, string $type, string $id): RedirectResponse
@@ -126,7 +142,30 @@ class KprMilestoneController extends Controller
             $this->storeDocuments($request, $milestone);
         });
 
-        return back()->with('success', 'Data berhasil diperbarui.');
+        return to_route('admin.kpr.milestone.index', $type)->with('success', 'Data berhasil diperbarui.');
+    }
+
+    protected function formResponse(string $type, ?KprMilestone $milestone = null, string $selectedSubmission = ''): Response
+    {
+        return Inertia::render('Admin/Kpr/Milestone/FormPage', [
+            'title' => ($milestone ? 'Edit ' : 'Tambah ').($type === KprMilestone::AKAD ? 'Akad KPR' : 'Serah Terima Unit'),
+            'type' => $type,
+            'baseUrl' => route('admin.kpr.milestone.index', $type, false),
+            'actionUrl' => $milestone
+                ? route('admin.kpr.milestone.update', [$type, $milestone->id], false)
+                : route('admin.kpr.milestone.store-selected', $type, false),
+            'method' => $milestone ? 'put' : 'post',
+            'submissionOptions' => $this->submissionOptions($type),
+            'initialData' => [
+                'kpr_submission_id' => (string) ($milestone?->kpr_submission_id ?? $selectedSubmission),
+                'tanggal_proses' => optional($milestone?->tanggal_proses)->format('Y-m-d\TH:i') ?? now()->format('Y-m-d\TH:i'),
+                'lokasi' => $milestone?->lokasi ?? '',
+                'nomor_dokumen' => $milestone?->nomor_dokumen ?? '',
+                'pihak_terkait' => $milestone?->pihak_terkait ?? '',
+                'catatan' => $milestone?->catatan ?? '',
+                'dokumen' => [],
+            ],
+        ]);
     }
 
     public function destroy(Request $request, string $type, string $id): RedirectResponse
@@ -143,19 +182,25 @@ class KprMilestoneController extends Controller
             'Akad tidak dapat dihapus karena serah terima sudah tercatat.',
         );
 
-        DB::transaction(function () use ($milestone, $type): void {
+        DB::transaction(function () use ($milestone, $type, $request): void {
             foreach ($milestone->documents as $document) {
                 Storage::disk('public')->delete($document->path_file);
                 $document->delete();
             }
             $submission = $milestone->submission;
+            if ($type === KprMilestone::AKAD) {
+                app(UnitOwnershipService::class)->deactivateSource('kpr_akad', $milestone->id, $request->user()?->id);
+            }
             $milestone->forceDelete();
 
             if ($type === KprMilestone::SERAH_TERIMA) {
                 $submission->update(['status' => 'akad']);
             } else {
                 $submission->update(['status' => 'sp3k_keluar']);
-                $submission->spr?->detailRumah?->update(['status_penjualan' => 'proses_penjualan']);
+                $unit = $submission->spr?->detailRumah;
+                $unit?->update([
+                    'status_penjualan' => $unit->currentOwnership()->exists() ? 'terjual' : 'proses_penjualan',
+                ]);
             }
         });
 
@@ -236,6 +281,13 @@ class KprMilestoneController extends Controller
         $submission->update(['status' => $status, 'handled_by' => $userId]);
         $submission->spr?->detailRumah?->update(['status_penjualan' => 'terjual']);
 
+        if ($type === KprMilestone::AKAD) {
+            $milestone = $submission->milestones()->where('jenis', KprMilestone::AKAD)->latest('id')->first();
+            if ($milestone) {
+                app(UnitOwnershipService::class)->syncKprAkad($submission, $milestone);
+            }
+        }
+
         KprFollowUp::create([
             'kpr_submission_id' => $submission->id,
             'user_id' => $userId,
@@ -289,6 +341,7 @@ class KprMilestoneController extends Controller
             ] : null,
             'can_create' => $milestone === null,
             'type' => $type,
+            'edit_url' => $milestone ? route('admin.kpr.milestone.edit', [$type, $milestone->id], false) : null,
         ];
     }
 

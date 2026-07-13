@@ -14,18 +14,22 @@ class MaterialPurchase extends Model
     use HasFactory, HasUserAudit, SoftDeletes;
 
     public const STATUS_MENUNGGU_MANAGER = 'menunggu_approval_manager';
+    public const STATUS_MENUNGGU_APPROVAL = 'menunggu_approval';
+    public const STATUS_APPROVED = 'approved';
     public const STATUS_MENUNGGU_DANA = 'menunggu_pencairan_dana';
     public const STATUS_DANA_CAIR = 'dana_cair';
     public const STATUS_DIBELI = 'dibeli';
-    public const STATUS_MENUNGGU_PEMERIKSAAN = 'menunggu_pemeriksaan_gudang';
+    public const STATUS_MENUNGGU_PEMERIKSAAN = 'menunggu_pengecekan';
     public const STATUS_DITERIMA = 'diterima_logistik';
     public const STATUS_DITERIMA_SEBAGIAN = 'diterima_sebagian';
     public const STATUS_DITOLAK_GUDANG = 'ditolak_gudang';
+    public const STATUS_PENGECEKAN_SELESAI = 'pengecekan_selesai';
     public const STATUS_DITOLAK = 'ditolak';
 
     protected $fillable = [
         'kode_pembelian',
         'tanggal',
+        'tanggal_barang_masuk',
         'material_request_id',
         'material_purchase_request_id',
         'gudang_id',
@@ -33,10 +37,13 @@ class MaterialPurchase extends Model
         'detail_rumah_id',
         'tahapan_pembangunan_id',
         'kelompok_hpp_id',
+        'supplier_id',
         'supplier',
         'metode_pembayaran',
         'planned_master_bank_id',
         'payment_master_bank_id',
+        'subtotal_nominal',
+        'diskon_transaksi',
         'total_nominal',
         'status',
         'keterangan',
@@ -53,6 +60,9 @@ class MaterialPurchase extends Model
 
     protected $casts = [
         'tanggal' => 'date',
+        'tanggal_barang_masuk' => 'date',
+        'subtotal_nominal' => 'float',
+        'diskon_transaksi' => 'float',
         'total_nominal' => 'float',
         'approved_at' => 'datetime',
         'fund_released_at' => 'datetime',
@@ -77,6 +87,11 @@ class MaterialPurchase extends Model
     public function materialPurchaseRequest(): BelongsTo
     {
         return $this->belongsTo(MaterialPurchaseRequest::class);
+    }
+
+    public function supplierData(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class, 'supplier_id');
     }
 
     public function perumahan(): BelongsTo

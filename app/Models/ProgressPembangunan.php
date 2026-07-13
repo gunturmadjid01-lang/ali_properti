@@ -6,6 +6,7 @@ use App\Models\Concerns\HasUserAudit;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ProgressPembangunan extends Model
@@ -16,6 +17,12 @@ class ProgressPembangunan extends Model
         'detail_rumah_id',
         'tahapan_pembangunan_id',
         'site_schedule_id',
+        'schedule_stage_key',
+        'schedule_stage_name',
+        'schedule_stage_target',
+        'schedule_item_key',
+        'schedule_item_name',
+        'schedule_item_target',
         'nama_progress',
         'tanggal',
         'tahapan',
@@ -43,6 +50,8 @@ class ProgressPembangunan extends Model
         'tahapan' => 'float',
         'persentase' => 'float',
         'persentase_total' => 'float',
+        'schedule_stage_target' => 'float',
+        'schedule_item_target' => 'float',
         'approved_at' => 'datetime',
         'locked_at' => 'datetime',
     ];
@@ -80,5 +89,15 @@ class ProgressPembangunan extends Model
     public function source()
     {
         return $this->morphTo(__FUNCTION__, 'source_type', 'source_id');
+    }
+
+    public function materialUsages(): HasMany
+    {
+        return $this->hasMany(MaterialUsage::class);
+    }
+
+    public function siteReports(): HasMany
+    {
+        return $this->hasMany(SiteReport::class);
     }
 }

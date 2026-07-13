@@ -7,6 +7,7 @@ use App\Models\SiteSchedule;
 use App\Models\TahapanPembangunan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 
@@ -16,6 +17,7 @@ function giveScheduleCreatePermission(User $user): void
 {
     $role = Role::findOrCreate('pengawas', 'web');
     $role->givePermissionTo(Permission::findOrCreate('site-schedule.create', 'web'));
+    $role->givePermissionTo(Permission::findOrCreate('site-schedule.update', 'web'));
     $user->assignRole($role);
 }
 
@@ -62,6 +64,13 @@ test('pengawas dapat membuat time schedule sekaligus dari tahapan rab kawasan', 
     ]);
 
     $this->actingAs($user)
+        ->get(route('admin.site-schedule.create'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/SiteSchedule/Form')
+            ->where('mode', 'create'));
+
+    $this->actingAs($user)
         ->post(route('admin.site-schedule.store'), [
             'perumahan_id' => $perumahan->id,
             'detail_rumah_ids' => [],
@@ -84,7 +93,15 @@ test('pengawas dapat membuat time schedule sekaligus dari tahapan rab kawasan', 
         ->assertRedirect();
 
     expect(SiteSchedule::query()->where('perumahan_id', $perumahan->id)->count())->toBe(2);
-    expect(SiteSchedule::query()->where('tahapan_pembangunan_id', $tanah->id)->first()->target_progress)->toBe(40.0);
+    $schedule = SiteSchedule::query()->where('tahapan_pembangunan_id', $tanah->id)->firstOrFail();
+    expect($schedule->target_progress)->toBe(40.0);
+
+    $this->get(route('admin.site-schedule.edit', $schedule->id))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Admin/SiteSchedule/Form')
+            ->where('mode', 'edit')
+            ->where('initialData.id', $schedule->id));
 });
 
 test('time schedule unit dapat dibuat untuk banyak unit rumah sekaligus', function () {

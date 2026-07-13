@@ -1,0 +1,342 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\User;
+use Carbon\Carbon;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+class RoleDashboardService
+{
+    private ?int $perumahanId = null;
+    private string $period = 'month';
+    private string $periodValue = '';
+    private string $periodLabel = '';
+    private Carbon $periodStart;
+    private Carbon $periodEnd;
+    private array $timeline = [];
+
+    public function build(User $user, ?int $activePerumahanId = null, string $period = 'month', ?string $periodValue = null): array
+    {
+        $this->perumahanId = $activePerumahanId;
+        $this->configurePeriod($period, $periodValue);
+        $sections = [];
+        $charts = [];
+        $shortcuts = [];
+
+        if ($this->allowed($user, ['users.view', 'roles.view', 'roles.manage', 'payroll.view'])) {
+            $sections[] = $this->organizationStats();
+            $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
+                ['users.view', 'Data Pengguna', '/admin/management/user'],
+                ['roles.view', 'Role & Permission', '/admin/management/role-permission'],
+                ['payroll.view', 'Pengaturan Gaji', '/admin/gaji-pegawai'],
+            ])];
+        }
+
+        if ($this->allowed($user, ['approval.view', 'approval.settings', 'spk-kontraktor.approve', 'booking.manage'])) {
+            $sections[] = $this->approvalStats();
+            $charts[] = $this->distributionChart('Status Antrean Approval', 'approval_requests', 'status', 'Pengajuan');
+            $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
+                ['approval.view', 'Daftar Approval', '/admin/approval'],
+                ['spk-kontraktor.approve', 'Approval SPK', '/admin/spk-kontraktor/approval'],
+                ['approval.settings', 'Setting Approval', '/admin/approval/settings'],
+            ])];
+        }
+
+        if ($this->allowed($user, ['perumahan.view', 'detail-rumah.view', 'rab-unit.view', 'progress.view', 'site-schedule.view', 'site-report.view', 'quality-inspection.view', 'field-supervision.view', 'spk-kontraktor.view', 'laporan.view'])) {
+            $sections[] = $this->propertyStats();
+            $charts[] = $this->distributionChart('Status Pembangunan Unit', 'detail_rumahs', 'status_pembangunan', 'Unit');
+            $charts[] = $this->activityChart('Aktivitas Proyek', [
+                ['label'=>'Progress','table'=>'progress_pembangunans','date'=>'tanggal','color'=>'#c8962e'],
+                ['label'=>'SPK','table'=>'spk_kontraktors','date'=>'tanggal_spk','color'=>'#334155'],
+            ]);
+            $charts[] = $this->progressChart();
+            $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
+                ['detail-rumah.view', 'Data Unit Rumah', '/admin/unit-rumah'],
+                ['progress.view', 'Progress Pembangunan', '/admin/progress-pembangunan'],
+                ['site-schedule.view', 'Jadwal Lapangan', '/admin/jadwal-lapangan'],
+                ['spk-kontraktor.view', 'SPK Kontraktor', '/admin/spk-kontraktor'],
+            ])];
+        }
+
+        if ($this->allowed($user, ['customer.view', 'booking.view', 'spr-payment.view', 'kpr.view', 'marketing.lead-report.view', 'marketing.pipeline.view', 'marketing.pipeline-report.view', 'marketing.campaign.manage', 'marketing.activity.view', 'laporan.view', 'laporan-marketing.view'])) {
+            $sections[] = $this->marketingStats();
+            $charts[] = $this->activityChart('Prospek & SPR', [
+                ['label'=>'Prospek','table'=>'costumers','date'=>'created_at','color'=>'#2563eb'],
+                ['label'=>'SPR','table'=>'sprs','date'=>'tanggal_spr','color'=>'#c8962e'],
+            ]);
+            $charts[] = $this->distributionChart('Tahapan Prospek', 'costumers', 'status_lead', 'Prospek');
+            $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
+                ['customer.view', 'Data Pelanggan', '/admin/marketing/calon-konsumen'],
+                ['booking.view', 'Data SPR', '/admin/marketing/spr'],
+                ['kpr.view', 'Pengajuan KPR', '/admin/kpr'],
+            ])];
+        }
+
+        if ($this->allowed($user, ['master-material.view', 'site-material-stock.view', 'material-request.view', 'material-purchase.view', 'material-usage.view', 'supplier.view', 'laporan.view', 'laporan-persediaan-material.view', 'laporan-pembelian.view'])) {
+            $sections[] = $this->warehouseStats();
+            $charts[] = $this->activityChart('Aktivitas Logistik', [
+                ['label'=>'Permintaan','table'=>'material_requests','date'=>'tanggal','color'=>'#0f766e'],
+                ['label'=>'Pembelian','table'=>'material_purchases','date'=>'tanggal','color'=>'#c8962e'],
+                ['label'=>'Pemakaian','table'=>'material_usages','date'=>'tanggal','color'=>'#334155'],
+            ]);
+            $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
+                ['site-material-stock.view', 'Stok Material', '/admin/stok-material'],
+                ['material-request.view', 'Permintaan Material', '/admin/permintaan-barang'],
+                ['material-purchase.view', 'Pembelian Material', '/admin/pembelian-material'],
+                ['supplier.view', 'Supplier', '/admin/supplier'],
+            ])];
+        }
+
+        if ($this->allowed($user, ['company-inventory.view', 'heavy-equipment.view'])) {
+            $sections[] = $this->assetStats($user);
+            if ($user->can('company-inventory.view')) $charts[] = $this->inventoryChart();
+            if ($user->can('heavy-equipment.view')) $charts[] = $this->distributionChart('Kondisi Alat Berat', 'heavy_equipments', 'status', 'Alat');
+            $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
+                ['company-inventory.view', 'Inventaris Perusahaan', '/admin/inventaris-perusahaan/dashboard'],
+                ['heavy-equipment.view', 'Alat Berat', '/admin/alat-berat/dashboard'],
+            ])];
+        }
+
+        if ($this->allowed($user, ['keuangan.view', 'bank-account-ledger.view', 'buku-besar.view', 'neraca-saldo.view', 'laba-rugi.view', 'neraca.view', 'arus-kas.view', 'piutang.view', 'hutang.view', 'petty-cash.view', 'laporan.view'])) {
+            $sections[] = $this->financeStats();
+            $charts[] = $this->financeChart();
+            $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
+                ['keuangan.view', 'Dashboard Keuangan', '/admin/keuangan/dashboard'],
+                ['bank-account-ledger.view', 'Mutasi Rekening', '/admin/rekening-bank'],
+                ['petty-cash.view', 'Kas Kecil', '/admin/kas-kecil/saldo'],
+                ['buku-besar.view', 'Buku Besar', '/admin/keuangan/buku-besar'],
+            ])];
+        }
+
+        $charts = collect($charts)->filter(fn (array $chart) => count($chart['labels'] ?? []) > 0)->values()->all();
+
+        return [
+            'sections' => array_values(array_filter($sections)),
+            'charts' => $charts,
+            'shortcuts' => collect($shortcuts)->unique('href')->take(10)->values()->all(),
+            'context' => [
+                'generated_at' => now()->format('d M Y, H:i'),
+                'active_perumahan_id' => $activePerumahanId,
+                'roles' => $user->roles->pluck('name')->values()->all(),
+                'period_label' => $this->periodLabel,
+            ],
+            'filters' => ['period'=>$this->period,'value'=>$this->periodValue],
+        ];
+    }
+
+    private function organizationStats(): array
+    {
+        return $this->section('Organisasi', 'users', [
+            $this->stat('Total Pegawai', $this->count('users'), 'number', 'users'),
+            $this->stat('Pegawai Aktif', $this->count('users', fn (Builder $q) => Schema::hasColumn('users','employment_status') ? $q->where('employment_status','aktif') : $q), 'number', 'user-check'),
+            $this->stat('Memiliki Akses Login', $this->count('users', fn (Builder $q) => Schema::hasColumn('users','has_login_access') ? $q->where('has_login_access',true) : $q), 'number', 'key'),
+            $this->stat('Pegawai Baru Periode', $this->countPeriod('users','join_date'), 'number', 'user-plus'),
+            $this->stat('Gaji Aktif', $this->count('employee_salaries', fn (Builder $q) => $q->where('is_active',true)), 'number', 'wallet'),
+            $this->stat('Role Sistem', $this->count('roles'), 'number', 'shield'),
+            $this->stat('Permission Aktif', $this->count('permissions'), 'number', 'key'),
+        ]);
+    }
+
+    private function propertyStats(): array
+    {
+        return $this->section('Properti & Pembangunan', 'property', [
+            $this->stat('Total Perumahan', $this->count('perumahans'), 'number', 'building'),
+            $this->stat('Total Unit Rumah', $this->count('detail_rumahs'), 'number', 'home'),
+            $this->stat('Unit Tersedia', $this->count('detail_rumahs', fn (Builder $q) => $q->where('status_penjualan','tersedia')), 'number', 'check'),
+            $this->stat('Unit Terjual / Booking', $this->count('detail_rumahs', fn (Builder $q) => $q->whereIn('status_penjualan',['terjual','sold','booking','terbooking'])), 'number', 'wallet'),
+            $this->stat('Unit Selesai / Ready', $this->count('detail_rumahs', fn (Builder $q) => $q->whereIn('status_pembangunan',['selesai','ready'])), 'number', 'check'),
+            $this->stat('Sedang Dibangun', $this->count('detail_rumahs', fn (Builder $q) => $q->where('status_pembangunan','sedang_dibangun')), 'number', 'hard-hat'),
+            $this->stat('Rata-rata Progress Unit', $this->average('detail_rumahs','progress_terakhir'), 'percent', 'trending'),
+            $this->stat('Update Progress Periode', $this->countPeriod('progress_pembangunans','tanggal'), 'number', 'trending'),
+            $this->stat('Jadwal Belum Selesai', $this->count('site_schedules', fn (Builder $q) => $q->whereNotIn('status',['selesai','completed'])), 'number', 'clock'),
+            $this->stat('SPK Aktif', $this->count('spk_kontraktors', fn (Builder $q) => $q->whereIn('status',['aktif','approved','disetujui'])), 'number', 'file'),
+            $this->stat('Nilai SPK Aktif', $this->sumFiltered('spk_kontraktors','nilai_kontrak',fn(Builder $q)=>$q->whereIn('status',['aktif','approved','disetujui'])), 'currency', 'wallet'),
+        ]);
+    }
+
+    private function approvalStats(): array
+    {
+        return $this->section('Approval & Tugas Review', 'approval', [
+            $this->stat('Antrean Approval', $this->count('approval_requests', fn (Builder $q) => $q->where('status','pending')), 'number', 'clock'),
+            $this->stat('SPK Menunggu Review', $this->count('spk_kontraktors', fn (Builder $q) => $q->whereIn('status',['draft','menunggu_approval','menunggu_approval_manager','menunggu_approval_owner'])), 'number', 'file'),
+            $this->stat('SPR Menunggu Review', $this->count('sprs', fn (Builder $q) => $q->whereIn('status',['menunggu_manager','menunggu_owner'])), 'number', 'receipt'),
+            $this->stat('Material Menunggu', $this->count('material_purchases', fn (Builder $q) => $q->whereIn('status',['menunggu_approval_manager','menunggu_approval'])), 'number', 'cart'),
+            $this->stat('Approval Dibuat Periode', $this->countPeriod('approval_requests','created_at'), 'number', 'file'),
+            $this->stat('Stock Opname Draft', $this->count('inventory_stock_opnames', fn (Builder $q) => $q->where('status','draft')), 'number', 'boxes'),
+        ]);
+    }
+
+    private function marketingStats(): array
+    {
+        return $this->section('Marketing & Penjualan', 'marketing', [
+            $this->stat('Total Prospek', $this->count('costumers'), 'number', 'users'),
+            $this->stat('Prospek Periode', $this->countPeriod('costumers','created_at'), 'number', 'user-plus'),
+            $this->stat('Total SPR', $this->count('sprs'), 'number', 'file'),
+            $this->stat('SPR Periode', $this->countPeriod('sprs','tanggal_spr'), 'number', 'file'),
+            $this->stat('SPR Disetujui', $this->count('sprs', fn (Builder $q) => $q->where('status','disetujui')), 'number', 'check'),
+            $this->stat('Nilai SPR Periode', $this->sumPeriod('sprs','harga_jual','tanggal_spr'), 'currency', 'wallet'),
+            $this->stat('Pembayaran Masuk Periode', $this->sumPeriod('spr_payments','nominal','tanggal_pembayaran'), 'currency', 'wallet'),
+            $this->stat('Unit Terjual', $this->count('detail_rumahs', fn (Builder $q) => $q->whereIn('status_penjualan',['terjual','sold'])), 'number', 'home'),
+            $this->stat('Pengajuan KPR Aktif', $this->count('kpr_submissions', fn (Builder $q) => $q->whereNotIn('status',['selesai','ditolak','akad'])), 'number', 'file'),
+        ]);
+    }
+
+    private function warehouseStats(): array
+    {
+        return $this->section('Gudang & Logistik', 'warehouse', [
+            $this->stat('Jenis Material', $this->count('barang_materials'), 'number', 'boxes'),
+            $this->stat('Total Stok Lokasi', $this->sum('site_material_stocks','qty_available'), 'decimal', 'warehouse'),
+            $this->stat('Permintaan Menunggu', $this->count('material_requests', fn (Builder $q) => $q->whereNotIn('status',['selesai','ditolak','approved'])), 'number', 'clock'),
+            $this->stat('Permintaan Periode', $this->countPeriod('material_requests','tanggal'), 'number', 'file'),
+            $this->stat('Pembelian Periode', $this->countPeriod('material_purchases','tanggal'), 'number', 'cart'),
+            $this->stat('Nilai Pembelian Periode', $this->sumPeriod('material_purchases','total_nominal','tanggal'), 'currency', 'wallet'),
+            $this->stat('Pemakaian Periode', $this->countPeriod('material_usages','tanggal'), 'number', 'boxes'),
+            $this->stat('Stock Opname Periode', $this->countPeriod('material_stock_opnames','tanggal'), 'number', 'check'),
+            $this->stat('Supplier Aktif', $this->count('suppliers', fn (Builder $q) => Schema::hasColumn('suppliers','status') ? $q->where('status','aktif') : $q), 'number', 'users'),
+        ]);
+    }
+
+    private function assetStats(User $user): array
+    {
+        $stats = [];
+        if ($user->can('company-inventory.view')) {
+            $stats = [
+                $this->stat('Barang Inventaris', $this->count('inventory_items'), 'number', 'boxes'),
+                $this->stat('Stok Tersedia', $this->sum('inventory_items','available_stock'), 'number', 'check'),
+                $this->stat('Sedang Dipinjam', $this->sum('inventory_items','borrowed_stock'), 'number', 'clock'),
+                $this->stat('Rusak / Hilang', $this->sum('inventory_items','damaged_stock') + $this->sum('inventory_items','lost_stock'), 'number', 'alert'),
+                $this->stat('Peminjaman Periode', $this->countPeriod('inventory_loans','date'), 'number', 'file'),
+                $this->stat('Opname Belum Verifikasi', $this->count('inventory_stock_opnames', fn(Builder $q)=>$q->where('status','draft')), 'number', 'clock'),
+            ];
+        }
+        if ($user->can('heavy-equipment.view')) {
+            $stats = [...$stats,
+                $this->stat('Total Alat Berat', $this->count('heavy_equipments'), 'number', 'hard-hat'),
+                $this->stat('Alat Digunakan', $this->count('heavy_equipments', fn (Builder $q) => $q->where('status','in_use')), 'number', 'activity'),
+                $this->stat('Alat Servis / Rusak', $this->count('heavy_equipments', fn (Builder $q) => $q->whereIn('status',['service','damaged'])), 'number', 'wrench'),
+                $this->stat('Penggunaan Periode', $this->countPeriod('heavy_equipment_usages','date'), 'number', 'activity'),
+                $this->stat('Biaya BBM Periode', $this->sumPeriod('heavy_equipment_fuelings','total_cost','date'), 'currency', 'wallet'),
+                $this->stat('Biaya Maintenance Periode', $this->sumPeriod('heavy_equipment_maintenances','cost','date'), 'currency', 'wrench'),
+            ];
+        }
+        return $this->section('Inventaris & Alat Berat', 'assets', $stats);
+    }
+
+    private function financeStats(): array
+    {
+        $income = $this->financeSum('pemasukan');
+        $expense = $this->financeSum('pengeluaran');
+        return $this->section('Keuangan', 'finance', [
+            $this->stat('Pemasukan Periode', $income, 'currency', 'trending'),
+            $this->stat('Pengeluaran Periode', $expense, 'currency', 'wallet'),
+            $this->stat('Arus Bersih Periode', $income - $expense, 'currency', 'activity'),
+            $this->stat('Transaksi Periode', $this->countPeriod('transaksi_keuangans','tanggal'), 'number', 'receipt'),
+            $this->stat('Saldo Kas Kecil', $this->sum('petty_cash_accounts','balance'), 'currency', 'wallet'),
+            $this->stat('Pengeluaran Kas Kecil', $this->sumPeriod('petty_cash_expenses','amount','expense_date'), 'currency', 'wallet'),
+            $this->stat('Jurnal Periode', $this->countPeriod('journals','tanggal'), 'number', 'book'),
+            $this->stat('Pembayaran Customer', $this->sumPeriod('spr_payments','nominal','tanggal_pembayaran'), 'currency', 'trending'),
+        ]);
+    }
+
+    private function inventoryChart(): array
+    {
+        return ['title'=>'Komposisi Stok Inventaris','type'=>'donut','unit'=>'Unit','labels'=>['Tersedia','Dipinjam','Rusak','Hilang'],'datasets'=>[[
+            'label'=>'Inventaris','color'=>'#c8962e','colors'=>['#16a34a','#2563eb','#dc2626','#64748b'],
+            'data'=>[$this->sum('inventory_items','available_stock'),$this->sum('inventory_items','borrowed_stock'),$this->sum('inventory_items','damaged_stock'),$this->sum('inventory_items','lost_stock')],
+        ]]];
+    }
+
+    private function financeChart(): array
+    {
+        $income = array_fill(0, count($this->timeline), 0.0); $expense = array_fill(0, count($this->timeline), 0.0);
+        if (Schema::hasTable('transaksi_keuangans') && Schema::hasTable('tipe_posts')) {
+            $rows = $this->query('transaksi_keuangans as t')->join('tipe_posts as p','p.id','=','t.tipe_post_id')
+                ->whereBetween('t.tanggal',[$this->timeline[0]['start'],$this->timeline[array_key_last($this->timeline)]['end']])->get(['t.tanggal','t.nominal','p.jenis']);
+            foreach ($rows as $row) { $index=$this->timelineIndex($row->tanggal); if ($index === null) continue; if ($row->jenis === 'pemasukan') $income[$index] += (float)$row->nominal; else $expense[$index] += (float)$row->nominal; }
+        }
+        return ['title'=>'Cash In vs Cash Out · '.$this->periodLabel,'type'=>'bar','unit'=>'Rp','labels'=>array_column($this->timeline,'label'),'datasets'=>[
+            ['label'=>'Pemasukan','data'=>$income,'color'=>'#16a34a'],['label'=>'Pengeluaran','data'=>$expense,'color'=>'#dc2626'],
+        ]];
+    }
+
+    private function activityChart(string $title, array $series): array
+    {
+        $datasets=[];
+        foreach ($series as $item) {
+            $data=array_fill(0,count($this->timeline),0); if (Schema::hasTable($item['table']) && Schema::hasColumn($item['table'],$item['date'])) {
+                $rows=$this->query($item['table'])->whereBetween($item['date'],[$this->timeline[0]['start'],$this->timeline[array_key_last($this->timeline)]['end']])->pluck($item['date']);
+                foreach ($rows as $date) { $index=$this->timelineIndex($date); if ($index!==null) $data[$index]++; }
+            }
+            $datasets[]=['label'=>$item['label'],'data'=>$data,'color'=>$item['color']];
+        }
+        return ['title'=>$title.' · '.$this->periodLabel,'type'=>'bar','unit'=>'Data','labels'=>array_column($this->timeline,'label'),'datasets'=>$datasets];
+    }
+
+    private function progressChart(): array
+    {
+        $data=array_fill(0,count($this->timeline),0.0); $groups=array_fill(0,count($this->timeline),[]);
+        if (Schema::hasTable('progress_pembangunans')) {
+            $rows=$this->query('progress_pembangunans')->whereBetween('tanggal',[$this->timeline[0]['start'],$this->timeline[array_key_last($this->timeline)]['end']])->get(['tanggal','persentase_total','persentase']);
+            foreach($rows as $row){$index=$this->timelineIndex($row->tanggal);if($index!==null)$groups[$index][]=(float)($row->persentase_total ?: $row->persentase);}
+            foreach($groups as $index=>$values)$data[$index]=$values?round(array_sum($values)/count($values),2):0;
+        }
+        return ['title'=>'Rata-rata Progress Pembangunan · '.$this->periodLabel,'type'=>'bar','unit'=>'%','labels'=>array_column($this->timeline,'label'),'datasets'=>[['label'=>'Progress','data'=>$data,'color'=>'#c8962e']]];
+    }
+
+    private function distributionChart(string $title, string $table, string $column, string $unit): array
+    {
+        if (!Schema::hasTable($table)||!Schema::hasColumn($table,$column)) return ['title'=>$title,'type'=>'donut','unit'=>$unit,'labels'=>[],'datasets'=>[]];
+        $rows=$this->query($table)->select($column,DB::raw('count(*) as total'))->groupBy($column)->get();
+        return ['title'=>$title,'type'=>'donut','unit'=>$unit,'labels'=>$rows->map(fn($r)=>$this->label($r->{$column} ?: 'belum_diatur'))->all(),'datasets'=>[['label'=>$unit,'data'=>$rows->pluck('total')->map(fn($v)=>(int)$v)->all(),'colors'=>['#c8962e','#2563eb','#16a34a','#dc2626','#7c3aed','#64748b']]]];
+    }
+
+    private function financeSum(string $type): float
+    {
+        if (!Schema::hasTable('transaksi_keuangans')||!Schema::hasTable('tipe_posts')) return 0;
+        return (float)$this->query('transaksi_keuangans as t')->join('tipe_posts as p','p.id','=','t.tipe_post_id')->where('p.jenis',$type)->whereBetween('t.tanggal',[$this->periodStart,$this->periodEnd])->sum('t.nominal');
+    }
+
+    private function section(string $title,string $key,array $stats): array { return compact('title','key','stats'); }
+    private function stat(string $label,mixed $value,string $format,string $icon): array { return compact('label','value','format','icon'); }
+    private function allowed(User $user,array $permissions): bool { return collect($permissions)->contains(fn($permission)=>$user->can($permission)); }
+    private function shortcuts(User $user,array $items): array { return collect($items)->filter(fn($i)=>$user->can($i[0]))->map(fn($i)=>['label'=>$i[1],'href'=>$i[2]])->values()->all(); }
+    private function label(string $value): string { return ucwords(str_replace(['_','-'], ' ', $value)); }
+
+    private function query(string $table): Builder
+    {
+        $baseTable=str_contains($table,' as ')?explode(' as ',$table)[0]:$table; $alias=str_contains($table,' as ')?explode(' as ',$table)[1]:null;
+        $query=DB::table($table); $prefix=$alias ?: $baseTable;
+        if (Schema::hasColumn($baseTable,'deleted_at')) $query->whereNull($prefix.'.deleted_at');
+        if ($this->perumahanId && $baseTable === 'perumahans') $query->where($prefix.'.id',$this->perumahanId);
+        if ($this->perumahanId && Schema::hasColumn($baseTable,'perumahan_id')) $query->where($prefix.'.perumahan_id',$this->perumahanId);
+        return $query;
+    }
+
+    private function count(string $table, ?callable $callback=null): int { if(!Schema::hasTable($table))return 0;$q=$this->query($table);if($callback)$callback($q);return $q->count(); }
+    private function sum(string $table,string $column): float { if(!Schema::hasTable($table)||!Schema::hasColumn($table,$column))return 0;return(float)$this->query($table)->sum($column); }
+    private function sumFiltered(string $table,string $column,callable $callback): float { if(!Schema::hasTable($table)||!Schema::hasColumn($table,$column))return 0;$q=$this->query($table);$callback($q);return(float)$q->sum($column); }
+    private function average(string $table,string $column): float { if(!Schema::hasTable($table)||!Schema::hasColumn($table,$column))return 0;return round((float)$this->query($table)->avg($column),2); }
+    private function countPeriod(string $table,string $column): int { if(!Schema::hasTable($table)||!Schema::hasColumn($table,$column))return 0;return$this->query($table)->whereBetween($column,[$this->periodStart,$this->periodEnd])->count(); }
+    private function sumPeriod(string $table,string $sumColumn,string $dateColumn): float { if(!Schema::hasTable($table)||!Schema::hasColumn($table,$sumColumn)||!Schema::hasColumn($table,$dateColumn))return 0;return(float)$this->query($table)->whereBetween($dateColumn,[$this->periodStart,$this->periodEnd])->sum($sumColumn); }
+
+    private function configurePeriod(string $period, ?string $value): void
+    {
+        $this->period=in_array($period,['day','month','year'],true)?$period:'month';
+        try {
+            $selected=match($this->period){'day'=>Carbon::createFromFormat('Y-m-d',$value ?: now()->format('Y-m-d')),'year'=>Carbon::createFromFormat('Y',$value ?: now()->format('Y')),'month'=>Carbon::createFromFormat('Y-m',$value ?: now()->format('Y-m'))};
+        } catch (\Throwable) { $selected=now(); }
+        if($this->period==='day'){$this->periodStart=$selected->copy()->startOfDay();$this->periodEnd=$selected->copy()->endOfDay();$this->periodValue=$selected->format('Y-m-d');$this->periodLabel=$selected->translatedFormat('d F Y');$this->timeline=collect(range(6,0))->map(fn($n)=>$selected->copy()->subDays($n))->map(fn(Carbon $d)=>['label'=>$d->format('d M'),'start'=>$d->copy()->startOfDay(),'end'=>$d->copy()->endOfDay()])->all();}
+        elseif($this->period==='year'){$this->periodStart=$selected->copy()->startOfYear();$this->periodEnd=$selected->copy()->endOfYear();$this->periodValue=$selected->format('Y');$this->periodLabel='Tahun '.$selected->format('Y');$this->timeline=collect(range(1,12))->map(fn($m)=>$selected->copy()->month($m))->map(fn(Carbon $d)=>['label'=>$d->translatedFormat('M'),'start'=>$d->copy()->startOfMonth(),'end'=>$d->copy()->endOfMonth()])->all();}
+        else{$this->periodStart=$selected->copy()->startOfMonth();$this->periodEnd=$selected->copy()->endOfMonth();$this->periodValue=$selected->format('Y-m');$this->periodLabel=$selected->translatedFormat('F Y');$this->timeline=collect(range(1,5))->map(function($week)use($selected){$start=$selected->copy()->startOfMonth()->addDays(($week-1)*7);$end=$start->copy()->addDays(6)->min($selected->copy()->endOfMonth());return['label'=>'M'.$week,'start'=>$start->startOfDay(),'end'=>$end->endOfDay()];})->filter(fn($row)=>$row['start']->lte($selected->copy()->endOfMonth()))->values()->all();}
+    }
+
+    private function timelineIndex(mixed $date): ?int
+    {
+        if(!$date)return null;$date=Carbon::parse($date);
+        foreach($this->timeline as $index=>$point)if($date->betweenIncluded($point['start'],$point['end']))return $index;
+        return null;
+    }
+}

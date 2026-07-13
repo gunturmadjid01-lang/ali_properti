@@ -20,39 +20,48 @@ class MaterialPriceController extends Controller
     public function index(Request $request): Response
     {
         $search = trim((string) $request->query('search', ''));
+        $tanggalBerlaku = $request->query('tanggal_berlaku') ?: now()->toDateString();
+        $materials = BarangMaterial::query()
+            ->where('status', 'aktif')
+            ->when($search !== '', fn (Builder $query) => $query->where(function (Builder $query) use ($search): void {
+                $query->where('kode_barang', 'like', "%{$search}%")
+                    ->orWhere('nama_barang', 'like', "%{$search}%")
+                    ->orWhere('jenis_material', 'like', "%{$search}%")
+                    ->orWhere('merk_material', 'like', "%{$search}%");
+            }))
+            ->orderBy('kode_barang')
+            ->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'harga_hpp', 'jenis_material', 'merk_material', 'kategori_material']);
+
+        $latestHistories = MaterialPriceHistory::query()
+            ->whereIn('barang_material_id', $materials->pluck('id'))
+            ->whereDate('tanggal_berlaku', '<=', $tanggalBerlaku)
+            ->latest('tanggal_berlaku')
+            ->latest('id')
+            ->get()
+            ->unique('barang_material_id')
+            ->keyBy('barang_material_id');
 
         return Inertia::render('Admin/Logistik/HargaMaterial', [
             'title' => 'Harga Dasar Material',
             'baseUrl' => route('admin.harga-material.index', absolute: false),
-            'rows' => MaterialPriceHistory::query()
-                ->with('barangMaterial:id,kode_barang,nama_barang,satuan,harga_hpp')
-                ->when($search !== '', fn (Builder $query) => $query->where('supplier', 'like', "%{$search}%")
-                    ->orWhereHas('barangMaterial', fn (Builder $query) => $query->where('nama_barang', 'like', "%{$search}%")->orWhere('kode_barang', 'like', "%{$search}%")))
-                ->latest('tanggal_berlaku')
-                ->latest('id')
-                ->paginate(10)
-                ->withQueryString()
-                ->through(fn (MaterialPriceHistory $row) => [
-                    'id' => $row->id,
-                    'barang_material_id' => (string) $row->barang_material_id,
-                    'material' => $row->barangMaterial?->nama_barang,
-                    'tanggal_berlaku' => optional($row->tanggal_berlaku)->format('Y-m-d'),
-                    'harga_satuan' => $row->harga_satuan,
-                    'supplier' => $row->supplier,
-                    'keterangan' => $row->keterangan,
-                    'status' => $row->status,
-                    'record_status' => $row->record_status ?? 'draft',
-                    'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-                ]),
-            'filters' => ['search' => $search],
-            'options' => [
-                'materials' => BarangMaterial::query()->where('status', 'aktif')->orderBy('nama_barang')->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'harga_hpp'])->map(fn ($row) => [
-                    'value' => (string) $row->id,
-                    'label' => "{$row->kode_barang} - {$row->nama_barang}",
-                    'harga_hpp' => $row->harga_hpp,
-                ])->values(),
-                'status' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']],
-            ],
+            'syncUrl' => route('admin.harga-material.sync', absolute: false),
+            'rows' => $materials->map(function (BarangMaterial $material) use ($latestHistories) {
+                $history = $latestHistories->get($material->id);
+
+                return [
+                    'id' => $material->id,
+                    'kode_barang' => $material->kode_barang,
+                    'nama_barang' => $material->nama_barang,
+                    'jenis_material' => $material->jenis_material ?: $material->kategori_material,
+                    'merk_material' => $material->merk_material,
+                    'satuan' => $material->satuan,
+                    'harga_hpp' => (float) ($history?->harga_satuan ?? $material->harga_hpp),
+                    'harga_terakhir' => (float) ($history?->harga_satuan ?? $material->harga_hpp),
+                    'tanggal_terakhir' => optional($history?->tanggal_berlaku)->format('Y-m-d'),
+                    'keterangan_terakhir' => $history?->keterangan,
+                ];
+            })->values(),
+            'filters' => ['search' => $search, 'tanggal_berlaku' => $tanggalBerlaku],
         ]);
     }
 
@@ -74,6 +83,47 @@ class MaterialPriceController extends Controller
         return back()->with('success', 'Harga material berhasil ditambahkan.');
     }
 
+    public function sync(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'tanggal_berlaku' => ['required', 'date'],
+            'keterangan' => ['nullable', 'string'],
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.barang_material_id' => ['required', 'exists:barang_materials,id'],
+            'items.*.harga_satuan' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        DB::transaction(function () use ($validated): void {
+            foreach ($validated['items'] as $item) {
+                $material = BarangMaterial::query()->findOrFail($item['barang_material_id']);
+                $nextPrice = (float) ($item['harga_satuan'] ?? 0);
+                $priceAtDate = (float) (MaterialPriceHistory::query()
+                    ->where('barang_material_id', $material->id)
+                    ->whereDate('tanggal_berlaku', '<=', $validated['tanggal_berlaku'])
+                    ->latest('tanggal_berlaku')
+                    ->latest('id')
+                    ->value('harga_satuan') ?? $material->harga_hpp);
+
+                if ($nextPrice <= 0 || $nextPrice === $priceAtDate) {
+                    continue;
+                }
+
+                MaterialPriceHistory::query()->create([
+                    'barang_material_id' => $material->id,
+                    'tanggal_berlaku' => $validated['tanggal_berlaku'],
+                    'harga_satuan' => $nextPrice,
+                    'keterangan' => $validated['keterangan'] ?? 'Update harga massal.',
+                    'status' => 'aktif',
+                    'created_by' => auth()->id(),
+                ]);
+
+                $this->syncMaterialCurrentPrice($material);
+            }
+        });
+
+        return back()->with('success', 'Harga material berhasil disimpan sekaligus.');
+    }
+
     public function destroy(string $id): RedirectResponse
     {
         $row = MaterialPriceHistory::query()->findOrFail($id);
@@ -89,10 +139,23 @@ class MaterialPriceController extends Controller
             'barang_material_id' => ['required', 'exists:barang_materials,id'],
             'tanggal_berlaku' => ['required', 'date'],
             'harga_satuan' => ['required', 'numeric', 'min:0'],
-            'supplier' => ['nullable', 'string', 'max:255'],
             'keterangan' => ['nullable', 'string'],
             'status' => ['required', 'in:aktif,nonaktif'],
         ]);
+    }
+
+    protected function syncMaterialCurrentPrice(BarangMaterial $material): void
+    {
+        $latestPrice = MaterialPriceHistory::query()
+            ->where('barang_material_id', $material->id)
+            ->where('status', 'aktif')
+            ->latest('tanggal_berlaku')
+            ->latest('id')
+            ->value('harga_satuan');
+
+        if ($latestPrice !== null) {
+            $material->update(['harga_hpp' => $latestPrice]);
+        }
     }
 
     protected function modelClass(): string

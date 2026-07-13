@@ -1,4 +1,4 @@
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import { CalendarCheck, Eye, FileUp, KeyRound, Lock, PencilLine, Plus, Search, Trash2, Unlock, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, Dropdown, Input, Modal, Textarea } from '../../../../Components/UI';
@@ -187,7 +187,7 @@ function DetailModal({ row, onClose, baseUrl }) {
     );
 }
 
-export default function Index({ title, description, type, baseUrl, rows, filters = {}, submissionOptions = [] }) {
+export default function Index({ title, description, type, baseUrl, createUrl, rows, filters = {}, submissionOptions = [] }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [formRow, setFormRow] = useState(null);
     const [createOpen, setCreateOpen] = useState(false);
@@ -214,7 +214,7 @@ export default function Index({ title, description, type, baseUrl, rows, filters
                             <span className="grid h-12 w-12 place-items-center rounded-xl bg-ink text-white dark:bg-white dark:text-ink"><Icon size={22} /></span>
                             <div><h1 className="font-display text-3xl font-extrabold">{title}</h1><p className="mt-1 text-ink-soft dark:text-white/60">{description}</p></div>
                         </div>
-                        <Button type="button" onClick={() => setCreateOpen(true)}>
+                        <Button as={Link} href={createUrl}>
                             <Plus size={16} /> Tambah {type === 'akad' ? 'Akad' : 'Serah Terima'}
                         </Button>
                     </div>
@@ -238,11 +238,11 @@ export default function Index({ title, description, type, baseUrl, rows, filters
                                     <td className="px-4 py-4">{row.milestone?.documents?.length ?? 0} file</td>
                                     <td className="px-4 py-4">{row.milestone?.record_status ?? '-'}</td>
                                     <td className="px-4 py-4"><div className="flex justify-end gap-2">
-                                        {!row.milestone && <Button size="sm" onClick={() => setFormRow(row)}><Plus size={14} /> Input</Button>}
+                                        {!row.milestone && <Button as={Link} href={`${createUrl}?submission=${row.id}`} size="sm"><Plus size={14} /> Input</Button>}
                                         {row.milestone && <>
                                             <Button size="sm" variant="outline" onClick={() => setDetailRow(row)}><Eye size={14} /></Button>
                                             {row.milestone.record_status !== 'locked' && <>
-                                                <Button size="sm" variant="outline" onClick={() => setFormRow(row)}><PencilLine size={14} /></Button>
+                                                <Button as={Link} href={row.edit_url} size="sm" variant="outline"><PencilLine size={14} /></Button>
                                                 <Button size="sm" variant="outline" onClick={() => window.confirm('Hapus data ini?') && router.delete(`${baseUrl}/${row.milestone.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>
                                             </>}
                                             {row.milestone.can_lock && (
@@ -261,8 +261,6 @@ export default function Index({ title, description, type, baseUrl, rows, filters
                     <Pagination links={rows.links} />
                 </section>
             </div>
-            <MilestoneModal open={createOpen} onClose={() => setCreateOpen(false)} row={null} type={type} baseUrl={baseUrl} submissionOptions={submissionOptions} />
-            <MilestoneModal open={Boolean(formRow)} onClose={() => setFormRow(null)} row={formRow} type={type} baseUrl={baseUrl} submissionOptions={submissionOptions} />
             <DetailModal row={detailRow} onClose={() => setDetailRow(null)} baseUrl={baseUrl} />
         </>
     );

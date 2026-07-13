@@ -1,4 +1,4 @@
-import { Head, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import { PlusCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '../../../../Components/UI';
@@ -19,7 +19,6 @@ import RolePermissionForm from '../RolePermission/Form';
 import rolePermissionRequest from '../RolePermission/request';
 import TipePostForm from '../TipePost/Form';
 import tipePostRequest from '../TipePost/request';
-import UserForm from '../User/Form';
 import userRequest from '../User/request';
 
 const sectionResources = {
@@ -29,9 +28,44 @@ const sectionResources = {
     'dokumen-legalitas': { FormComponent: DokumenLegalitasForm, requestService: dokumenLegalitasRequest },
     'dokumen-legalitas-rumah': { FormComponent: DokumenLegalitasRumahForm, requestService: dokumenLegalitasRumahRequest },
     'tipe-post': { FormComponent: TipePostForm, requestService: tipePostRequest },
-    user: { FormComponent: UserForm, requestService: userRequest },
     'role-permission': { FormComponent: RolePermissionForm, requestService: rolePermissionRequest },
 };
+
+const separatedFormSections = new Set(['user', 'cabang-perusahaan', 'master-bank', 'dokumen-legalitas', 'master-dokumen-customer', 'tipe-post']);
+
+function SeparatedManagementSection({ section, overviewUrl }) {
+    const permissions = useResourcePermissions(sectionPermissionKeys[section.key], section.baseUrl);
+
+    return (
+        <section className="overflow-hidden rounded-2xl border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
+            <div className="flex flex-col gap-4 border-b border-silver-deep/50 p-5 md:flex-row md:items-start md:justify-between dark:border-white/10">
+                <div>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">Section</p>
+                    <h2 className="mt-1 text-xl font-extrabold text-ink dark:text-white">{section.title}</h2>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-soft dark:text-white/62">{section.description}</p>
+                </div>
+                {permissions.canCreate && (
+                    <Button as={Link} href={`${section.baseUrl}/create`} variant="outline">
+                        <PlusCircle size={18} /> Data Baru
+                    </Button>
+                )}
+            </div>
+            <div className="p-5">
+                <ManagementTableAccordion
+                    title={section.title}
+                    columns={section.columns}
+                    rows={section.rows}
+                    filters={section.filters}
+                    defaultOpen={section.defaultOpen}
+                    permissions={permissions}
+                    onEdit={(row) => router.visit(`${section.baseUrl}/${row.id}/edit`)}
+                    onDelete={(row) => permissions.canDelete && userRequest.destroy({ baseUrl: section.baseUrl, row, label: section.title })}
+                    onSearch={(search) => userRequest.search({ baseUrl: overviewUrl, search, searchKey: section.searchKey })}
+                />
+            </div>
+        </section>
+    );
+}
 
 const sectionPermissionKeys = {
     'cabang-perusahaan': 'cabang',
@@ -194,11 +228,11 @@ export default function Index({ title, description, overviewUrl, sections }) {
 
                 <div className="grid gap-6">
                     {sections.map((section) => (
-                        <ManagementSection
-                            key={section.key}
-                            section={section}
-                            overviewUrl={overviewUrl}
-                        />
+                        separatedFormSections.has(section.key) ? (
+                            <SeparatedManagementSection key={section.key} section={section} overviewUrl={overviewUrl} />
+                        ) : (
+                            <ManagementSection key={section.key} section={section} overviewUrl={overviewUrl} />
+                        )
                     ))}
                 </div>
             </div>

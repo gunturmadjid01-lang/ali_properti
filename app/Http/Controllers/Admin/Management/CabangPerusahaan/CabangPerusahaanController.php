@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Management\CabangPerusahaan;
 
 use App\Http\Controllers\Admin\Management\CabangPerusahaan\Logic\CabangPerusahaanPayload;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\RendersSeparatedManagementForm;
 use App\Http\Requests\Admin\CabangPerusahaan\StoreCabangPerusahaanRequest;
 use App\Http\Requests\Admin\CabangPerusahaan\UpdateCabangPerusahaanRequest;
 use App\Http\Controllers\Controller;
@@ -17,7 +18,7 @@ use Inertia\Response;
 
 class CabangPerusahaanController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, RendersSeparatedManagementForm;
 
     public function index(Request $request): Response
     {
@@ -34,31 +35,8 @@ class CabangPerusahaanController extends Controller
             ['key' => 'status', 'label' => 'Status'],
         ];
 
-        $fields = [
-            ['name' => 'nama_cabang', 'label' => 'Nama Cabang', 'type' => 'text'],
-            ['name' => 'emaiil', 'label' => 'Email', 'type' => 'email'],
-            ['name' => 'phone', 'label' => 'Telepon', 'type' => 'text'],
-            ['name' => 'manager_name', 'label' => 'Nama Manager', 'type' => 'text'],
-            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status'],
-            ['name' => 'type', 'label' => 'Tipe', 'type' => 'select', 'optionsKey' => 'branchTypes'],
-            ['name' => 'latitude', 'label' => 'Latitude', 'type' => 'text'],
-            ['name' => 'longtitude', 'label' => 'Longitude', 'type' => 'text'],
-            ['name' => 'logo', 'label' => 'Logo', 'type' => 'image'],
-            ['name' => 'image', 'label' => 'Foto Kantor Cabang', 'type' => 'image'],
-            ['name' => 'address', 'label' => 'Alamat', 'type' => 'textarea', 'full' => true],
-            ['name' => 'deskripsi', 'label' => 'Deskripsi', 'type' => 'textarea', 'full' => true],
-        ];
-
-        $options = [
-            'status' => [
-                ['value' => 'aktif', 'label' => 'Aktif'],
-                ['value' => 'nonaktif', 'label' => 'Nonaktif'],
-            ],
-            'branchTypes' => [
-                ['value' => 'pusat', 'label' => 'Pusat'],
-                ['value' => 'cabang', 'label' => 'Cabang'],
-            ],
-        ];
+        $fields = $this->fields();
+        $options = $this->options();
 
         $rows = CabangPerusahaan::query()
             ->when($search !== '', function (Builder $query) use ($search, $searchableColumns) {
@@ -71,12 +49,14 @@ class CabangPerusahaanController extends Controller
             ->latest('id')
             ->paginate(10)
             ->withQueryString()
-            ->through(fn (CabangPerusahaan $row) => $row->toArray());
+            ->through(fn (CabangPerusahaan $row) => [...$row->toArray(), 'edit_url' => route('admin.management.cabang-perusahaan.edit', $row->id, false)]);
 
         return Inertia::render('Admin/Management/CabangPerusahaan/Index', [
-            'title' => 'Management Cabang Perusahaan',
-            'description' => 'Kelola data, cari cepat, edit, dan hapus dari satu halaman.',
+            'title' => $this->title(),
+            'description' => $this->description(),
             'baseUrl' => route('admin.management.cabang-perusahaan.index', absolute: false),
+            'createUrl' => route('admin.management.cabang-perusahaan.create', absolute: false),
+            'permissionKey' => 'cabang',
             'routeName' => 'admin.management.cabang-perusahaan',
             'filters' => ['search' => $search],
             'rows' => $rows,
@@ -93,7 +73,7 @@ class CabangPerusahaanController extends Controller
 
         CabangPerusahaan::create($payload);
 
-        return back()->with('success', 'Management Cabang Perusahaan berhasil ditambahkan.');
+        return to_route('admin.management.cabang-perusahaan.index')->with('success', 'Management Cabang Perusahaan berhasil ditambahkan.');
     }
 
     public function update(UpdateCabangPerusahaanRequest $request, string $id): RedirectResponse
@@ -102,7 +82,7 @@ class CabangPerusahaanController extends Controller
         $this->abortIfLocked($row);
         $row->update(app(CabangPerusahaanPayload::class)->fromRequest($request));
 
-        return back()->with('success', 'Management Cabang Perusahaan berhasil diperbarui.');
+        return to_route('admin.management.cabang-perusahaan.index')->with('success', 'Management Cabang Perusahaan berhasil diperbarui.');
     }
 
     public function destroy(string $id): RedirectResponse
@@ -118,4 +98,34 @@ class CabangPerusahaanController extends Controller
     {
         return CabangPerusahaan::class;
     }
+
+    protected function fields(): array
+    {
+        return [
+            ['name' => 'nama_cabang', 'label' => 'Nama Cabang', 'type' => 'text', 'required' => true],
+            ['name' => 'emaiil', 'label' => 'Email', 'type' => 'email'],
+            ['name' => 'phone', 'label' => 'Telepon', 'type' => 'text'],
+            ['name' => 'manager_name', 'label' => 'Nama Manager', 'type' => 'text'],
+            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status', 'required' => true],
+            ['name' => 'type', 'label' => 'Tipe', 'type' => 'select', 'optionsKey' => 'branchTypes', 'required' => true],
+            ['name' => 'latitude', 'label' => 'Latitude', 'type' => 'text'],
+            ['name' => 'longtitude', 'label' => 'Longitude', 'type' => 'text'],
+            ['name' => 'logo', 'label' => 'Logo', 'type' => 'image'],
+            ['name' => 'image', 'label' => 'Foto Kantor Cabang', 'type' => 'image'],
+            ['name' => 'address', 'label' => 'Alamat', 'type' => 'textarea', 'full' => true],
+            ['name' => 'deskripsi', 'label' => 'Deskripsi', 'type' => 'textarea', 'full' => true],
+        ];
+    }
+
+    protected function options(): array
+    {
+        return [
+            'status' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']],
+            'branchTypes' => [['value' => 'pusat', 'label' => 'Pusat'], ['value' => 'cabang', 'label' => 'Cabang']],
+        ];
+    }
+
+    protected function routeName(): string { return 'admin.management.cabang-perusahaan'; }
+    protected function title(): string { return 'Management Cabang Perusahaan'; }
+    protected function description(): string { return 'Kelola identitas, lokasi, kontak, dan status kantor cabang perusahaan.'; }
 }

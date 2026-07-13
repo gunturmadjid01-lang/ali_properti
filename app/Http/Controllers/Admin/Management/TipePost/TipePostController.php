@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Management\TipePost;
 
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Concerns\RendersSeparatedManagementForm;
 use App\Http\Requests\Admin\TipePost\StoreTipePostRequest;
 use App\Http\Requests\Admin\TipePost\UpdateTipePostRequest;
 use App\Models\ChartOfAccount;
@@ -16,7 +17,7 @@ use Inertia\Response;
 
 class TipePostController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock, RendersSeparatedManagementForm;
 
     public function index(Request $request): Response
     {
@@ -38,12 +39,15 @@ class TipePostController extends Controller
                 ...$row->toArray(),
                 'debit_account_label' => $row->debitAccount ? "{$row->debitAccount->kode_akun} - {$row->debitAccount->nama_akun}" : '-',
                 'credit_account_label' => $row->creditAccount ? "{$row->creditAccount->kode_akun} - {$row->creditAccount->nama_akun}" : '-',
+                'edit_url' => route($this->routeName().'.edit', $row->id, false),
             ]);
 
         return Inertia::render($this->component(), [
             'title' => $this->title(),
             'description' => $this->description(),
             'baseUrl' => route($this->routeName().'.index', absolute: false),
+            'createUrl' => route($this->routeName().'.create', absolute: false),
+            'permissionKey' => 'tipe-post',
             'routeName' => $this->routeName(),
             'filters' => ['search' => $search],
             'rows' => $rows,
@@ -57,7 +61,7 @@ class TipePostController extends Controller
     {
         TipePost::create($request->validated());
 
-        return back()->with('success', $this->title().' berhasil ditambahkan.');
+        return to_route($this->routeName().'.index')->with('success', $this->title().' berhasil ditambahkan.');
     }
 
     public function update(UpdateTipePostRequest $request, string $id): RedirectResponse
@@ -66,7 +70,7 @@ class TipePostController extends Controller
         $this->abortIfLocked($row);
         $row->update($request->validated());
 
-        return back()->with('success', $this->title().' berhasil diperbarui.');
+        return to_route($this->routeName().'.index')->with('success', $this->title().' berhasil diperbarui.');
     }
 
     public function destroy(string $id): RedirectResponse
@@ -96,7 +100,7 @@ class TipePostController extends Controller
 
     protected function title(): string
     {
-        return 'Management Tipe Post';
+        return 'Tipe Pemasukan / Pengeluaran';
     }
 
     protected function columns(): array
@@ -114,11 +118,11 @@ class TipePostController extends Controller
     protected function fields(): array
     {
         return [
-            ['name' => 'nama_post', 'label' => 'Nama Post', 'type' => 'text'],
-            ['name' => 'jenis', 'label' => 'Jenis', 'type' => 'select', 'optionsKey' => 'postTypes'],
+            ['name' => 'nama_post', 'label' => 'Nama Post', 'type' => 'text', 'required' => true],
+            ['name' => 'jenis', 'label' => 'Jenis', 'type' => 'select', 'optionsKey' => 'postTypes', 'required' => true],
             ['name' => 'debit_account_id', 'label' => 'Akun Debit', 'type' => 'select', 'optionsKey' => 'accounts'],
             ['name' => 'credit_account_id', 'label' => 'Akun Kredit', 'type' => 'select', 'optionsKey' => 'accounts'],
-            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status'],
+            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status', 'required' => true],
         ];
     }
 
@@ -143,6 +147,6 @@ class TipePostController extends Controller
 
     protected function description(): string
     {
-        return 'Kelola data, cari cepat, edit, dan hapus dari satu halaman.';
+        return 'Kelola kategori transaksi pemasukan dan pengeluaran beserta pasangan akun debit dan kredit.';
     }
 }

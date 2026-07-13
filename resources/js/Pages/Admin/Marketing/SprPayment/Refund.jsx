@@ -1,4 +1,4 @@
-import { Head, router, useForm } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import { CheckCircle2, LoaderCircle, RotateCcw, Search, XCircle } from 'lucide-react';
 import { useState } from 'react';
 import { Button, CurrencyInput, Dropdown, Input, Modal, Textarea } from '../../../../Components/UI';
@@ -154,10 +154,10 @@ export default function Refund({ title, description, baseUrl, filters = {}, rows
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex justify-end gap-2">
-                                                {row.can_request && <Button size="sm" type="button" onClick={() => setRequestRow(row)}><RotateCcw size={15} /> Refund</Button>}
-                                                {row.can_approve_manager && <Button size="sm" type="button" onClick={() => setApproval({ row, action: 'manager' })}><CheckCircle2 size={15} /> Approve Manajer</Button>}
-                                                {row.can_approve_owner && <Button size="sm" type="button" onClick={() => setApproval({ row, action: 'owner' })}><CheckCircle2 size={15} /> Approve Owner</Button>}
-                                                {row.can_reject && <Button size="sm" type="button" variant="outline" onClick={() => setApproval({ row, action: 'reject' })}><XCircle size={15} /> Tolak</Button>}
+                                                {row.can_request && <Button as={Link} href={`/admin/refund-spr/request/${row.id}`} size="sm"><RotateCcw size={15} /> Refund</Button>}
+                                                {row.can_approve_manager && <Button as={Link} href={`/admin/refund-spr/${row.id}/review/manager`} size="sm"><CheckCircle2 size={15} /> Approve Manajer</Button>}
+                                                {row.can_approve_owner && <Button as={Link} href={`/admin/refund-spr/${row.id}/review/owner`} size="sm"><CheckCircle2 size={15} /> Approve Owner</Button>}
+                                                {row.can_reject && <Button as={Link} href={`/admin/refund-spr/${row.id}/review/reject`} size="sm" variant="outline"><XCircle size={15} /> Tolak</Button>}
                                             </div>
                                         </td>
                                     </tr>
@@ -171,8 +171,6 @@ export default function Refund({ title, description, baseUrl, filters = {}, rows
                 </section>
             </div>
 
-            <RefundRequestModal bankOptions={bankOptions} onClose={() => setRequestRow(null)} open={Boolean(requestRow)} row={requestRow} />
-            <ApprovalModal action={approval.action} onClose={() => setApproval({ row: null, action: '' })} open={Boolean(approval.row)} row={approval.row} />
         </>
     );
 }

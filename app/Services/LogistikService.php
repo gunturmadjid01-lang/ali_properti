@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\BarangMaterial;
 use App\Models\DetailRumah;
-use App\Models\HppRealisasi;
 use App\Models\Perumahan;
 use App\Models\StokMaterial;
 use App\Models\TransaksiLogistik;
@@ -75,97 +74,8 @@ class LogistikService
 
             $transaksi->update(['total_nominal' => $total]);
 
-            if ($payload['jenis'] === TransaksiLogistik::JENIS_KELUAR) {
-                $this->createHppRealisasi(
-                    target: $detailRumah ?? Perumahan::query()->findOrFail($perumahanId),
-                    perumahanId: $perumahanId,
-                    detailRumahId: $detailRumah?->id,
-                    tahapanPembangunanId: $payload['tahapan_pembangunan_id'] ?? null,
-                    kelompokHppId: $payload['kelompok_hpp_id'] ?? null,
-                    sumber: $transaksi,
-                    tanggal: $payload['tanggal'],
-                    nominal: $total,
-                    keterangan: $payload['keterangan'] ?? 'Realisasi otomatis dari transaksi logistik',
-                );
-
-                if ($detailRumah !== null) {
-                    $this->createHppRealisasi(
-                        target: Perumahan::query()->findOrFail($perumahanId),
-                        perumahanId: $perumahanId,
-                        detailRumahId: null,
-                        tahapanPembangunanId: $payload['tahapan_pembangunan_id'] ?? null,
-                        kelompokHppId: $payload['kelompok_hpp_id'] ?? null,
-                        sumber: $transaksi,
-                        tanggal: $payload['tanggal'],
-                        nominal: $total,
-                        keterangan: $payload['keterangan'] ?? 'Realisasi otomatis dari transaksi logistik',
-                    );
-                }
-            }
-
-            if (
-                $payload['jenis'] === TransaksiLogistik::JENIS_MASUK
-                && ($payload['reverse_hpp'] ?? false)
-                && $perumahanId
-            ) {
-                $this->createHppRealisasi(
-                    target: $detailRumah ?? Perumahan::query()->findOrFail($perumahanId),
-                    perumahanId: $perumahanId,
-                    detailRumahId: $detailRumah?->id,
-                    tahapanPembangunanId: $payload['tahapan_pembangunan_id'] ?? null,
-                    kelompokHppId: $payload['kelompok_hpp_id'] ?? null,
-                    sumber: $transaksi,
-                    tanggal: $payload['tanggal'],
-                    nominal: -$total,
-                    keterangan: $payload['keterangan'] ?? 'Pengurang realisasi HPP dari pengembalian material',
-                );
-
-                if ($detailRumah !== null) {
-                    $this->createHppRealisasi(
-                        target: Perumahan::query()->findOrFail($perumahanId),
-                        perumahanId: $perumahanId,
-                        detailRumahId: null,
-                        tahapanPembangunanId: $payload['tahapan_pembangunan_id'] ?? null,
-                        kelompokHppId: $payload['kelompok_hpp_id'] ?? null,
-                        sumber: $transaksi,
-                        tanggal: $payload['tanggal'],
-                        nominal: -$total,
-                        keterangan: $payload['keterangan'] ?? 'Pengurang realisasi HPP dari pengembalian material',
-                    );
-                }
-            }
-
             return $transaksi;
         });
-    }
-
-    private function createHppRealisasi(
-        object $target,
-        int $perumahanId,
-        ?int $detailRumahId,
-        ?int $tahapanPembangunanId,
-        ?int $kelompokHppId,
-        TransaksiLogistik $sumber,
-        string $tanggal,
-        float $nominal,
-        string $keterangan,
-    ): HppRealisasi {
-        return HppRealisasi::query()->create([
-            'target_type' => $target::class,
-            'target_id' => $target->getKey(),
-            'perumahan_id' => $perumahanId,
-            'detail_rumah_id' => $detailRumahId,
-            'tahapan_pembangunan_id' => $tahapanPembangunanId,
-            'kelompok_hpp_id' => $kelompokHppId,
-            'sumber_type' => TransaksiLogistik::class,
-            'sumber_id' => $sumber->id,
-            'tanggal' => $tanggal,
-            'nominal' => $nominal,
-            'keterangan' => $keterangan,
-            'user_id' => auth()->id(),
-            'created_by' => auth()->id(),
-            'updated_by' => auth()->id(),
-        ]);
     }
 
     private function mutasiStok(int $barangId, string $jenis, float $qty, int|string|null $gudangId = null): void

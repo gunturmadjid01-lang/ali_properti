@@ -246,7 +246,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                                 ) : (
                                                     <Button size="sm" type="button" variant="outline" onClick={() => lockRow(row)}><Lock size={15} /></Button>
                                                 )}
-                                                <Button size="sm" type="button" variant="outline" onClick={() => setEditRow(row)}><PencilLine size={15} /></Button>
+                                                <Button as={Link} href={row.edit_url} size="sm" variant="outline"><PencilLine size={15} /></Button>
                                             </div>
                                         </td>
                                     </tr>
@@ -263,7 +263,6 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                 </section>
             </div>
 
-            <EditKprModal open={Boolean(editRow)} onClose={() => setEditRow(null)} row={editRow} baseUrl={baseUrl} banks={banks} options={options} />
         </>
     );
 }

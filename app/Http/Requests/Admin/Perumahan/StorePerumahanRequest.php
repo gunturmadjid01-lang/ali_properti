@@ -16,7 +16,6 @@ class StorePerumahanRequest extends FormRequest
     {
         return [
             'cabang_id' => ['required', 'exists:cabang_perusahaans,id'],
-            'kode_proyek' => ['nullable', 'string', 'max:255', 'unique:perumahans,kode_proyek'],
             'nama_perusahaan' => ['required', 'string', 'max:255'],
             'developer_name' => ['nullable', 'string', 'max:255'],
             'alamat' => ['required', 'string'],

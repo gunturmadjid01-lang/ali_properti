@@ -10,10 +10,12 @@ use App\Models\Perumahan;
 use App\Models\ProgressPembangunan;
 use App\Models\SiteMaterialStock;
 use App\Models\TahapanPembangunan;
+use App\Services\MaterialHppRealizationService;
 use App\Services\MaterialWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -24,6 +26,8 @@ class MaterialUsageController extends Controller
 
     public function index(Request $request): Response
     {
+        abort_unless(! auth()->user()?->hasAnyRole(['user_area_gudang', 'admin_gudang']), 404);
+
         $search = trim((string) $request->query('search', ''));
         $perumahanId = $request->query('perumahan_id');
         $detailRumahId = $request->query('detail_rumah_id');
@@ -127,18 +131,19 @@ class MaterialUsageController extends Controller
         ]);
     }
 
-    public function store(Request $request, MaterialWorkflowService $workflow): RedirectResponse
+    public function store(Request $request, MaterialWorkflowService $workflow, MaterialHppRealizationService $hppRealization): RedirectResponse
     {
         $this->authorizeMaterialUsage('create');
         $validated = $this->validatePayload($request);
         $this->ensureProgressMatches($validated);
 
-        $workflow->recordUsage($validated, $request->file('foto'));
+        $usage = $workflow->recordUsage($validated, $request->file('foto'));
+        $hppRealization->syncFromUsage($usage);
 
         return back()->with('success', 'Pemakaian material berhasil dicatat dan sisa material lokasi telah diperbarui.');
     }
 
-    public function update(Request $request, string $id, MaterialWorkflowService $workflow): RedirectResponse
+    public function update(Request $request, string $id, MaterialWorkflowService $workflow, MaterialHppRealizationService $hppRealization): RedirectResponse
     {
         $this->authorizeMaterialUsage('update');
         $usage = MaterialUsage::query()->findOrFail($id);
@@ -150,27 +155,32 @@ class MaterialUsageController extends Controller
             Storage::disk('public')->delete($usage->foto);
         }
 
-        $workflow->updateUsage($usage, $validated, $request->file('foto'));
+        $usage = $workflow->updateUsage($usage, $validated, $request->file('foto'));
+        $hppRealization->syncFromUsage($usage);
 
         return back()->with('success', 'Pemakaian material berhasil diperbarui.');
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(string $id, MaterialHppRealizationService $hppRealization): RedirectResponse
     {
         $this->authorizeMaterialUsage('delete');
-        $usage = MaterialUsage::query()->with('details')->findOrFail($id);
-        $this->abortIfLocked($usage);
+        DB::transaction(function () use ($id, $hppRealization): void {
+            $usage = MaterialUsage::query()->with('details')->findOrFail($id);
+            $this->abortIfLocked($usage);
 
-        foreach ($usage->details as $detail) {
-            $detail->siteMaterialStock()->increment('qty_available', $detail->qty);
-            $detail->siteMaterialStock()->decrement('qty_used', $detail->qty);
-        }
+            $hppRealization->removeForUsage($usage);
 
-        if ($usage->foto) {
-            Storage::disk('public')->delete($usage->foto);
-        }
+            foreach ($usage->details as $detail) {
+                $detail->siteMaterialStock()->increment('qty_available', $detail->qty);
+                $detail->siteMaterialStock()->decrement('qty_used', $detail->qty);
+            }
 
-        $usage->delete();
+            if ($usage->foto) {
+                Storage::disk('public')->delete($usage->foto);
+            }
+
+            $usage->delete();
+        });
 
         return back()->with('success', 'Pemakaian material berhasil dihapus dan saldo lokasi dikembalikan.');
     }
@@ -195,9 +205,12 @@ class MaterialUsageController extends Controller
         $user = auth()->user();
 
         return (bool) (
-            $user?->hasRole('super_admin')
-            || $user?->can("material-usage.{$action}")
-            || $user?->can('material-usage.manage')
+            ! $user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])
+            && (
+                $user?->hasRole('super_admin')
+                || $user?->can("material-usage.{$action}")
+                || $user?->can('material-usage.manage')
+            )
         );
     }
 

@@ -19,6 +19,9 @@ class HppRealisasi extends Model
         'detail_rumah_id',
         'tahapan_pembangunan_id',
         'kelompok_hpp_id',
+        'detail_rumah_hpp_item_id',
+        'source_type',
+        'source_id',
         'sumber_type',
         'sumber_id',
         'tanggal',
@@ -62,5 +65,10 @@ class HppRealisasi extends Model
     public function tahapanPembangunan(): BelongsTo
     {
         return $this->belongsTo(TahapanPembangunan::class);
+    }
+
+    public function detailRumahHppItem(): BelongsTo
+    {
+        return $this->belongsTo(DetailRumahHppItem::class);
     }
 }

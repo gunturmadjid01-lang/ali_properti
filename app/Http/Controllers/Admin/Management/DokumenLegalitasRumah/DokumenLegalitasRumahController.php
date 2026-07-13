@@ -115,12 +115,12 @@ class DokumenLegalitasRumahController extends Controller
     protected function fields(): array
     {
         return [
-            ['name' => 'perumahan_id', 'label' => 'Perumahan', 'type' => 'select', 'optionsKey' => 'perumahan'],
-            ['name' => 'nama_dokumen', 'label' => 'Nama Dokumen', 'type' => 'text'],
-            ['name' => 'tanggal_terbit', 'label' => 'Tanggal Terbit', 'type' => 'date'],
-            ['name' => 'tanggal_berakhir', 'label' => 'Tanggal Berakhir', 'type' => 'date'],
-            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status'],
-            ['name' => 'file', 'label' => 'File', 'type' => 'text', 'full' => true],
+            ['name' => 'perumahan_id', 'label' => 'Perumahan', 'type' => 'select', 'optionsKey' => 'perumahan', 'required' => true],
+            ['name' => 'nama_dokumen', 'label' => 'Nama Dokumen', 'type' => 'text', 'required' => true],
+            ['name' => 'tanggal_terbit', 'label' => 'Tanggal Terbit', 'type' => 'date', 'required' => true],
+            ['name' => 'tanggal_berakhir', 'label' => 'Tanggal Berakhir', 'type' => 'date', 'required' => true],
+            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status', 'required' => true],
+            ['name' => 'file', 'label' => 'File', 'type' => 'text', 'full' => true, 'required' => true],
         ];
     }
 

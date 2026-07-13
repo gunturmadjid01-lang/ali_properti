@@ -18,4 +18,9 @@ class MaterialRequestDetail extends Model
     {
         return $this->belongsTo(BarangMaterial::class);
     }
+
+    public function materialRequest(): BelongsTo
+    {
+        return $this->belongsTo(MaterialRequest::class);
+    }
 }

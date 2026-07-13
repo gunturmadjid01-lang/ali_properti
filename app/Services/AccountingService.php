@@ -8,6 +8,8 @@ use App\Models\HppRealisasi;
 use App\Models\Journal;
 use App\Models\KelompokHpp;
 use App\Models\MaterialPurchase;
+use App\Models\PettyCashExpense;
+use App\Models\PettyCashFunding;
 use App\Models\SpkKontraktorPayment;
 use App\Models\TipePost;
 use App\Models\TransaksiKeuangan;
@@ -23,6 +25,53 @@ class AccountingService
     public const SUPPLIER_BILL = 'supplier_bill';
     public const SUPPLIER_PAYMENT = 'supplier_payment';
     public const CASH_TRANSACTION = 'cash_transaction';
+    public const PETTY_CASH_FUNDING = 'petty_cash_funding';
+    public const PETTY_CASH_EXPENSE = 'petty_cash_expense';
+
+    public function recordPettyCashFunding(PettyCashFunding $funding): Journal
+    {
+        return $this->postJournal(
+            source: $funding,
+            type: self::PETTY_CASH_FUNDING,
+            tanggal: $funding->approved_at?->toDateString() ?? now()->toDateString(),
+            perumahanId: null,
+            detailRumahId: null,
+            keterangan: "Pengisian kas kecil {$funding->number}",
+            lines: [
+                ['account' => ChartOfAccount::KAS_KECIL, 'debit' => $funding->amount, 'kredit' => 0],
+                ['account' => ChartOfAccount::KAS_BANK, 'debit' => 0, 'kredit' => $funding->amount],
+            ],
+        );
+    }
+
+    public function recordPettyCashExpense(PettyCashExpense $expense): Journal
+    {
+        $debitAccount = $expense->cost_type === 'operational'
+            ? $this->operationalExpenseAccount($expense->category)
+            : ChartOfAccount::PERSEDIAAN_PROYEK;
+
+        return $this->postJournal(
+            source: $expense,
+            type: self::PETTY_CASH_EXPENSE,
+            tanggal: $expense->expense_date->toDateString(),
+            perumahanId: $expense->perumahan_id,
+            detailRumahId: $expense->detail_rumah_id,
+            keterangan: "Pengeluaran kas kecil {$expense->number} - {$expense->description}",
+            lines: [
+                ['account' => $debitAccount, 'debit' => $expense->amount, 'kredit' => 0],
+                ['account' => ChartOfAccount::KAS_KECIL, 'debit' => 0, 'kredit' => $expense->amount],
+            ],
+        );
+    }
+
+    private function operationalExpenseAccount(string $category): string
+    {
+        return match ($category) {
+            'utilitas' => '6-4000',
+            'lainnya' => '6-9000',
+            default => ChartOfAccount::BEBAN_OPERASIONAL,
+        };
+    }
 
     public function recordFinancialTransaction(TransaksiKeuangan $transaction): ?Journal
     {

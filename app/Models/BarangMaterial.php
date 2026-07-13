@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 class BarangMaterial extends Model
 {
@@ -15,6 +16,8 @@ class BarangMaterial extends Model
         'kode_barang',
         'nama_barang',
         'kategori_material',
+        'jenis_material',
+        'merk_material',
         'satuan',
         'harga_hpp',
         'stok_minimum',
@@ -27,6 +30,17 @@ class BarangMaterial extends Model
         'stok_minimum' => 'float',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $material): void {
+            if (filled($material->kode_barang)) {
+                return;
+            }
+
+            $material->kode_barang = static::nextKodeBarang();
+        });
+    }
+
     public function stokMaterials(): HasMany
     {
         return $this->hasMany(StokMaterial::class);
@@ -35,5 +49,10 @@ class BarangMaterial extends Model
     public function priceHistories(): HasMany
     {
         return $this->hasMany(MaterialPriceHistory::class);
+    }
+
+    public static function nextKodeBarang(): string
+    {
+        return 'MAT-'.Str::padLeft((string) (static::withTrashed()->count() + 1), 5, '0');
     }
 }

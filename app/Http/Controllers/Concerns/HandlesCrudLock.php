@@ -73,7 +73,7 @@ trait HandlesCrudLock
             return false;
         }
 
-        if ($user->hasAnyRole(['super_admin'])) {
+        if ($user->hasAnyRole(['super_admin', 'owner', 'manager', 'manajer_pimpro'])) {
             return true;
         }
 

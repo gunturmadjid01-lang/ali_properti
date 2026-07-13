@@ -1,7 +1,7 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { ArrowLeft, FilePlus2, Save, Search, XCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Accordion, Button, CurrencyInput, Dropdown, Input, Textarea } from '../../../../Components/UI';
+import { Button, CurrencyInput, Dropdown, Input, Textarea } from '../../../../Components/UI';
 import AdminLayout from '../../../../Layouts/AdminLayout';
 
 function money(value) {
@@ -465,32 +465,23 @@ export default function SprForm({ title, description, baseUrl, submitUrl, method
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
+                <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-ink via-graphite to-[#27323b] p-6 text-white shadow-lg">
+                    <div className="absolute -right-16 -top-24 h-56 w-56 rounded-full bg-gold/15 blur-2xl" />
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">Marketing</p>
-                            <h2 className="mt-1 text-xl font-extrabold text-ink dark:text-white">{title}</h2>
-                            <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-soft dark:text-white/60">{description}</p>
+                        <div className="relative">
+                            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-champagne">Marketing · Surat Pemesanan Rumah</p>
+                            <h1 className="mt-2 text-2xl font-black md:text-3xl">{title}</h1>
+                            <p className="mt-2 max-w-3xl text-sm leading-6 text-white/65">{description}</p>
                         </div>
-                        <Button as="a" href={baseUrl} variant="outline">
+                        <Button as="a" href={baseUrl} variant="outline" className="relative border-white/20 bg-white/10 text-white hover:bg-white/20">
                             <ArrowLeft size={16} /> Kembali
                         </Button>
                     </div>
                 </section>
 
                 <form className="grid gap-5" onSubmit={submit}>
-                    {isMobile ? (
-                        <Accordion
-                            defaultOpen={0}
-                            items={[
-                                { title: 'Data SPR', content: fieldsContent },
-                                { title: 'Berkas Customer', content: berkasContent },
-                                { title: 'Ringkasan', content: summaryContent },
-                            ]}
-                        />
-                    ) : (
-                        <div className="grid gap-5 xl:grid-cols-[1.65fr_0.65fr]">
-                            <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
+                    <div className="grid items-start gap-5 xl:grid-cols-[1.65fr_0.65fr]">
+                            <section className="rounded-2xl border border-white/80 bg-white/85 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
                                 <SectionTitle title="Data SPR" description="Lengkapi data transaksi, penambahan, dan termin." />
                                 <div className="mt-4">{fieldsContent}</div>
                                 <div className="mt-6">
@@ -498,12 +489,11 @@ export default function SprForm({ title, description, baseUrl, submitUrl, method
                                     <div className="mt-4">{berkasContent}</div>
                                 </div>
                             </section>
-                            <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
+                            <section className="rounded-2xl border border-white/80 bg-white/85 p-5 shadow-soft xl:sticky xl:top-5 dark:border-white/10 dark:bg-white/8">
                                 <SectionTitle title="Ringkasan SPR" description="Lihat ringkasan customer, unit, dan total akhir." />
                                 <div className="mt-4">{summaryContent}</div>
                             </section>
-                        </div>
-                    )}
+                    </div>
 
                     <div className="sticky bottom-0 z-20 flex flex-wrap justify-end gap-3 border-t border-silver-deep/60 bg-white/95 px-5 py-4 backdrop-blur dark:border-white/10 dark:bg-graphite/95">
                         <Button as="a" href={baseUrl} variant="outline" type="button">

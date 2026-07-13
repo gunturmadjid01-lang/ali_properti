@@ -44,7 +44,7 @@ export default function Index({ title, baseUrl, rows = { data: [], links: [] }, 
                         <div className="flex items-end"><Button className="w-full" type="submit"><Search size={16} /> Cari</Button></div>
                     </form>
                     <div className="overflow-x-auto">
-                        <table className="min-w-full text-sm">
+                        <table className="min-w-full text-xs">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-wider text-ink-soft">
                                 <tr>{['Lokasi', 'Tahapan', 'Material / HPP', 'Diterima', 'Dipakai', 'Menunggu Kembali', 'Dikembalikan', 'Sisa'].map((label) => <th className="px-5 py-4" key={label}>{label}</th>)}</tr>
                             </thead>

@@ -88,6 +88,11 @@ class Costumer extends Model
         return $this->hasMany(Spr::class);
     }
 
+    public function unitOwnerships(): HasMany
+    {
+        return $this->hasMany(UnitOwnership::class);
+    }
+
     public function reminders(): HasMany
     {
         return $this->hasMany(MarketingReminder::class);

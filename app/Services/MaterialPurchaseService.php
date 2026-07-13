@@ -3,11 +3,14 @@
 namespace App\Services;
 
 use App\Models\BarangMaterial;
+use App\Models\Gudang;
 use App\Models\MaterialPurchase;
 use App\Models\MaterialPurchaseDetail;
 use App\Models\MaterialPurchaseRequest;
 use App\Models\MaterialRequest;
+use App\Models\MaterialPriceHistory;
 use App\Models\OperationalSetting;
+use App\Models\Supplier;
 use App\Models\TransaksiLogistik;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -30,44 +33,53 @@ class MaterialPurchaseService
     ): MaterialPurchase
     {
         return DB::transaction(function () use ($payload, $request, $purchaseRequest) {
-            if ($purchaseRequest && $purchaseRequest->status !== MaterialPurchaseRequest::STATUS_DIAJUKAN) {
-                throw ValidationException::withMessages([
-                    'material_purchase_request_id' => 'Permintaan pembelian ini sudah diproses.',
-                ]);
-            }
-
             $items = collect($payload['items'] ?? [])->filter(fn ($item) => (float) ($item['qty'] ?? 0) > 0)->values();
+            $transactionDiscount = max(0, (float) ($payload['diskon_transaksi'] ?? 0));
 
             if ($items->isEmpty()) {
                 throw ValidationException::withMessages(['items' => 'Minimal satu item pembelian harus diisi.']);
             }
 
+            $supplier = ! empty($payload['supplier_id'])
+                ? Supplier::query()->find($payload['supplier_id'])
+                : null;
+            $gudang = $purchaseRequest?->gudang
+                ?? ($request?->gudang ?? null)
+                ?? (filled($payload['gudang_id'] ?? null) ? Gudang::query()->find($payload['gudang_id']) : null);
+            $purchaseCode = $payload['kode_pembelian'] ?? $this->nextPurchaseCode();
+
+            if (MaterialPurchase::withTrashed()->where('kode_pembelian', $purchaseCode)->exists()) {
+                $purchaseCode = $this->nextPurchaseCode();
+            }
+
             $purchase = MaterialPurchase::query()->create([
-                'kode_pembelian' => 'PB-'.now()->format('YmdHis'),
+                'kode_pembelian' => $purchaseCode,
                 'tanggal' => $payload['tanggal'],
                 'material_request_id' => $request?->id,
                 'material_purchase_request_id' => $purchaseRequest?->id,
                 'gudang_id' => $purchaseRequest?->gudang_id ?? $request?->gudang_id ?? $payload['gudang_id'] ?? null,
-                'perumahan_id' => null,
+                'perumahan_id' => $gudang?->perumahan_id ?? $request?->perumahan_id ?? $payload['perumahan_id'] ?? null,
                 'detail_rumah_id' => null,
                 'tahapan_pembangunan_id' => null,
                 'kelompok_hpp_id' => null,
-                'supplier' => $payload['supplier'] ?? null,
+                'supplier_id' => $supplier?->id,
+                'supplier' => $supplier?->nama_supplier ?? $payload['supplier'] ?? null,
                 'metode_pembayaran' => $payload['metode_pembayaran'] ?? 'tunai',
                 'planned_master_bank_id' => $payload['planned_master_bank_id'] ?? null,
-                'status' => MaterialPurchase::STATUS_MENUNGGU_MANAGER,
+                'status' => $purchaseRequest ? MaterialPurchase::STATUS_APPROVED : MaterialPurchase::STATUS_MENUNGGU_APPROVAL,
                 'keterangan' => $payload['keterangan'] ?? null,
                 'created_by' => auth()->id(),
                 'updated_by' => auth()->id(),
             ]);
 
-            $total = 0;
+            $subtotal = 0;
             foreach ($items as $item) {
                 $barang = BarangMaterial::query()->findOrFail($item['barang_material_id']);
                 $qty = (float) $item['qty'];
                 $harga = (float) ($item['harga_satuan'] ?? $barang->harga_hpp);
-                $subtotal = $qty * $harga;
-                $total += $subtotal;
+                $diskon = min(max(0, (float) ($item['diskon'] ?? 0)), $qty * $harga);
+                $lineSubtotal = max(0, ($qty * $harga) - $diskon);
+                $subtotal += $lineSubtotal;
 
                 $purchase->details()->create([
                     'barang_material_id' => $barang->id,
@@ -75,11 +87,18 @@ class MaterialPurchaseService
                     'qty_diterima' => 0,
                     'satuan' => $item['satuan'] ?? $barang->satuan,
                     'harga_satuan' => $harga,
-                    'subtotal' => $subtotal,
+                    'diskon' => $diskon,
+                    'subtotal' => $lineSubtotal,
                 ]);
             }
 
-            $purchase->update(['total_nominal' => $total, 'updated_by' => auth()->id()]);
+            $transactionDiscount = min($transactionDiscount, $subtotal);
+            $purchase->update([
+                'subtotal_nominal' => $subtotal,
+                'diskon_transaksi' => $transactionDiscount,
+                'total_nominal' => max(0, $subtotal - $transactionDiscount),
+                'updated_by' => auth()->id(),
+            ]);
             $request?->update(['status' => MaterialRequest::STATUS_DIPROSES, 'processed_by' => auth()->id(), 'processed_at' => now()]);
             $purchaseRequest?->update([
                 'status' => MaterialPurchaseRequest::STATUS_DIPROSES,
@@ -88,12 +107,83 @@ class MaterialPurchaseService
                 'updated_by' => auth()->id(),
             ]);
 
-            $this->notifications->toRoles(
-                ['manajer_pimpro', 'owner', 'super_admin'],
-                'Pembelian barang menunggu approval',
-                "Pembelian {$purchase->kode_pembelian} membutuhkan approval manajer.",
-                '/admin/pembelian-material'
-            );
+            if (filter_var($payload['update_material_prices'] ?? false, FILTER_VALIDATE_BOOL)) {
+                $this->syncMaterialPricesFromPurchase($purchase, $items, $transactionDiscount);
+            }
+
+            return $purchase;
+        });
+    }
+
+    public function updatePurchase(MaterialPurchase $purchase, array $payload): MaterialPurchase
+    {
+        $purchase->loadMissing('details');
+
+        if ($purchase->details->contains(fn (MaterialPurchaseDetail $detail) => $detail->inspection_status !== 'pending' || (float) $detail->qty_diterima > 0)) {
+            throw ValidationException::withMessages([
+                'purchase' => 'Pembelian yang sudah masuk pengecekan barang tidak dapat diedit.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($purchase, $payload) {
+            $items = collect($payload['items'] ?? [])->filter(fn ($item) => (float) ($item['qty'] ?? 0) > 0)->values();
+            $transactionDiscount = max(0, (float) ($payload['diskon_transaksi'] ?? 0));
+
+            if ($items->isEmpty()) {
+                throw ValidationException::withMessages(['items' => 'Minimal satu item pembelian harus diisi.']);
+            }
+
+            $supplier = ! empty($payload['supplier_id'])
+                ? Supplier::query()->find($payload['supplier_id'])
+                : null;
+            $gudang = filled($payload['gudang_id'] ?? null)
+                ? Gudang::query()->find($payload['gudang_id'])
+                : $purchase->gudang;
+
+            $purchase->update([
+                'tanggal' => $payload['tanggal'],
+                'gudang_id' => $payload['gudang_id'] ?? $purchase->gudang_id,
+                'perumahan_id' => $gudang?->perumahan_id ?? $purchase->perumahan_id,
+                'supplier_id' => $supplier?->id,
+                'supplier' => $supplier?->nama_supplier ?? $payload['supplier'] ?? null,
+                'metode_pembayaran' => $payload['metode_pembayaran'] ?? 'tunai',
+                'planned_master_bank_id' => $payload['planned_master_bank_id'] ?? null,
+                'keterangan' => $payload['keterangan'] ?? null,
+                'updated_by' => auth()->id(),
+            ]);
+
+            $purchase->details()->delete();
+            $subtotal = 0;
+            foreach ($items as $item) {
+                $barang = BarangMaterial::query()->findOrFail($item['barang_material_id']);
+                $qty = (float) $item['qty'];
+                $harga = (float) ($item['harga_satuan'] ?? $barang->harga_hpp);
+                $diskon = min(max(0, (float) ($item['diskon'] ?? 0)), $qty * $harga);
+                $lineSubtotal = max(0, ($qty * $harga) - $diskon);
+                $subtotal += $lineSubtotal;
+
+                $purchase->details()->create([
+                    'barang_material_id' => $barang->id,
+                    'qty' => $qty,
+                    'qty_diterima' => 0,
+                    'satuan' => $item['satuan'] ?? $barang->satuan,
+                    'harga_satuan' => $harga,
+                    'diskon' => $diskon,
+                    'subtotal' => $lineSubtotal,
+                    'inspection_status' => 'pending',
+                ]);
+            }
+
+            $transactionDiscount = min($transactionDiscount, $subtotal);
+            $purchase->update([
+                'subtotal_nominal' => $subtotal,
+                'diskon_transaksi' => $transactionDiscount,
+                'total_nominal' => max(0, $subtotal - $transactionDiscount),
+            ]);
+
+            if (filter_var($payload['update_material_prices'] ?? false, FILTER_VALIDATE_BOOL)) {
+                $this->syncMaterialPricesFromPurchase($purchase->fresh('details'), $items, $transactionDiscount);
+            }
 
             return $purchase;
         });
@@ -101,11 +191,15 @@ class MaterialPurchaseService
 
     public function approve(MaterialPurchase $purchase): void
     {
-        abort_unless($purchase->status === MaterialPurchase::STATUS_MENUNGGU_MANAGER, 422, 'Pembelian tidak sedang menunggu approval manajer.');
+        abort_unless(
+            in_array($purchase->status, [MaterialPurchase::STATUS_MENUNGGU_APPROVAL, MaterialPurchase::STATUS_MENUNGGU_MANAGER], true),
+            422,
+            'Pembelian tidak sedang menunggu approval.'
+        );
 
         DB::transaction(function () use ($purchase) {
             $purchase->update([
-                'status' => MaterialPurchase::STATUS_MENUNGGU_DANA,
+                'status' => MaterialPurchase::STATUS_APPROVED,
                 'approved_by' => auth()->id(),
                 'approved_at' => now(),
                 'updated_by' => auth()->id(),
@@ -119,7 +213,7 @@ class MaterialPurchaseService
         $this->notifications->toRoles(
             ['owner', 'super_admin', 'keuangan', 'admin_keuangan'],
             'Pembelian telah disetujui',
-            "Pembelian {$purchase->kode_pembelian} menunggu pencairan dana.",
+            "Pembelian {$purchase->kode_pembelian} sudah approved dan menunggu barang masuk.",
             '/admin/pembelian-material'
         );
     }
@@ -173,6 +267,66 @@ class MaterialPurchaseService
         return $managerCanRelease && $user->hasRole('manajer_pimpro');
     }
 
+    protected function nextPurchaseCode(): string
+    {
+        $prefix = 'PB-'.now()->format('Ym').'-';
+        $lastCode = MaterialPurchase::withTrashed()
+            ->where('kode_pembelian', 'like', "{$prefix}%")
+            ->orderByDesc('kode_pembelian')
+            ->value('kode_pembelian');
+
+        $nextNumber = $lastCode ? ((int) substr($lastCode, -4)) + 1 : 1;
+
+        return $prefix.str_pad((string) $nextNumber, 4, '0', STR_PAD_LEFT);
+    }
+
+    protected function syncMaterialPricesFromPurchase(MaterialPurchase $purchase, $items, float $transactionDiscount): void
+    {
+        $purchase->loadMissing('details.barangMaterial');
+        $grossTotal = (float) $items->sum(fn ($item) => (float) ($item['qty'] ?? 0) * (float) ($item['harga_satuan'] ?? 0));
+        $netBeforeTxnDiscount = (float) $items->sum(function ($item): float {
+            $qty = (float) ($item['qty'] ?? 0);
+            $harga = (float) ($item['harga_satuan'] ?? 0);
+            $diskon = min(max(0, (float) ($item['diskon'] ?? 0)), $qty * $harga);
+
+            return max(0, ($qty * $harga) - $diskon);
+        });
+        $transactionDiscount = min(max(0, $transactionDiscount), $netBeforeTxnDiscount);
+
+        foreach ($items as $item) {
+            $barang = BarangMaterial::query()->lockForUpdate()->find($item['barang_material_id']);
+
+            if (! $barang) {
+                continue;
+            }
+
+            $qty = max(0.000001, (float) ($item['qty'] ?? 0));
+            $harga = max(0, (float) ($item['harga_satuan'] ?? 0));
+            $diskon = min(max(0, (float) ($item['diskon'] ?? 0)), $qty * $harga);
+            $gross = $qty * $harga;
+            $baseNet = max(0, $gross - $diskon);
+            $txnShare = $grossTotal > 0 ? round(($gross / $grossTotal) * $transactionDiscount, 2) : 0;
+            $effective = max(0, $baseNet - $txnShare);
+            $effectivePrice = round($effective / $qty, 2);
+
+            if (abs((float) $barang->harga_hpp - $effectivePrice) < 0.0001) {
+                continue;
+            }
+
+            MaterialPriceHistory::query()->create([
+                'barang_material_id' => $barang->id,
+                'tanggal_berlaku' => $purchase->tanggal?->toDateString() ?? now()->toDateString(),
+                'harga_satuan' => $effectivePrice,
+                'supplier' => $purchase->supplier,
+                'keterangan' => "Update dari pembelian {$purchase->kode_pembelian}",
+                'status' => 'aktif',
+                'created_by' => auth()->id(),
+            ]);
+
+            $barang->update(['harga_hpp' => $effectivePrice]);
+        }
+    }
+
     public function markPurchased(MaterialPurchase $purchase): void
     {
         abort_unless($purchase->status === MaterialPurchase::STATUS_DANA_CAIR, 422, 'Dana pembelian belum cair.');
@@ -194,11 +348,13 @@ class MaterialPurchaseService
     {
         abort_unless(
             in_array($purchase->status, [
+                MaterialPurchase::STATUS_APPROVED,
                 MaterialPurchase::STATUS_DIBELI,
                 MaterialPurchase::STATUS_MENUNGGU_PEMERIKSAAN,
+                'menunggu_pemeriksaan_gudang',
             ], true),
             422,
-            'Pembelian ini tidak sedang menunggu pemeriksaan gudang.'
+            'Pembelian ini belum approved atau tidak sedang menunggu pengecekan gudang.'
         );
 
         DB::transaction(function () use ($purchase, $detail, $payload) {
@@ -210,18 +366,35 @@ class MaterialPurchaseService
                 ]);
             }
 
-            $isAccepted = $payload['status'] === 'sesuai';
+            $qtyDiterima = (float) ($payload['qty_diterima'] ?? ($payload['status'] === 'sesuai' ? $lockedDetail->qty : 0));
+
+            if ($qtyDiterima < 0 || $qtyDiterima > (float) $lockedDetail->qty) {
+                throw ValidationException::withMessages([
+                    'qty_diterima' => 'Qty diterima tidak boleh kurang dari 0 atau lebih besar dari qty pembelian.',
+                ]);
+            }
+
+            $isAccepted = $payload['status'] === 'sesuai' && $qtyDiterima === (float) $lockedDetail->qty;
+            $inspectionStatus = $isAccepted ? 'sesuai' : 'tidak_sesuai';
+            $tanggalBarangMasuk = $payload['tanggal_barang_masuk'] ?? $purchase->tanggal_barang_masuk?->toDateString() ?? now()->toDateString();
+
+            $purchase->update([
+                'tanggal_barang_masuk' => $tanggalBarangMasuk,
+                'status' => MaterialPurchase::STATUS_MENUNGGU_PEMERIKSAAN,
+                'updated_by' => auth()->id(),
+            ]);
+
             $lockedDetail->update([
-                'qty_diterima' => $isAccepted ? $lockedDetail->qty : 0,
-                'inspection_status' => $payload['status'],
+                'qty_diterima' => $qtyDiterima,
+                'inspection_status' => $inspectionStatus,
                 'inspection_note' => $payload['catatan'] ?? null,
                 'checked_by' => auth()->id(),
                 'checked_at' => now(),
             ]);
 
-            if ($isAccepted) {
+            if ($qtyDiterima > 0) {
                 $this->logistik->simpanTransaksi([
-                    'tanggal' => now()->toDateString(),
+                    'tanggal' => $purchase->fresh()->tanggal_barang_masuk?->toDateString() ?? $tanggalBarangMasuk,
                     'jenis' => TransaksiLogistik::JENIS_MASUK,
                     'gudang_id' => $purchase->gudang_id,
                     'perumahan_id' => null,
@@ -233,41 +406,27 @@ class MaterialPurchaseService
                     'source_id' => $lockedDetail->id,
                     'items' => [[
                         'barang_material_id' => $lockedDetail->barang_material_id,
-                        'qty' => $lockedDetail->qty,
+                        'qty' => $qtyDiterima,
                         'satuan' => $lockedDetail->satuan,
                         'harga_satuan' => $lockedDetail->harga_satuan,
                     ]],
                 ]);
             }
 
-            $freshPurchase = $purchase->fresh('details', 'materialPurchaseRequest', 'materialRequest');
+            $freshPurchase = $purchase->fresh('details', 'materialRequest');
             $pending = $freshPurchase->details->where('inspection_status', 'pending')->count();
-            $accepted = $freshPurchase->details->where('inspection_status', 'sesuai')->count();
 
             if ($pending === 0) {
-                $status = $accepted === $freshPurchase->details->count()
-                    ? MaterialPurchase::STATUS_DITERIMA
-                    : ($accepted > 0 ? MaterialPurchase::STATUS_DITERIMA_SEBAGIAN : MaterialPurchase::STATUS_DITOLAK_GUDANG);
-
+                $totalOrdered = (float) $freshPurchase->details->sum('qty');
+                $totalReceived = (float) $freshPurchase->details->sum('qty_diterima');
                 $freshPurchase->update([
-                    'status' => $status,
+                    'status' => MaterialPurchase::STATUS_PENGECEKAN_SELESAI,
                     'received_by' => auth()->id(),
                     'received_at' => now(),
                     'updated_by' => auth()->id(),
                 ]);
 
-                if ($freshPurchase->materialPurchaseRequest) {
-                    $freshPurchase->materialPurchaseRequest->update([
-                        'status' => $accepted > 0
-                            ? ($accepted === $freshPurchase->details->count()
-                                ? MaterialPurchaseRequest::STATUS_SELESAI
-                                : MaterialPurchaseRequest::STATUS_SELESAI_SEBAGIAN)
-                            : MaterialPurchaseRequest::STATUS_DITOLAK,
-                        'updated_by' => auth()->id(),
-                    ]);
-                }
-
-                if ($freshPurchase->materialRequest && $accepted > 0) {
+                if ($freshPurchase->materialRequest && $totalReceived > 0) {
                     $this->materialWorkflow->tryIssueApprovedRequest($freshPurchase->materialRequest);
                 }
             }
@@ -276,7 +435,7 @@ class MaterialPurchaseService
 
     public function receive(MaterialPurchase $purchase, array $payload): void
     {
-        abort_unless(in_array($purchase->status, [MaterialPurchase::STATUS_DANA_CAIR, MaterialPurchase::STATUS_DIBELI], true), 422, 'Pembelian belum siap diterima logistik.');
+        abort_unless(in_array($purchase->status, [MaterialPurchase::STATUS_DANA_CAIR, MaterialPurchase::STATUS_DIBELI, MaterialPurchase::STATUS_MENUNGGU_PEMERIKSAAN, MaterialPurchase::STATUS_APPROVED], true), 422, 'Pembelian belum siap diterima logistik.');
 
         DB::transaction(function () use ($purchase, $payload) {
             $received = collect($payload['items'] ?? [])->keyBy('id');
@@ -303,7 +462,7 @@ class MaterialPurchaseService
 
             if ($items !== []) {
                 $this->logistik->simpanTransaksi([
-                    'tanggal' => now()->toDateString(),
+                    'tanggal' => $payload['tanggal_barang_masuk'] ?? $purchase->tanggal_barang_masuk?->toDateString() ?? now()->toDateString(),
                     'jenis' => TransaksiLogistik::JENIS_MASUK,
                     'gudang_id' => $purchase->gudang_id,
                     'perumahan_id' => null,
@@ -318,7 +477,8 @@ class MaterialPurchaseService
             }
 
             $purchase->update([
-                'status' => MaterialPurchase::STATUS_DITERIMA,
+                'tanggal_barang_masuk' => $payload['tanggal_barang_masuk'] ?? $purchase->tanggal_barang_masuk?->toDateString() ?? now()->toDateString(),
+                'status' => MaterialPurchase::STATUS_PENGECEKAN_SELESAI,
                 'received_by' => auth()->id(),
                 'received_at' => now(),
                 'receive_note' => $payload['receive_note'] ?? null,

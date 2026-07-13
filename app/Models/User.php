@@ -24,8 +24,22 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'kantor_cabang_id',
+        'gudang_id',
+        'employee_number',
         'name',
+        'job_title',
+        'job_position_id',
+        'join_date',
+        'employment_type',
+        'employment_status',
+        'has_login_access',
         'phone',
+        'tax_number',
+        'bpjs_health_number',
+        'bpjs_employment_number',
+        'payroll_bank_name',
+        'payroll_bank_account',
+        'payroll_bank_holder',
         'avatar',
         'email',
         'password',
@@ -50,6 +64,8 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'join_date' => 'date',
+            'has_login_access' => 'boolean',
             'password' => 'hashed',
         ];
     }
@@ -57,6 +73,11 @@ class User extends Authenticatable
     public function progressPembangunans(): HasMany
     {
         return $this->hasMany(ProgressPembangunan::class, 'users_id');
+    }
+
+    public function salaries(): HasMany
+    {
+        return $this->hasMany(EmployeeSalary::class);
     }
 
     public function transaksiKeuangans(): HasMany
@@ -72,6 +93,21 @@ class User extends Authenticatable
     public function kantorCabang(): BelongsTo
     {
         return $this->belongsTo(CabangPerusahaan::class, 'kantor_cabang_id');
+    }
+
+    public function jobPosition(): BelongsTo
+    {
+        return $this->belongsTo(JobPosition::class);
+    }
+
+    public function gudang(): BelongsTo
+    {
+        return $this->belongsTo(Gudang::class, 'gudang_id');
+    }
+
+    public function gudangs(): BelongsToMany
+    {
+        return $this->belongsToMany(Gudang::class, 'gudang_user')->withTimestamps();
     }
 
     public function perumahans(): BelongsToMany

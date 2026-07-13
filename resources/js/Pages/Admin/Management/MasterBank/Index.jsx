@@ -1,8 +1,14 @@
-import ManagementPage from '../Components/ManagementPage';
-import TableData from './TableData';
-import MasterBankForm from './Form';
-import requestService from './request';
+import AdminLayout from "../../../../Layouts/AdminLayout";
+import SeparatedManagementIndex from "../Components/SeparatedManagementIndex";
 
 export default function Index(props) {
-    return <ManagementPage {...props} TableComponent={TableData} FormComponent={MasterBankForm} requestService={requestService} />;
+    return (
+        <SeparatedManagementIndex {...props} />
+    );
 }
+
+Index.layout = (page) => (
+    <AdminLayout title={page?.props?.title ?? "Master Rekening Bank"}>
+        {page}
+    </AdminLayout>
+);

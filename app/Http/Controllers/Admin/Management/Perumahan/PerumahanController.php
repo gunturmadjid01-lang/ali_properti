@@ -77,6 +77,7 @@ class PerumahanController extends Controller
             'title' => $this->title(),
             'description' => $this->description(),
             'baseUrl' => route($this->routeName().'.index', absolute: false),
+            'createUrl' => route($this->routeName().'.create', absolute: false),
             'routeName' => $this->routeName(),
             'filters' => ['search' => $search],
             'rows' => $rows,
@@ -84,6 +85,19 @@ class PerumahanController extends Controller
             'fields' => $this->fields(),
             'options' => $this->options(),
         ]);
+    }
+
+    public function create(): Response
+    {
+        return $this->formPage();
+    }
+
+    public function edit(string $id): Response
+    {
+        $row = Perumahan::query()->findOrFail($id);
+        $this->abortIfLocked($row);
+
+        return $this->formPage($row);
     }
 
     public function detail(string $id): Response
@@ -150,18 +164,6 @@ class PerumahanController extends Controller
                 'total_realisasi_perumahan' => HppRealisasi::query()->where('perumahan_id', $perumahan->id)->whereNull('detail_rumah_id')->sum('nominal'),
             ],
             'rows' => $rumahs,
-            'options' => [
-                'tahapanPembangunans' => $this->tahapanOptions(),
-                'blokOptions' => $this->blokOptions(),
-                'statusPembangunan' => [
-                    ['value' => 'kapling', 'label' => 'Kapling'],
-                    ['value' => 'sedang_dibangun', 'label' => 'Sedang Dibangun'],
-                    ['value' => 'selesai', 'label' => 'Selesai / Ready Stock'],
-                ],
-                'statusPenjualan' => $this->statusPenjualanOptions(),
-                'arahHadap' => $this->arahHadapOptions(),
-                'posisiUnit' => $this->posisiUnitOptions(),
-            ],
             'baseUrl' => route('admin.management.perumahan.index', absolute: false),
         ]);
     }
@@ -175,7 +177,7 @@ class PerumahanController extends Controller
             ->findOrFail($id);
 
         $rumah = DetailRumah::query()
-            ->with(['creator:id,name', 'updater:id,name'])
+            ->with(['creator:id,name', 'updater:id,name', 'currentOwnership.costumer:id,kode_costumer,nama'])
             ->where('perumahan_id', $perumahan->id)
             ->findOrFail($rumahId);
 
@@ -300,6 +302,19 @@ class PerumahanController extends Controller
                 'posisi_unit' => $rumah->posisi_unit,
                 'harga_jual' => (float) $rumah->harga_jual,
                 'status_penjualan' => $rumah->status_penjualan,
+                'pemilik' => $rumah->currentOwnership ? [
+                    'nama' => $rumah->currentOwnership->owner_name,
+                    'jenis_identitas' => $rumah->currentOwnership->identity_type,
+                    'nomor_identitas' => $rumah->currentOwnership->identity_number,
+                    'telepon' => $rumah->currentOwnership->phone,
+                    'email' => $rumah->currentOwnership->email,
+                    'alamat' => $rumah->currentOwnership->address,
+                    'tanggal_mulai' => optional($rumah->currentOwnership->acquired_at)->format('Y-m-d'),
+                    'sumber' => match ($rumah->currentOwnership->source_type) {
+                        'kpr_akad' => 'Akad KPR', 'cash_handover' => 'Serah Terima Cash', default => 'Data Lama / Manual',
+                    },
+                    'nomor_dokumen' => $rumah->currentOwnership->document_number,
+                ] : null,
                 'status_pembangunan' => $rumah->status_pembangunan,
                 'progress_terakhir' => (float) $rumah->progress_terakhir,
                 'tanggal_mulai_bangun' => optional($rumah->tanggal_mulai_bangun)->format('Y-m-d'),
@@ -463,9 +478,11 @@ class PerumahanController extends Controller
     {
         $payload = app(PerumahanPayload::class)->fromRequest($request);
 
-        return $approvalWorkflow->create('perumahan', $payload, function (array $payload): void {
+        $approvalWorkflow->create('perumahan', $payload, function (array $payload): void {
             Perumahan::create($payload);
         });
+
+        return redirect()->route($this->routeName().'.index')->with('success', session('success'));
     }
 
     public function update(UpdatePerumahanRequest $request, string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
@@ -474,9 +491,11 @@ class PerumahanController extends Controller
         $this->abortIfLocked($row);
         $payload = app(PerumahanPayload::class)->fromRequest($request);
 
-        return $approvalWorkflow->update('perumahan', $row, $payload, function (Perumahan $row, array $payload): void {
+        $approvalWorkflow->update('perumahan', $row, $payload, function (Perumahan $row, array $payload): void {
             $row->update($payload);
         });
+
+        return redirect()->route($this->routeName().'.index')->with('success', session('success'));
     }
 
     public function destroy(string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
@@ -865,28 +884,27 @@ class PerumahanController extends Controller
     protected function fields(): array
     {
         return [
-            ['name' => 'cabang_id', 'label' => 'Cabang Perusahaan', 'type' => 'select', 'optionsKey' => 'cabang'],
-            ['name' => 'kode_proyek', 'label' => 'Kode Proyek', 'type' => 'text'],
-            ['name' => 'nama_perusahaan', 'label' => 'Nama Perumahan', 'type' => 'text'],
+            ['name' => 'cabang_id', 'label' => 'Cabang Perusahaan', 'type' => 'select', 'optionsKey' => 'cabang', 'required' => true],
+            ['name' => 'nama_perusahaan', 'label' => 'Nama Perumahan', 'type' => 'text', 'required' => true],
             ['name' => 'developer_name', 'label' => 'Nama Developer', 'type' => 'text'],
-            ['name' => 'luas_lahan', 'label' => 'Luas Lahan', 'type' => 'text'],
+            ['name' => 'luas_lahan', 'label' => 'Luas Lahan', 'type' => 'text', 'required' => true],
             ['name' => 'luas_komersial', 'label' => 'Luas Komersial', 'type' => 'text'],
             ['name' => 'luas_fasos_fasum', 'label' => 'Luas Fasos/Fasum', 'type' => 'text'],
-            ['name' => 'jumlah_unit', 'label' => 'Jumlah Unit', 'type' => 'number'],
+            ['name' => 'jumlah_unit', 'label' => 'Jumlah Unit', 'type' => 'number', 'required' => true],
             ['name' => 'total_blok', 'label' => 'Total Blok', 'type' => 'number'],
             ['name' => 'harga_mulai', 'label' => 'Harga Mulai', 'type' => 'currency'],
-            ['name' => 'tanggal_mulai', 'label' => 'Tanggal Mulai', 'type' => 'date'],
+            ['name' => 'tanggal_mulai', 'label' => 'Tanggal Mulai', 'type' => 'date', 'required' => true],
             ['name' => 'tanggal_target_selesai', 'label' => 'Target Selesai', 'type' => 'date'],
             ['name' => 'jenis_sertifikat', 'label' => 'Jenis Sertifikat', 'type' => 'select', 'optionsKey' => 'jenisSertifikat'],
             ['name' => 'nomor_sertifikat_induk', 'label' => 'Nomor Sertifikat Induk', 'type' => 'text'],
             ['name' => 'nama_marketing', 'label' => 'PIC Marketing', 'type' => 'text'],
             ['name' => 'phone_marketing', 'label' => 'No. Marketing', 'type' => 'text'],
             ['name' => 'email_marketing', 'label' => 'Email Marketing', 'type' => 'text'],
-            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status'],
+            ['name' => 'status', 'label' => 'Status', 'type' => 'select', 'optionsKey' => 'status', 'required' => true],
             ['name' => 'latitude', 'label' => 'Latitude', 'type' => 'text'],
             ['name' => 'longtitude', 'label' => 'Longitude', 'type' => 'text'],
             ['name' => 'logo', 'label' => 'Logo', 'type' => 'image'],
-            ['name' => 'alamat', 'label' => 'Alamat', 'type' => 'textarea', 'full' => true],
+            ['name' => 'alamat', 'label' => 'Alamat', 'type' => 'textarea', 'full' => true, 'required' => true],
             ['name' => 'deskripsi', 'label' => 'Deskripsi Proyek', 'type' => 'textarea', 'full' => true],
         ];
     }
@@ -922,6 +940,36 @@ class PerumahanController extends Controller
             'total_hpp' => $hppItems->sum('jumlah_rab'),
             'detail_url' => route('admin.management.perumahan.detail', $row->id, false),
             'hpp_url' => route('admin.management.perumahan.hpp.detail', $row->id, false),
+            'edit_url' => route('admin.management.perumahan.edit', $row->id, false),
+        ]);
+    }
+
+    protected function formPage(?Perumahan $row = null): Response
+    {
+        $fields = $this->fields();
+        $data = collect($fields)->mapWithKeys(function (array $field) use ($row): array {
+            $value = $row?->{$field['name']} ?? ($field['defaultValue'] ?? '');
+            if ($value instanceof \DateTimeInterface) {
+                $value = $value->format('Y-m-d');
+            }
+
+            return [$field['name'] => $value];
+        })->all();
+
+        return Inertia::render('Admin/Management/Perumahan/FormPage', [
+            'title' => $row ? 'Edit Perumahan' : 'Tambah Perumahan',
+            'description' => $row
+                ? 'Perbarui informasi proyek perumahan. Kode proyek tetap dan tidak dapat diubah.'
+                : 'Isi informasi proyek. Kode proyek akan dibuat otomatis oleh sistem.',
+            'baseUrl' => route($this->routeName().'.index', absolute: false),
+            'actionUrl' => $row
+                ? route($this->routeName().'.update', $row->id, false)
+                : route($this->routeName().'.store', absolute: false),
+            'method' => $row ? 'put' : 'post',
+            'projectCode' => $row?->kode_proyek,
+            'fields' => $fields,
+            'options' => $this->options(),
+            'initialData' => $data,
         ]);
     }
 

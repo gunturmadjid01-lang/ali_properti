@@ -266,7 +266,8 @@ class FieldSupervisionController extends Controller
             $base[] = 'spkKontraktor:id,nomor_spk,judul_pekerjaan,nilai_kontrak';
         }
         if ($section === 'tenaga-kerja-alat') {
-            $base[] = 'officeAssets:id,kode_aset,nama_aset,status';
+            $base[] = 'officeAssets:id,inventory_item_id,kode_aset,status';
+            $base[] = 'officeAssets.item:id,name';
             $base[] = 'siteSchedule:id,nama_pekerjaan,perumahan_id,detail_rumah_id,tahapan_pembangunan_id';
             $base[] = 'progressPembangunan:id,nama_progress,perumahan_id,detail_rumah_id,tahapan_pembangunan_id,site_schedule_id';
         }
@@ -307,7 +308,7 @@ class FieldSupervisionController extends Controller
 
         if ($section === 'tenaga-kerja-alat' && $row instanceof SiteManpowerLog) {
             $detail['office_asset_ids'] = $row->officeAssets->pluck('id')->map(fn ($id) => (string) $id)->values()->all();
-            $detail['office_assets_label'] = $row->officeAssets->map(fn ($asset) => $asset->kode_aset.' - '.$asset->nama_aset)->join(', ');
+            $detail['office_assets_label'] = $row->officeAssets->map(fn ($asset) => $asset->kode_aset.' - '.($asset->item?->name ?? '-'))->join(', ');
             unset($detail['office_assets']);
         }
 
@@ -535,12 +536,13 @@ class FieldSupervisionController extends Controller
         $options['wageTypes'] = $this->simpleOptions(['harian', 'borongan', 'mingguan', 'bulanan']);
         $options['equipmentSources'] = $this->simpleOptions(['tidak_ada', 'aset_kantor', 'aset_luar', 'kombinasi']);
         $options['officeAssets'] = \App\Models\OfficeAsset::query()
-            ->whereNotIn('status', ['rusak', 'hilang'])
-            ->orderBy('nama_aset')
-            ->get(['id', 'kode_aset', 'nama_aset', 'status'])
+            ->with('item:id,name')
+            ->whereNotIn('status', ['damaged', 'lost'])
+            ->orderBy('kode_aset')
+            ->get(['id', 'inventory_item_id', 'kode_aset', 'status'])
             ->map(fn ($asset) => [
                 'value' => (string) $asset->id,
-                'label' => $asset->kode_aset.' - '.$asset->nama_aset.' ('.ucwords(str_replace('_', ' ', $asset->status)).')',
+                'label' => $asset->kode_aset.' - '.($asset->item?->name ?? '-').' ('.ucwords(str_replace('_', ' ', $asset->status)).')',
             ])
             ->values();
 

@@ -20,15 +20,17 @@ class MaterialPurchaseRequestDetail extends Model
         'updated_by',
     ];
 
-    protected $casts = ['qty' => 'float'];
+    protected $casts = [
+        'qty' => 'float',
+    ];
+
+    public function request(): BelongsTo
+    {
+        return $this->belongsTo(MaterialPurchaseRequest::class, 'material_purchase_request_id');
+    }
 
     public function barangMaterial(): BelongsTo
     {
         return $this->belongsTo(BarangMaterial::class);
-    }
-
-    public function materialPurchaseRequest(): BelongsTo
-    {
-        return $this->belongsTo(MaterialPurchaseRequest::class);
     }
 }

@@ -21,6 +21,7 @@ class MaterialPurchaseDetail extends Model
         'checked_at',
         'satuan',
         'harga_satuan',
+        'diskon',
         'subtotal',
     ];
 
@@ -28,6 +29,7 @@ class MaterialPurchaseDetail extends Model
         'qty' => 'float',
         'qty_diterima' => 'float',
         'harga_satuan' => 'float',
+        'diskon' => 'float',
         'subtotal' => 'float',
         'checked_at' => 'datetime',
     ];
@@ -35,6 +37,11 @@ class MaterialPurchaseDetail extends Model
     public function barangMaterial(): BelongsTo
     {
         return $this->belongsTo(BarangMaterial::class);
+    }
+
+    public function materialPurchase(): BelongsTo
+    {
+        return $this->belongsTo(MaterialPurchase::class);
     }
 
     public function checkedBy(): BelongsTo

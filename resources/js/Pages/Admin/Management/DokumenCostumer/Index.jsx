@@ -1,11 +1,8 @@
 import AdminLayout from '../../../../Layouts/AdminLayout';
-import ManagementPage from '../Components/ManagementPage';
-import DokumenCostumerForm from './Form';
-import requestService from './request';
-import TableData from './TableData';
+import SeparatedManagementIndex from '../Components/SeparatedManagementIndex';
 
 export default function Index(props) {
-    return <ManagementPage {...props} TableComponent={TableData} FormComponent={DokumenCostumerForm} requestService={requestService} />;
+    return <SeparatedManagementIndex {...props} />;
 }
 
 Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Master Dokumen Customer'}>{page}</AdminLayout>;

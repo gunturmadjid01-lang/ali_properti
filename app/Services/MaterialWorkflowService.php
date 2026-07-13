@@ -6,6 +6,7 @@ use App\Models\BarangMaterial;
 use App\Models\MaterialRequest;
 use App\Models\MaterialReturn;
 use App\Models\MaterialUsage;
+use App\Models\MaterialRequestDetail;
 use App\Models\SiteMaterialStock;
 use App\Models\StokMaterial;
 use App\Models\TransaksiLogistik;
@@ -18,7 +19,6 @@ class MaterialWorkflowService
     public function __construct(
         private readonly LogistikService $logistik,
         private readonly AppNotificationService $notifications,
-        private readonly ProgressRealizationService $progressRealization,
     ) {
     }
 
@@ -111,6 +111,7 @@ class MaterialWorkflowService
                 $usage->details()->create([
                     'site_material_stock_id' => $siteStock->id,
                     'barang_material_id' => $siteStock->barang_material_id,
+                    'detail_rumah_hpp_item_id' => $item['detail_rumah_hpp_item_id'] ?? null,
                     'qty' => $qty,
                     'satuan' => $siteStock->barangMaterial?->satuan ?? $item['satuan'] ?? '-',
                 ]);
@@ -120,6 +121,41 @@ class MaterialWorkflowService
             }
 
             return $usage;
+        });
+    }
+
+    public function recordUsageFromRequest(MaterialRequest $materialRequest, array $payload = [], ?UploadedFile $photo = null): MaterialUsage
+    {
+        return DB::transaction(function () use ($materialRequest, $payload, $photo) {
+            $request = MaterialRequest::query()
+                ->with(['details.barangMaterial'])
+                ->lockForUpdate()
+                ->findOrFail($materialRequest->id);
+
+            if (! $request->issued_at && $request->approved_at_gudang && $request->approved_at_owner) {
+                $this->issueWhenComplete($request);
+                $request->refresh();
+            }
+
+            if (! $request->issued_at) {
+                throw ValidationException::withMessages([
+                    'material_request_ids' => "Permintaan {$request->kode_request} belum siap dipakai karena barang belum keluar dari gudang.",
+                ]);
+            }
+
+            return $this->recordUsage([
+                'tanggal' => $payload['tanggal'] ?? now()->toDateString(),
+                'perumahan_id' => $payload['perumahan_id'] ?? $request->perumahan_id,
+                'detail_rumah_id' => $payload['detail_rumah_id'] ?? $request->detail_rumah_id,
+                'tahapan_pembangunan_id' => $payload['tahapan_pembangunan_id'] ?? $request->tahapan_pembangunan_id,
+                'progress_pembangunan_id' => $payload['progress_pembangunan_id'] ?? null,
+                'keterangan' => $payload['keterangan'] ?? "Pemakaian material dari {$request->kode_request}",
+                'items' => $request->details->map(fn (MaterialRequestDetail $detail) => [
+                    'site_material_stock_id' => $this->resolveSiteMaterialStockId($request, $detail),
+                    'qty' => (float) ($detail->qty_issued > 0 ? $detail->qty_issued : $detail->qty),
+                    'satuan' => $detail->satuan,
+                ])->all(),
+            ], $photo);
         });
     }
 
@@ -167,6 +203,7 @@ class MaterialWorkflowService
                 $usage->details()->create([
                     'site_material_stock_id' => $siteStock->id,
                     'barang_material_id' => $siteStock->barang_material_id,
+                    'detail_rumah_hpp_item_id' => $item['detail_rumah_hpp_item_id'] ?? null,
                     'qty' => $qty,
                     'satuan' => $siteStock->barangMaterial?->satuan ?? $item['satuan'] ?? '-',
                 ]);
@@ -432,23 +469,6 @@ class MaterialWorkflowService
                 'updated_by' => auth()->id(),
             ]);
 
-        if ((float) ($request->progress_diakui ?? 0) > 0) {
-            $progress = $this->progressRealization->recordFromSource($request->fresh(), [
-                'detail_rumah_id' => $request->detail_rumah_id,
-                'tahapan_pembangunan_id' => $request->tahapan_pembangunan_id,
-                'site_schedule_id' => $request->site_schedule_id,
-                'nama_progress' => $request->tahapanPembangunan?->nama_tahapan ?? 'Pengambilan Material',
-                'tanggal' => now()->toDateString(),
-                'persentase' => (float) $request->progress_diakui,
-                'keterangan' => "Progress otomatis dari pengambilan material {$request->kode_request}",
-                'source_label' => "Material {$request->kode_request}",
-            ]);
-
-            if ($progress) {
-                $request->update(['progress_pembangunan_id' => $progress->id]);
-            }
-        }
-
         $this->notifications->toRoles(
             ['pengawas', 'user_area_gudang', 'owner', 'super_admin'],
             'Material keluar dari gudang',
@@ -457,6 +477,36 @@ class MaterialWorkflowService
         );
 
         return $request->fresh();
+    }
+
+    private function resolveSiteMaterialStockId(MaterialRequest $request, MaterialRequestDetail $detail): int
+    {
+        $query = SiteMaterialStock::query()
+            ->where('gudang_id', $request->gudang_id)
+            ->where('perumahan_id', $request->perumahan_id)
+            ->where('barang_material_id', $detail->barang_material_id);
+
+        if (filled($request->detail_rumah_id)) {
+            $query->where('detail_rumah_id', $request->detail_rumah_id);
+        } else {
+            $query->whereNull('detail_rumah_id');
+        }
+
+        if (filled($request->tahapan_pembangunan_id)) {
+            $query->where('tahapan_pembangunan_id', $request->tahapan_pembangunan_id);
+        } else {
+            $query->whereNull('tahapan_pembangunan_id');
+        }
+
+        $siteStockId = $query->lockForUpdate()->value('id');
+
+        if (! $siteStockId) {
+            throw ValidationException::withMessages([
+                'material_request_ids' => 'Stok lokasi untuk material '.$detail->barangMaterial?->nama_barang.' belum ditemukan.',
+            ]);
+        }
+
+        return (int) $siteStockId;
     }
 
     private function code(string $prefix): string

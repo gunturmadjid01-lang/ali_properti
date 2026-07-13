@@ -6,7 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Models\CabangPerusahaan;
 use App\Models\Gudang;
+use App\Models\MaterialRequest;
+use App\Models\MaterialReturn;
+use App\Models\SiteMaterialStock;
 use App\Models\Perumahan;
+use App\Models\MaterialUsage;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -21,35 +25,37 @@ class GudangController extends Controller
     {
         $search = trim((string) $request->query('search', ''));
 
-        $rows = Gudang::query()
-            ->with(['cabang:id,nama_cabang', 'perumahan:id,nama_perusahaan'])
-            ->when($search !== '', fn (Builder $query) => $query->where('kode_gudang', 'like', "%{$search}%")
-                ->orWhere('nama_gudang', 'like', "%{$search}%")
-                ->orWhere('penanggung_jawab', 'like', "%{$search}%"))
-            ->latest('id')
-            ->paginate(10)
-            ->withQueryString()
-            ->through(fn (Gudang $row) => [
-                'id' => $row->id,
-                'kode_gudang' => $row->kode_gudang,
-                'nama_gudang' => $row->nama_gudang,
-                'cabang_id' => (string) ($row->cabang_id ?? ''),
-                'perumahan_id' => (string) ($row->perumahan_id ?? ''),
-                'cabang' => $row->cabang?->nama_cabang ?? '-',
-                'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
-                'penanggung_jawab' => $row->penanggung_jawab,
-                'phone' => $row->phone,
-                'alamat' => $row->alamat,
-                'catatan' => $row->catatan,
-                'status' => $row->status,
-                'record_status' => $row->record_status ?? 'draft',
-                'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-            ]);
-
         return Inertia::render('Admin/Logistik/Gudang', [
-            'title' => 'Management Gudang',
+            'title' => 'Dashboard Gudang',
             'baseUrl' => route('admin.gudang.index', absolute: false),
-            'rows' => $rows,
+            'stats' => [
+                'total_gudang' => Gudang::query()->count(),
+                'gudang_aktif' => Gudang::query()->where('status', 'aktif')->count(),
+                'stok_kosong' => SiteMaterialStock::query()->where('qty_available', '<=', 0)->count(),
+                'permintaan_material' => MaterialRequest::query()->whereIn('status', [MaterialRequest::STATUS_DIAJUKAN, MaterialRequest::STATUS_MENUNGGU_OWNER, MaterialRequest::STATUS_MENUNGGU_STOK])->count(),
+                'pengembalian_diajukan' => MaterialReturn::query()->where('status', MaterialReturn::STATUS_DIAJUKAN)->count(),
+                'pemakaian_hari_ini' => MaterialUsage::query()->whereDate('tanggal', now()->toDateString())->count(),
+            ],
+            'rows' => Gudang::query()
+                ->with(['cabang:id,nama_cabang', 'perumahan:id,nama_perusahaan'])
+                ->when($search !== '', fn (Builder $query) => $query->where('kode_gudang', 'like', "%{$search}%")
+                    ->orWhere('nama_gudang', 'like', "%{$search}%")
+                    ->orWhere('penanggung_jawab', 'like', "%{$search}%"))
+                ->latest('id')
+                ->paginate(8)
+                ->withQueryString()
+                ->through(fn (Gudang $row) => [
+                    'id' => $row->id,
+                    'kode_gudang' => $row->kode_gudang,
+                    'nama_gudang' => $row->nama_gudang,
+                    'cabang' => $row->cabang?->nama_cabang ?? '-',
+                    'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
+                    'penanggung_jawab' => $row->penanggung_jawab,
+                    'phone' => $row->phone,
+                    'status' => $row->status,
+                    'record_status' => $row->record_status ?? 'draft',
+                    'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
+                ]),
             'filters' => ['search' => $search],
             'options' => $this->options(),
         ]);

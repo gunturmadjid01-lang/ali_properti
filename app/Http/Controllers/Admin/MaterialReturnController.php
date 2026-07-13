@@ -19,6 +19,8 @@ class MaterialReturnController extends Controller
 
     public function index(Request $request): Response
     {
+        abort_unless(! auth()->user()?->hasAnyRole(['user_area_gudang', 'admin_gudang']), 404);
+
         $search = trim((string) $request->query('search', ''));
 
         return Inertia::render('Admin/MaterialReturn/Index', [
@@ -131,11 +133,11 @@ class MaterialReturnController extends Controller
 
     private function canCreateReturn(): bool
     {
-        return (bool) auth()->user()?->can('material-return.create');
+        return (bool) (! auth()->user()?->hasAnyRole(['user_area_gudang', 'admin_gudang']) && auth()->user()?->can('material-return.create'));
     }
 
     private function canReceive(): bool
     {
-        return (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'owner', 'super_admin']);
+        return (bool) (! auth()->user()?->hasAnyRole(['user_area_gudang', 'admin_gudang']) && auth()->user()?->hasAnyRole(['owner', 'super_admin']));
     }
 }

@@ -25,7 +25,7 @@ class LoginController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        if (! Auth::attempt($credentials, $request->boolean('remember'))) {
+        if (! Auth::attempt([...$credentials, 'has_login_access' => true], $request->boolean('remember'))) {
             return back()
                 ->withErrors([
                     'email' => 'Email atau password tidak cocok.',
@@ -35,7 +35,14 @@ class LoginController extends Controller
 
         $request->session()->regenerate();
 
-        return redirect()->intended(route('admin.dashboard'));
+        $user = $request->user()?->loadMissing('roles');
+        $redirectTo = match (true) {
+            $user?->hasAnyRole(['user_area_gudang', 'admin_gudang']) => route('admin.gudang.index'),
+            $user?->hasAnyRole(['keuangan', 'admin_keuangan']) => route('admin.dashboard'),
+            default => route('admin.dashboard'),
+        };
+
+        return redirect()->intended($redirectTo);
     }
 
     public function destroy(Request $request): RedirectResponse

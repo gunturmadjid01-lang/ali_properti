@@ -14,12 +14,30 @@ class UpdateUserRequest extends FormRequest
 
     public function rules(): array
     {
+        $user = \App\Models\User::query()->find($this->route('id'));
+        $loginEnabled = $this->boolean('has_login_access');
+
         return [
             'kantor_cabang_id' => ['nullable', 'exists:cabang_perusahaans,id'],
+            'gudang_id' => ['nullable', 'exists:gudangs,id'],
+            'gudang_ids' => ['nullable', 'array'],
+            'gudang_ids.*' => ['exists:gudangs,id'],
             'name' => ['required', 'string', 'max:255'],
             'phone' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->route('id'))],
-            'password' => ['nullable', 'string', 'min:8'],
+            'employee_number' => ['nullable', 'string', 'max:50', Rule::unique('users', 'employee_number')->ignore($this->route('id'))],
+            'job_title' => ['required', 'string', 'max:100'],
+            'join_date' => ['required', 'date'],
+            'employment_type' => ['required', Rule::in(['tetap', 'kontrak', 'harian', 'magang'])],
+            'employment_status' => ['required', Rule::in(['aktif', 'nonaktif', 'resign'])],
+            'has_login_access' => ['required', 'boolean'],
+            'email' => ['nullable', Rule::requiredIf($loginEnabled), 'email', 'max:255', Rule::unique('users', 'email')->ignore($this->route('id'))],
+            'password' => ['nullable', Rule::requiredIf($loginEnabled && blank($user?->password)), 'string', 'min:8'],
+            'tax_number' => ['nullable', 'string', 'max:50'],
+            'bpjs_health_number' => ['nullable', 'string', 'max:50'],
+            'bpjs_employment_number' => ['nullable', 'string', 'max:50'],
+            'payroll_bank_name' => ['nullable', 'string', 'max:100'],
+            'payroll_bank_account' => ['nullable', 'string', 'max:100'],
+            'payroll_bank_holder' => ['nullable', 'string', 'max:100'],
             'role_ids' => ['nullable', 'array'],
             'role_ids.*' => ['exists:roles,id'],
             'perumahan_ids' => ['nullable', 'array'],

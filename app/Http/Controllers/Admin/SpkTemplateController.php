@@ -61,6 +61,39 @@ class SpkTemplateController extends Controller
                 'canDelete' => $this->canManage($context, 'delete'),
                 'canView' => $this->canManage($context, 'view'),
             ],
+            'createUrl' => route('admin.spk-template.create', ['context' => $context], false),
+        ]);
+    }
+
+    public function create(Request $request): Response
+    {
+        $context = $this->contextFromRequest($request);
+        $this->abortIfInvalidContext($context);
+        $this->abortIfUnauthorized($context, 'create');
+
+        return $this->renderForm($request, $context);
+    }
+
+    public function edit(Request $request, string $id): Response
+    {
+        $template = $this->findAccessibleTemplate($request, $id);
+        $this->abortIfUnauthorized($template->konteks, 'update');
+
+        return $this->renderForm($request, $template->konteks, $template);
+    }
+
+    public function show(Request $request, string $id): Response
+    {
+        $template = $this->findAccessibleTemplate($request, $id);
+        $this->abortIfUnauthorized($template->konteks, 'view');
+
+        return Inertia::render('Admin/SpkTemplate/Show', [
+            'title' => 'Detail Template Pekerjaan SPK',
+            'description' => 'Rincian tahapan dan upah borongan yang menjadi acuan penyusunan SPK.',
+            'template' => $this->formatRow($template),
+            'indexUrl' => route('admin.spk-template.index', ['context' => $template->konteks], false),
+            'editUrl' => route('admin.spk-template.edit', ['id' => $template->id], false),
+            'canUpdate' => $this->canManage($template->konteks, 'update'),
         ]);
     }
 
@@ -86,7 +119,8 @@ class SpkTemplateController extends Controller
             $this->syncGroups($template, $groups);
         });
 
-        return back()->with('success', 'Template pekerjaan berhasil ditambahkan.');
+        return redirect()->route('admin.spk-template.index', ['context' => $context])
+            ->with('success', 'Template pekerjaan berhasil ditambahkan.');
     }
 
     public function update(Request $request, string $id): RedirectResponse
@@ -114,7 +148,8 @@ class SpkTemplateController extends Controller
             $this->syncGroups($template, $groups);
         });
 
-        return back()->with('success', 'Template pekerjaan berhasil diperbarui.');
+        return redirect()->route('admin.spk-template.show', ['id' => $template->id])
+            ->with('success', 'Template pekerjaan berhasil diperbarui.');
     }
 
     public function destroy(Request $request, string $id): RedirectResponse
@@ -180,6 +215,34 @@ class SpkTemplateController extends Controller
         }
 
         return $payload;
+    }
+
+    protected function renderForm(Request $request, string $context, ?SpkWorkTemplate $template = null): Response
+    {
+        return Inertia::render('Admin/SpkTemplate/Form', [
+            'title' => $template ? 'Edit Template Pekerjaan SPK' : 'Tambah Template Pekerjaan SPK',
+            'description' => 'Susun tahapan dan nilai upah borongan sebagai template pekerjaan SPK.',
+            'context' => $context,
+            'template' => $template ? $this->formatRow($template) : null,
+            'options' => [
+                'perumahans' => $this->perumahanOptions($request),
+                'contexts' => [
+                    ['value' => 'perumahan', 'label' => 'Perumahan'],
+                    ['value' => 'unit', 'label' => 'Unit'],
+                ],
+            ],
+            'indexUrl' => route('admin.spk-template.index', ['context' => $context], false),
+            'storeUrl' => route('admin.spk-template.store', ['context' => $context], false),
+            'updateUrl' => $template ? route('admin.spk-template.update', ['id' => $template->id, 'context' => $context], false) : null,
+        ]);
+    }
+
+    protected function findAccessibleTemplate(Request $request, string $id): SpkWorkTemplate
+    {
+        return SpkWorkTemplate::query()
+            ->with(['perumahan:id,nama_perusahaan', 'groups.items'])
+            ->when(! $this->canSeeAllPerumahans(), fn (Builder $query) => $query->whereIn('perumahan_id', $this->allowedPerumahanIds($request)))
+            ->findOrFail($id);
     }
 
     protected function normalizeGroups(array $groups): array

@@ -19,6 +19,11 @@ class MaterialReturnDetail extends Model
 
     protected $casts = ['qty' => 'float', 'harga_satuan' => 'float', 'subtotal' => 'float'];
 
+    public function materialReturn(): BelongsTo
+    {
+        return $this->belongsTo(MaterialReturn::class);
+    }
+
     public function siteMaterialStock(): BelongsTo
     {
         return $this->belongsTo(SiteMaterialStock::class);

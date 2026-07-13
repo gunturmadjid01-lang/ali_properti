@@ -67,6 +67,7 @@ class UnitRumahController extends Controller
                 'perumahan_id' => $row->perumahan_id,
                 'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
                 'detail_url' => route('admin.management.perumahan.rumah.detail', [$row->perumahan_id, $row->id], false),
+                'edit_url' => route('admin.unit-rumah.edit', $row->id, false),
                 'kode_nlok' => $row->kode_nlok,
                 'blok_label' => $row->kode_nlok,
                 'nomor_rumah' => $row->nomor_rumah,
@@ -104,6 +105,7 @@ class UnitRumahController extends Controller
             'title' => 'Kapling / Unit',
             'description' => 'Kelola data kapling dan unit rumah, spesifikasi bangunan, harga jual, serta status pembangunannya.',
             'baseUrl' => route('admin.unit-rumah.index', absolute: false),
+            'createUrl' => route('admin.unit-rumah.create', absolute: false),
             'rows' => $rows,
             'filters' => [
                 'search' => $search,
@@ -116,6 +118,22 @@ class UnitRumahController extends Controller
                 'canManageLocked' => $this->currentUserCanManageLockedRecords(),
             ],
         ]);
+    }
+
+    public function create(): Response
+    {
+        abort_unless(auth()->user()?->can('detail-rumah.create') || auth()->user()?->can('detail-rumah.manage'), 403, 'Anda tidak memiliki permission untuk menambah unit rumah.');
+
+        return $this->formPage();
+    }
+
+    public function edit(string $id): Response
+    {
+        abort_unless(auth()->user()?->can('detail-rumah.update') || auth()->user()?->can('detail-rumah.manage'), 403, 'Anda tidak memiliki permission untuk mengubah unit rumah.');
+        $row = DetailRumah::query()->findOrFail($id);
+        $this->abortIfLocked($row);
+
+        return $this->formPage($row);
     }
 
     public function hppIndex(Request $request): Response
@@ -133,6 +151,9 @@ class UnitRumahController extends Controller
 
         $rows = DetailRumah::query()
             ->with(['perumahan:id,nama_perusahaan', 'detailRumahHpps.items'])
+            ->where(fn (Builder $query) => $query
+                ->whereNull('status_pembangunan')
+                ->orWhere('status_pembangunan', '!=', 'selesai'))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->where('kode_nlok', 'like', "%{$search}%")
@@ -241,6 +262,9 @@ class UnitRumahController extends Controller
                 'tahapanHpps' => $this->tahapanHppOptions('unit', $rumah->perumahan_id, $rumah->id),
                 'unitTargets' => DetailRumah::query()
                     ->where('perumahan_id', $rumah->perumahan_id)
+                    ->where(fn (Builder $query) => $query
+                        ->whereNull('status_pembangunan')
+                        ->orWhere('status_pembangunan', '!=', 'selesai'))
                     ->orderBy('kode_nlok')
                     ->orderBy('nomor_rumah')
                     ->get(['id', 'kode_nlok', 'nomor_rumah', 'tipe_rumah'])
@@ -297,7 +321,7 @@ class UnitRumahController extends Controller
             }
         });
 
-        return back()->with('success', $jumlahUnit.' unit rumah berhasil ditambahkan.');
+        return redirect()->route('admin.unit-rumah.index')->with('success', $jumlahUnit.' unit rumah berhasil ditambahkan.');
     }
 
     public function update(Request $request, string $id): RedirectResponse
@@ -325,7 +349,7 @@ class UnitRumahController extends Controller
             ...$payload,
             'updated_by' => auth()->id(),
         ]);
-        return back()->with('success', 'Unit rumah berhasil diperbarui.');
+        return redirect()->route('admin.unit-rumah.index')->with('success', 'Unit rumah berhasil diperbarui.');
     }
 
     public function destroy(string $id): RedirectResponse
@@ -829,6 +853,9 @@ class UnitRumahController extends Controller
             ],
             'hppUnitTargets' => DetailRumah::query()
                 ->with('perumahan:id,nama_perusahaan')
+                ->where(fn (Builder $query) => $query
+                    ->whereNull('status_pembangunan')
+                    ->orWhere('status_pembangunan', '!=', 'selesai'))
                 ->orderBy('perumahan_id')
                 ->orderBy('kode_nlok')
                 ->orderBy('nomor_rumah')
@@ -873,6 +900,52 @@ class UnitRumahController extends Controller
                 ['value' => 'boulevard', 'label' => 'Boulevard'],
             ],
         ];
+    }
+
+    protected function formPage(?DetailRumah $row = null): Response
+    {
+        $initialData = [
+            'perumahan_id' => (string) ($row?->perumahan_id ?? ''),
+            'kode_nlok' => $row?->kode_nlok ?? '',
+            'nomor_rumah' => $row?->nomor_rumah ?? '',
+            'jumlah_unit' => '1',
+            'tipe_rumah' => $row?->tipe_rumah ?? '',
+            'model_unit' => $row?->model_unit ?? '',
+            'luas_bangunan' => $row?->luas_bangunan ?? '',
+            'luas_tanah' => $row?->luas_tanah ?? '',
+            'jumlah_lantai' => (string) ($row?->jumlah_lantai ?? 1),
+            'kamar_tidur' => (string) ($row?->kamar_tidur ?? 0),
+            'kamar_mandi' => (string) ($row?->kamar_mandi ?? 0),
+            'daya_listrik' => $row?->daya_listrik ?? '',
+            'sumber_air' => $row?->sumber_air ?? '',
+            'carport' => $row?->carport ?? '',
+            'arah_hadap' => $row?->arah_hadap ?? '',
+            'posisi_unit' => $row?->posisi_unit ?? 'standar',
+            'harga_jual' => $row?->harga_jual ?? '',
+            'status_penjualan' => $row?->status_penjualan ?? 'tersedia',
+            'status_pembangunan' => $row?->status_pembangunan ?? 'kapling',
+            'progress_terakhir' => (string) ($row?->progress_terakhir ?? 0),
+            'tanggal_mulai_bangun' => optional($row?->tanggal_mulai_bangun)->format('Y-m-d') ?? '',
+            'tanggal_selesai_bangun' => optional($row?->tanggal_selesai_bangun)->format('Y-m-d') ?? '',
+            'spesifikasi' => $row?->spesifikasi ?? '',
+            'catatan' => $row?->catatan ?? '',
+            'status' => $row?->status ?? 'aktif',
+        ];
+
+        return Inertia::render('Admin/UnitRumah/Form', [
+            'title' => $row ? 'Edit Kapling / Unit' : 'Tambah Kapling / Unit',
+            'description' => $row
+                ? 'Perbarui data unit rumah pada form terpisah.'
+                : 'Tambahkan satu atau beberapa unit berurutan pada proyek perumahan.',
+            'baseUrl' => route('admin.unit-rumah.index', absolute: false),
+            'actionUrl' => $row
+                ? route('admin.unit-rumah.update', $row->id, false)
+                : route('admin.unit-rumah.store', absolute: false),
+            'method' => $row ? 'put' : 'post',
+            'editing' => (bool) $row,
+            'initialData' => $initialData,
+            'options' => $this->options(),
+        ]);
     }
 
     protected function blokOptions(): array

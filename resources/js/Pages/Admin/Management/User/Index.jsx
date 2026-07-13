@@ -1,11 +1,65 @@
-import AdminLayout from '../../../../Layouts/AdminLayout';
-import ManagementPage from '../Components/ManagementPage';
-import UserForm from './Form';
-import requestService from './request';
-import TableData from './TableData';
+import { Head, Link, router } from "@inertiajs/react";
+import { PlusCircle } from "lucide-react";
+import { Button } from "../../../../Components/UI";
+import AdminLayout from "../../../../Layouts/AdminLayout";
+import { useResourcePermissions } from "../../../../Utils/permissions";
+import requestService from "./request";
+import TableData from "./TableData";
 
-export default function Index(props) {
-    return <ManagementPage {...props} TableComponent={TableData} FormComponent={UserForm} requestService={requestService} />;
+export default function Index({
+    title,
+    description,
+    baseUrl,
+    createUrl,
+    columns,
+    rows,
+    filters,
+}) {
+    const permissions = useResourcePermissions("users", baseUrl);
+
+    return (
+        <>
+            <Head title={title} />
+            <div className="grid gap-6">
+                <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                        <div>
+                            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">
+                                Data Pegawai & Akses
+                            </p>
+                            <h1 className="mt-1 text-2xl font-extrabold">{title}</h1>
+                            <p className="mt-1 max-w-3xl text-sm leading-6 text-ink-soft dark:text-white/60">
+                                {description}
+                            </p>
+                        </div>
+                        {permissions.canCreate && (
+                            <Button as={Link} href={createUrl}>
+                                <PlusCircle size={18} /> Tambah User
+                            </Button>
+                        )}
+                    </div>
+                </section>
+
+                <TableData
+                    baseUrl={baseUrl}
+                    title={title}
+                    columns={columns}
+                    rows={rows}
+                    filters={filters}
+                    permissions={permissions}
+                    onEdit={(row) => router.visit(row.edit_url)}
+                    onDelete={(row) => requestService.destroy({ baseUrl, row })}
+                    onLock={(row) => requestService.lock({ baseUrl, row })}
+                    onUnlock={(row) => requestService.unlock({ baseUrl, row })}
+                    onSearch={(search) => requestService.search({ baseUrl, search })}
+                />
+            </div>
+        </>
+    );
 }
 
-Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Admin'}>{page}</AdminLayout>;
+Index.layout = (page) => (
+    <AdminLayout title={page?.props?.title ?? "Management User"}>
+        {page}
+    </AdminLayout>
+);

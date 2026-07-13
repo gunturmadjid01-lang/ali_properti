@@ -43,16 +43,14 @@ function FormErrorSummary({ errors }) {
 export default function Index({ title, description, baseUrl, pageUrl = baseUrl, rows, filters = {}, options, permissions = {}, approvalOnly = false, paymentOnly = false, disbursementOnly = false }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [editing, setEditing] = useState(null);
-    const [paymentDetail, setPaymentDetail] = useState(null);
     const [showUnitModal, setShowUnitModal] = useState(false);
     const [unitSearch, setUnitSearch] = useState('');
     const [selectedPerumahanTemplateId, setSelectedPerumahanTemplateId] = useState('');
     const [selectedUnitTemplateId, setSelectedUnitTemplateId] = useState('');
     const showPaymentSchedule = approvalOnly || paymentOnly || disbursementOnly;
-    const defaultWorker = useMemo(() => (options.kontraktors ?? []).find((row) => row.is_default_worker) ?? (options.kontraktors ?? [])[0] ?? null, [options.kontraktors]);
     const form = useForm({
         sumber_tenaga_kerja: 'tukang_owner',
-        kontraktor_id: defaultWorker?.value ?? '',
+        kontraktor_id: '',
         perumahan_id: '',
         detail_rumah_id: '',
         detail_rumah_ids: [],
@@ -206,7 +204,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
 
         form.setData({
             sumber_tenaga_kerja: row.sumber_tenaga_kerja ?? 'tukang_owner',
-            kontraktor_id: row.kontraktor_id ?? defaultWorker?.value ?? '',
+            kontraktor_id: row.kontraktor_id ?? '',
             perumahan_id: row.perumahan_id ?? '',
             detail_rumah_id: row.detail_rumah_id ?? '',
             detail_rumah_ids: row.detail_rumah_id ? [String(row.detail_rumah_id)] : [],
@@ -330,20 +328,22 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                 onChange={(value) => form.setData({
                                     ...form.data,
                                     sumber_tenaga_kerja: value,
-                                    kontraktor_id: value === 'tukang_owner' ? (defaultWorker?.value ?? form.data.kontraktor_id) : form.data.kontraktor_id,
+                                    kontraktor_id: value === 'kontraktor' ? form.data.kontraktor_id : '',
                                 })}
                             />
                         </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Kontraktor / Tukang</span>
-                            <Dropdown
-                                value={form.data.kontraktor_id}
-                                label="Pilih Kontraktor"
-                                options={options.kontraktors}
-                                onChange={(value) => form.setData('kontraktor_id', value)}
-                            />
-                            {form.errors.kontraktor_id && <span className="text-xs font-bold text-red-600">{form.errors.kontraktor_id}</span>}
-                        </div>
+                        {form.data.sumber_tenaga_kerja === 'kontraktor' ? (
+                            <div className="grid gap-2">
+                                <span className="text-sm font-extrabold">Kontraktor</span>
+                                <Dropdown
+                                    value={form.data.kontraktor_id}
+                                    label="Pilih Kontraktor"
+                                    options={options.kontraktors}
+                                    onChange={(value) => form.setData('kontraktor_id', value)}
+                                />
+                                {form.errors.kontraktor_id && <span className="text-xs font-bold text-red-600">{form.errors.kontraktor_id}</span>}
+                            </div>
+                        ) : null}
                         <Input label="Judul Pekerjaan" value={form.data.judul_pekerjaan} error={form.errors.judul_pekerjaan} onChange={(event) => form.setData('judul_pekerjaan', event.target.value)} />
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Jenis Pekerjaan</span><Dropdown value={form.data.jenis_pekerjaan} options={options.jenisPekerjaan} onChange={(value) => form.setData('jenis_pekerjaan', value)} /></div>
                     </div>
@@ -606,7 +606,7 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                                         <td className="px-5 py-4 font-bold">{row.status}<br /><span className="text-xs text-ink-soft">{row.record_status_label}</span></td>
                                         <td className="px-5 py-4">
                                             <div className="flex flex-wrap gap-2">
-                                                {permissions.canViewPaymentDetail && <Button type="button" size="sm" variant="outline" title="Detail Pembayaran" aria-label="Detail Pembayaran" onClick={() => setPaymentDetail(row)} className="w-9 gap-0 px-0"><Eye size={15} /></Button>}
+                                                <Button type="button" size="sm" variant="outline" title="Detail SPK" aria-label="Detail SPK" onClick={() => router.get(`${baseUrl}/${row.id}`)} className="w-9 gap-0 px-0"><Eye size={15} /></Button>
                                                 {!approvalOnly && !paymentOnly && !disbursementOnly && permissions.canApproveSpk && row.can_approve && <Button type="button" size="sm" title="Approve SPK" aria-label="Approve SPK" onClick={() => router.post(`${baseUrl}/${row.id}/approve`, {}, { preserveScroll: true })} className="w-9 gap-0 px-0"><CheckCircle2 size={15} /></Button>}
                                                 {!approvalOnly && !paymentOnly && !disbursementOnly && permissions.canManageSpk && (
                                                     <>
@@ -627,55 +627,6 @@ export default function Index({ title, description, baseUrl, pageUrl = baseUrl, 
                     </div>
                 </section>
             </div>
-            <Modal
-                open={Boolean(paymentDetail)}
-                onClose={() => setPaymentDetail(null)}
-                title={paymentDetail ? `Detail Pembayaran ${paymentDetail.nomor_spk}` : 'Detail Pembayaran SPK'}
-                footer={<Button type="button" variant="outline" onClick={() => setPaymentDetail(null)}>Tutup</Button>}
-            >
-                {paymentDetail && (
-                    <div className="grid gap-4 text-sm">
-                        <div className="grid gap-3 rounded-lg border border-silver-deep/60 p-4 dark:border-white/10 md:grid-cols-2">
-                            <p><b>Nomor SPK:</b> {paymentDetail.nomor_spk}</p>
-                            <p><b>Kontraktor:</b> {paymentDetail.kontraktor}</p>
-                            <p><b>Pekerjaan:</b> {paymentDetail.judul_pekerjaan}</p>
-                            <p><b>Jenis pekerjaan:</b> {String(paymentDetail.jenis_pekerjaan ?? '-').replaceAll('_', ' ')}</p>
-                            <p><b>Lokasi:</b> {paymentDetail.perumahan} / {paymentDetail.unit}</p>
-                            <p><b>Tanggal SPK:</b> {paymentDetail.tanggal_spk || '-'}</p>
-                            <p><b>Periode pekerjaan:</b> {paymentDetail.tanggal_mulai || '-'} s/d {paymentDetail.tanggal_selesai || '-'}</p>
-                            <p><b>Total item:</b> {money(paymentDetail.nilai_kontrak_dasar)}</p>
-                            <p><b>Total SPK:</b> {money(paymentDetail.nilai_kontrak)}</p>
-                            <p><b>Metode pembayaran:</b> {paymentDetail.metode_pembayaran === 'cash' ? 'Cash / Sekaligus' : 'Cicil / Termin'}</p>
-                            <p><b>Approval:</b> {paymentDetail.approval_role === 'admin' ? 'Admin' : 'Manajer'}</p>
-                            <p><b>Disetujui:</b> {paymentDetail.approved_at || '-'}</p>
-                            <p><b>Status SPK:</b> {paymentDetail.status}</p>
-                            <p><b>Status Dokumen:</b> {paymentDetail.record_status_label}</p>
-                            <p><b>Rencana HPP:</b> {paymentDetail.hpp_plan_exists ? money(paymentDetail.hpp_plan_total) : `Belum diisi untuk ${paymentDetail.hpp_plan_label}`}</p>
-                        </div>
-                        <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10">
-                            <p className="font-extrabold">Lingkup Pekerjaan</p>
-                            <p className="mt-1 whitespace-pre-wrap text-ink-soft">{paymentDetail.lingkup_pekerjaan || '-'}</p>
-                        </div>
-                        <div className="grid gap-3">
-                            <p className="font-extrabold">Rincian Pembayaran</p>
-                            {paymentDetail.payments.map((payment) => (
-                                <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10" key={payment.id}>
-                                    <p className="font-extrabold">Termin {payment.termin_ke} - {money(payment.nominal)}</p>
-                                    <p>Jatuh tempo: {payment.tanggal_jatuh_tempo ?? '-'}</p>
-                                    <p>Tanggal bayar: {payment.tanggal_pembayaran ?? '-'}</p>
-                                    <p>Status: {payment.status_label}</p>
-                                    <p>Keterangan: {payment.keterangan || '-'}</p>
-                                    {payment.opname && <p>Referensi opname: {payment.opname}</p>}
-                                </div>
-                            ))}
-                        </div>
-                        <div className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10">
-                            <p className="font-extrabold">Catatan SPK</p>
-                            <p className="mt-1 whitespace-pre-wrap text-ink-soft">{paymentDetail.catatan || '-'}</p>
-                        </div>
-                    </div>
-                )}
-            </Modal>
         </>
     );
 }

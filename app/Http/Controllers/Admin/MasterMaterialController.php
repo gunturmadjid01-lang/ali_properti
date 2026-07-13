@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Models\BarangMaterial;
+use App\Models\Gudang;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,10 +20,28 @@ class MasterMaterialController extends Controller
     public function index(Request $request): Response
     {
         $search = trim((string) $request->query('search', ''));
+        $gudangId = trim((string) $request->query('gudang_id', ''));
+        $gudangs = $this->accessibleGudangs();
+        $allowedGudangIds = $gudangs->pluck('value')->all();
+
+        if ($gudangId !== '' && ! in_array((string) $gudangId, $allowedGudangIds, true)) {
+            $gudangId = '';
+        }
+
+        $stockGudangIds = $gudangId !== ''
+            ? collect([(int) $gudangId])
+            : collect($allowedGudangIds)->map(fn ($id) => (int) $id)->filter()->values();
 
         $rows = BarangMaterial::query()
+            ->withSum([
+                'stokMaterials as stok_tersedia' => fn (Builder $query) => $stockGudangIds->isNotEmpty()
+                    ? $query->whereIn('gudang_id', $stockGudangIds)
+                    : $query,
+            ], 'qty')
             ->when($search !== '', fn (Builder $query) => $query->where('kode_barang', 'like', "%{$search}%")
                 ->orWhere('nama_barang', 'like', "%{$search}%")
+                ->orWhere('jenis_material', 'like', "%{$search}%")
+                ->orWhere('merk_material', 'like', "%{$search}%")
                 ->orWhere('kategori_material', 'like', "%{$search}%"))
             ->latest('id')
             ->paginate(10)
@@ -31,9 +50,11 @@ class MasterMaterialController extends Controller
                 'id' => $row->id,
                 'kode_barang' => $row->kode_barang,
                 'nama_barang' => $row->nama_barang,
-                'kategori_material' => $row->kategori_material,
+                'jenis_material' => $row->jenis_material ?: $row->kategori_material,
+                'merk_material' => $row->merk_material,
                 'satuan' => $row->satuan,
                 'harga_hpp' => $row->harga_hpp,
+                'stok_tersedia' => (float) ($row->stok_tersedia ?? 0),
                 'stok_minimum' => $row->stok_minimum,
                 'catatan' => $row->catatan,
                 'status' => $row->status,
@@ -45,9 +66,10 @@ class MasterMaterialController extends Controller
             'title' => 'Kelola Item Material',
             'baseUrl' => route('admin.master-material.index', absolute: false),
             'rows' => $rows,
-            'filters' => ['search' => $search],
+            'filters' => ['search' => $search, 'gudang_id' => $gudangId],
             'options' => [
-                'kategoriMaterial' => $this->kategoriMaterialOptions(),
+                'gudangs' => $gudangs,
+                'jenisMaterial' => $this->jenisMaterialOptions(),
                 'status' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']],
             ],
         ]);
@@ -98,15 +120,20 @@ class MasterMaterialController extends Controller
 
     protected function payload(Request $request): array
     {
-        return $request->validate([
+        $payload = $request->validate([
             'nama_barang' => ['required', 'string', 'max:255'],
-            'kategori_material' => ['nullable', 'string', 'max:255'],
+            'jenis_material' => ['nullable', 'string', 'max:255'],
+            'merk_material' => ['nullable', 'string', 'max:255'],
             'satuan' => ['required', 'string', 'max:255'],
             'harga_hpp' => ['required', 'numeric', 'min:0'],
             'stok_minimum' => ['nullable', 'numeric', 'min:0'],
             'catatan' => ['nullable', 'string'],
             'status' => ['required', 'in:aktif,nonaktif'],
         ]);
+
+        $payload['kategori_material'] = $payload['jenis_material'] ?? null;
+
+        return $payload;
     }
 
     protected function nextCode(): string
@@ -125,7 +152,7 @@ class MasterMaterialController extends Controller
         ]);
     }
 
-    protected function kategoriMaterialOptions(): array
+    protected function jenisMaterialOptions(): array
     {
         $defaults = [
             'Struktur',
@@ -146,19 +173,58 @@ class MasterMaterialController extends Controller
         ];
 
         $existing = BarangMaterial::query()
-            ->whereNotNull('kategori_material')
-            ->where('kategori_material', '!=', '')
+            ->whereNotNull('jenis_material')
+            ->where('jenis_material', '!=', '')
             ->distinct()
-            ->orderBy('kategori_material')
-            ->pluck('kategori_material')
+            ->orderBy('jenis_material')
+            ->pluck('jenis_material')
             ->all();
 
-        return collect(['' => 'Tanpa Kategori'])
+        return collect(['' => 'Tanpa Jenis'])
             ->merge(collect($defaults)->combine($defaults))
             ->merge(collect($existing)->combine($existing))
             ->map(fn (string $label, string $value) => ['value' => $value, 'label' => $label])
             ->values()
             ->all();
+    }
+
+    protected function accessibleGudangs()
+    {
+        $user = auth()->user();
+
+        $query = Gudang::query()->where('status', 'aktif');
+
+        if ($user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])) {
+            $assignedIds = $this->assignedGudangIds($user);
+            if ($assignedIds->isEmpty()) {
+                return collect();
+            }
+
+            $query->whereIn('id', $assignedIds);
+        }
+
+        return $query->orderBy('nama_gudang')
+            ->get(['id', 'nama_gudang'])
+            ->map(fn (Gudang $row) => [
+                'value' => (string) $row->id,
+                'label' => $row->nama_gudang,
+            ])
+            ->values();
+    }
+
+    protected function assignedGudangIds($user)
+    {
+        if (! $user) {
+            return collect();
+        }
+
+        $ids = $user->gudangs()->pluck('gudangs.id')->map(fn ($id) => (int) $id);
+
+        if ($ids->isEmpty() && filled($user->gudang_id)) {
+            $ids = collect([(int) $user->gudang_id]);
+        }
+
+        return $ids->filter()->unique()->values();
     }
 
     protected function modelClass(): string

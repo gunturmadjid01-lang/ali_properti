@@ -80,13 +80,51 @@ class SiteScheduleController extends Controller
             'title' => 'Jadwal Lapangan',
             'baseUrl' => route('admin.site-schedule.index', absolute: false),
             'filters' => ['search' => $search, 'perumahan_id' => $perumahanId, 'detail_rumah_id' => $detailRumahId],
-            'options' => [
-                ...$this->fieldOptions(),
-                'spkKontraktors' => $this->spkKontraktorOptions($request),
-                'tahapanPembangunansUnit' => $this->tahapanOptionsFor('unit'),
-                'tahapanPembangunansKawasan' => $this->tahapanOptionsFor('kawasan'),
-            ],
+            'options' => $this->formOptions($request),
             'rows' => $rows,
+        ]);
+    }
+
+    public function create(Request $request): Response
+    {
+        $this->authorizeSiteSchedule('create');
+
+        return Inertia::render('Admin/SiteSchedule/Form', [
+            'title' => 'Buat Jadwal Lapangan',
+            'mode' => 'create',
+            'baseUrl' => route('admin.site-schedule.store', absolute: false),
+            'indexUrl' => route('admin.site-schedule.index', absolute: false),
+            'options' => $this->formOptions($request),
+        ]);
+    }
+
+    public function edit(Request $request, string $id): Response
+    {
+        $this->authorizeSiteSchedule('update');
+        $row = SiteSchedule::query()->findOrFail($id);
+        $this->abortIfLocked($row);
+
+        return Inertia::render('Admin/SiteSchedule/Form', [
+            'title' => 'Edit Jadwal Lapangan',
+            'mode' => 'edit',
+            'baseUrl' => route('admin.site-schedule.update', $row->id, false),
+            'indexUrl' => route('admin.site-schedule.index', absolute: false),
+            'options' => $this->formOptions($request),
+            'initialData' => [
+                'id' => $row->id,
+                'kode_jadwal' => $row->kode_jadwal,
+                'perumahan_id' => (string) $row->perumahan_id,
+                'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
+                'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
+                'nama_pekerjaan' => $row->nama_pekerjaan,
+                'tanggal_mulai' => optional($row->tanggal_mulai)->format('Y-m-d'),
+                'tanggal_target' => optional($row->tanggal_target)->format('Y-m-d'),
+                'target_progress' => $row->target_progress,
+                'realisasi_progress' => $row->realisasi_progress,
+                'status' => $row->status,
+                'kendala' => $row->kendala ?? '',
+                'catatan' => $row->catatan ?? '',
+            ],
         ]);
     }
 
@@ -802,6 +840,16 @@ class SiteScheduleController extends Controller
             })
             ->values()
             ->all();
+    }
+
+    private function formOptions(Request $request): array
+    {
+        return [
+            ...$this->fieldOptions(),
+            'spkKontraktors' => $this->spkKontraktorOptions($request),
+            'tahapanPembangunansUnit' => $this->tahapanOptionsFor('unit'),
+            'tahapanPembangunansKawasan' => $this->tahapanOptionsFor('kawasan'),
+        ];
     }
 
     private function tahapanOptionsFor(string $context): array
