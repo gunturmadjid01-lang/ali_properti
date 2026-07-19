@@ -9,9 +9,9 @@ use App\Models\MaterialUsage;
 use App\Models\Perumahan;
 use App\Models\ProgressPembangunan;
 use App\Models\SiteMaterialStock;
-use App\Models\TahapanPembangunan;
 use App\Services\MaterialHppRealizationService;
 use App\Services\MaterialWorkflowService;
+use App\Services\TahapanOptionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -204,14 +204,9 @@ class MaterialUsageController extends Controller
     {
         $user = auth()->user();
 
-        return (bool) (
-            ! $user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])
-            && (
-                $user?->hasRole('super_admin')
-                || $user?->can("material-usage.{$action}")
-                || $user?->can('material-usage.manage')
-            )
-        );
+        return (bool) ($user?->hasRole('super_admin')
+            || $user?->can("material-usage.{$action}")
+            || $user?->can('material-usage.manage'));
     }
 
     private function validatePayload(Request $request): array
@@ -253,12 +248,12 @@ class MaterialUsageController extends Controller
     private function options(): array
     {
         return [
-            'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])
+            'perumahans' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
-            'detailRumahs' => DetailRumah::query()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])
+            'detailRumahs' => DetailRumah::query()->finalized()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}", 'perumahan_id' => (string) $row->perumahan_id])->values(),
-            'tahapanPembangunansUnit' => app(\App\Services\TahapanOptionService::class)->forContext('unit'),
-            'tahapanPembangunansKawasan' => app(\App\Services\TahapanOptionService::class)->forContext('kawasan'),
+            'tahapanPembangunansUnit' => app(TahapanOptionService::class)->forContext('unit'),
+            'tahapanPembangunansKawasan' => app(TahapanOptionService::class)->forContext('kawasan'),
             'progressPembangunans' => ProgressPembangunan::query()->with(['detailRumah:id,perumahan_id', 'siteSchedule:id,perumahan_id,detail_rumah_id,tahapan_pembangunan_id'])
                 ->where('approval_status', 'approved')->latest('tanggal')->get(['id', 'detail_rumah_id', 'tahapan_pembangunan_id', 'site_schedule_id', 'tanggal', 'nama_progress', 'persentase'])
                 ->map(fn ($row) => [

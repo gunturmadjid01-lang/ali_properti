@@ -21,8 +21,10 @@ import {
     Input,
     ModalForm,
     Textarea,
+    TableActions,
 } from "../../../Components/UI";
 import AdminLayout from "../../../Layouts/AdminLayout";
+import { FinanceTrendChart } from "../../../Components/Finance/FinanceChart";
 
 const rupiah = (value) =>
     new Intl.NumberFormat("id-ID", {
@@ -51,13 +53,16 @@ const statusClasses = {
     approved:
         "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200",
     rejected: "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-200",
+    disbursed:
+        "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200",
 };
 
 const statusLabel = {
-    draft: "Draft",
-    pending: "Menunggu Approval",
+    draft: "Draf",
+    pending: "Menunggu Persetujuan",
     approved: "Disetujui",
     rejected: "Ditolak",
+    disbursed: "Sudah Dicairkan",
 };
 
 const costLabels = {
@@ -85,6 +90,7 @@ export default function Index({
     filters,
     accounts,
     fundings,
+    deposits,
     expenses,
     ledgers,
     options,
@@ -92,9 +98,9 @@ export default function Index({
     hppCategories,
     reportSummary,
 }) {
-    const [accountOpen, setAccountOpen] = useState(false);
     const [fundingOpen, setFundingOpen] = useState(false);
     const [expenseOpen, setExpenseOpen] = useState(false);
+    const [depositOpen, setDepositOpen] = useState(false);
     const [review, setReview] = useState(null);
     const [rejecting, setRejecting] = useState(null);
 
@@ -102,15 +108,6 @@ export default function Index({
         value: String(row.id),
         label: `${row.code} - ${row.name} (${rupiah(row.balance)})`,
     }));
-    const accountForm = useForm({
-        name: "Kas Kecil Utama",
-        branch_id: "",
-        target_amount: "",
-        minimum_balance: "",
-        request_date: new Date().toISOString().slice(0, 10),
-        request_notes: "",
-        request_proof: null,
-    });
     const fundingForm = useForm({
         petty_cash_account_id: accountOptions[0]?.value ?? "",
         request_date: new Date().toISOString().slice(0, 10),
@@ -129,6 +126,15 @@ export default function Index({
         amount: "",
         description: "",
         proof: null,
+    });
+    const depositForm = useForm({
+        petty_cash_account_id: accountOptions[0]?.value ?? "",
+        master_bank_id: options.bankAccounts?.[0]?.value ?? "",
+        deposit_date: new Date().toISOString().slice(0, 10),
+        amount: "",
+        proof: null,
+        notes: "",
+        status: "pending",
     });
     const approvalForm = useForm({ approval_proof: null, approval_notes: "" });
     const rejectForm = useForm({ rejection_notes: "" });
@@ -151,16 +157,6 @@ export default function Index({
         [options.units, expenseForm.data.perumahan_id],
     );
 
-    const submitAccount = (event) => {
-        event.preventDefault();
-        accountForm.post("/admin/kas-kecil/rekening", {
-            forceFormData: true,
-            onSuccess: () => {
-                setAccountOpen(false);
-                accountForm.reset();
-            },
-        });
-    };
     const submitFunding = (event, status = "pending") => {
         event?.preventDefault();
         fundingForm.transform((data) => ({ ...data, status }));
@@ -182,9 +178,22 @@ export default function Index({
             },
         });
     };
+    const submitDeposit = (event, status = "pending") => {
+        event.preventDefault();
+        depositForm.transform((data) => ({ ...data, status }));
+        depositForm.post("/admin/kas-kecil/penyetoran", {
+            forceFormData: true,
+            onSuccess: () => {
+                setDepositOpen(false);
+                depositForm.reset();
+            },
+            onFinish: () => depositForm.transform((data) => data),
+        });
+    };
     const approve = (event) => {
         event.preventDefault();
-        approvalForm.post(`/admin/kas-kecil/pengisian/${review.id}/setujui`, {
+        const action = review.status === "approved" ? "cairkan" : "setujui";
+        approvalForm.post(`/admin/kas-kecil/pengisian/${review.id}/${action}`, {
             forceFormData: true,
             onSuccess: () => {
                 setReview(null);
@@ -206,6 +215,7 @@ export default function Index({
         ["saldo", "Saldo", WalletCards],
         ["pengisian", "Pengisian Dana", ArrowUpCircle],
         ["pengeluaran", "Pengeluaran", ArrowDownCircle],
+        ["penyetoran", "Setor ke Kas Perusahaan", Banknote],
         ["laporan", "Laporan", FileText],
     ];
     const totalBalance = accounts.reduce((sum, row) => sum + row.balance, 0);
@@ -223,7 +233,7 @@ export default function Index({
                                 Kas Kecil
                             </h1>
                             <p className="mt-2 max-w-2xl text-sm text-white/65">
-                                Pembentukan dana, pengisian kembali,
+                                Rekening kas kecil pribadi, pengisian dana,
                                 pengeluaran, saldo, dan jejak audit dalam satu
                                 alur terkontrol.
                             </p>
@@ -263,11 +273,6 @@ export default function Index({
                                     disetujui.
                                 </p>
                             </div>
-                            {permissions.can_create_account && (
-                                <Button onClick={() => setAccountOpen(true)}>
-                                    <Plus size={17} /> Bentuk Kas Kecil
-                                </Button>
-                            )}
                         </div>
                         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                             {accounts.map((row) => (
@@ -285,6 +290,11 @@ export default function Index({
                                             </h3>
                                             <p className="text-xs text-ink-soft">
                                                 {row.branch || "Semua cabang"}
+                                            </p>
+                                            <p className="mt-1 text-xs font-bold text-ink-soft">
+                                                Petugas:{" "}
+                                                {row.assigned_user ||
+                                                    "Belum ditugaskan"}
                                             </p>
                                         </div>
                                         <span
@@ -319,8 +329,9 @@ export default function Index({
                             ))}
                             {!accounts.length && (
                                 <div className="rounded-2xl border border-dashed border-silver-deep p-10 text-center text-sm font-bold text-ink-soft md:col-span-2 xl:col-span-3">
-                                    Belum ada kas kecil. Owner atau manajer
-                                    dapat membentuk dana awal.
+                                    Rekening kas kecil sedang disiapkan untuk
+                                    user ini. Saldo awal tetap Rp0 sampai ada
+                                    pengisian dana.
                                 </div>
                             )}
                         </div>
@@ -335,8 +346,8 @@ export default function Index({
                                     Pengisian Dana
                                 </h2>
                                 <p className="text-sm text-ink-soft">
-                                    Draft → Menunggu Approval → Saldo bertambah
-                                    setelah disetujui.
+                                    Draft → Menunggu Persetujuan → Saldo
+                                    bertambah setelah disetujui.
                                 </p>
                             </div>
                             {permissions.can_create && accounts.length > 0 && (
@@ -353,6 +364,9 @@ export default function Index({
                                             Nomor / Tanggal
                                         </th>
                                         <th className="px-4 py-3">Kas Kecil</th>
+                                        <th className="px-4 py-3">
+                                            Rekening Tujuan
+                                        </th>
                                         <th className="px-4 py-3">Nominal</th>
                                         <th className="px-4 py-3">Pemohon</th>
                                         <th className="px-4 py-3">
@@ -392,6 +406,26 @@ export default function Index({
                                                 >
                                                     {statusLabel[row.status]}
                                                 </span>
+                                                {row.approval_status ===
+                                                    "pending" && (
+                                                    <p className="mt-2 text-xs font-bold text-amber-700">
+                                                        Menunggu approval tahap{" "}
+                                                        {
+                                                            row.approval_current_step
+                                                        }
+                                                        /
+                                                        {
+                                                            row.approval_total_steps
+                                                        }
+                                                    </p>
+                                                )}
+                                                {row.status === "approved" && (
+                                                    <p className="mt-2 text-xs font-bold text-blue-700">
+                                                        Persetujuan selesai,
+                                                        menunggu pencairan
+                                                        keuangan
+                                                    </p>
+                                                )}
                                                 <div className="mt-2 flex gap-2 text-xs font-bold">
                                                     {row.request_proof_url && (
                                                         <a
@@ -420,8 +454,10 @@ export default function Index({
                                                 </div>
                                             </td>
                                             <td className="px-4 py-4">
-                                                <div className="flex justify-end gap-2">
-                                                    {row.status === "draft" &&
+                                                <TableActions>
+                                                    {row.record_status ===
+                                                        "draft" &&
+                                                        row.can_submit &&
                                                         permissions.can_create && (
                                                             <Button
                                                                 size="sm"
@@ -436,7 +472,21 @@ export default function Index({
                                                             </Button>
                                                         )}
                                                     {row.status === "pending" &&
-                                                        permissions.can_approve && (
+                                                        permissions.can_unlock && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() =>
+                                                                    router.post(
+                                                                        `/admin/kas-kecil/pengisian/${row.id}/unlock`,
+                                                                    )
+                                                                }
+                                                            >
+                                                                Buka Kunci
+                                                            </Button>
+                                                        )}
+                                                    {row.status === "pending" &&
+                                                        row.can_review && (
                                                             <>
                                                                 <Button
                                                                     size="sm"
@@ -470,7 +520,24 @@ export default function Index({
                                                                 </Button>
                                                             </>
                                                         )}
-                                                </div>
+                                                    {row.status ===
+                                                        "approved" &&
+                                                        permissions.can_disburse && (
+                                                            <Button
+                                                                size="sm"
+                                                                onClick={() =>
+                                                                    setReview(
+                                                                        row,
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Banknote
+                                                                    size={15}
+                                                                />{" "}
+                                                                Cairkan
+                                                            </Button>
+                                                        )}
+                                                </TableActions>
                                             </td>
                                         </tr>
                                     ))}
@@ -595,6 +662,152 @@ export default function Index({
                                     )}
                                 </tbody>
                             </table>
+                        </div>
+                    </section>
+                )}
+
+                {section === "penyetoran" && (
+                    <section className="overflow-hidden rounded-2xl border border-silver-deep/60 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]">
+                        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-silver-deep/60 p-5 dark:border-white/10">
+                            <div>
+                                <h2 className="text-xl font-black">
+                                    Penyetoran ke Kas Perusahaan
+                                </h2>
+                                <p className="text-sm text-ink-soft">
+                                    Uang cash Booking Fee yang dititipkan di Kas
+                                    Kecil Marketing disetor dan diverifikasi
+                                    Keuangan.
+                                </p>
+                            </div>
+                            {permissions.can_create && (
+                                <Button onClick={() => setDepositOpen(true)}>
+                                    <Plus size={16} /> Buat Setoran
+                                </Button>
+                            )}
+                        </header>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full text-sm">
+                                <thead className="bg-silver-soft/70 text-left text-xs uppercase text-ink-soft">
+                                    <tr>
+                                        <th className="px-4 py-3">
+                                            Nomor / Tanggal
+                                        </th>
+                                        <th className="px-4 py-3">Kas Kecil</th>
+                                        <th className="px-4 py-3">Nominal</th>
+                                        <th className="px-4 py-3">Approval</th>
+                                        <th className="px-4 py-3">Bukti</th>
+                                        <th className="px-4 py-3">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
+                                    {deposits.map((row) => (
+                                        <tr key={row.id}>
+                                            <td className="px-4 py-3">
+                                                <b>{row.number}</b>
+                                                <div className="text-xs text-ink-soft">
+                                                    {row.deposit_date} ·{" "}
+                                                    {row.creator}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {row.account}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {row.destination_bank || "-"}
+                                            </td>
+                                            <td className="px-4 py-3 font-black">
+                                                {rupiah(row.amount)}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <span
+                                                    className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusClasses[row.status]}`}
+                                                >
+                                                    {statusLabel[row.status] ||
+                                                        row.status}
+                                                </span>
+                                                {row.approval_total_steps >
+                                                    0 && (
+                                                    <div className="mt-1 text-xs text-ink-soft">
+                                                        Tahap{" "}
+                                                        {
+                                                            row.approval_current_step
+                                                        }
+                                                        /
+                                                        {
+                                                            row.approval_total_steps
+                                                        }
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <a
+                                                    className="font-bold text-blue-600"
+                                                    href={row.proof_url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                >
+                                                    Lihat bukti
+                                                </a>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <TableActions>
+                                                    {row.can_submit && (
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() =>
+                                                                router.post(
+                                                                    `/admin/kas-kecil/penyetoran/${row.id}/kirim`,
+                                                                )
+                                                            }
+                                                        >
+                                                            Kirim
+                                                        </Button>
+                                                    )}
+                                                    {row.can_review && (
+                                                        <>
+                                                            <Button
+                                                                size="sm"
+                                                                onClick={() =>
+                                                                    router.post(
+                                                                        `/admin/kas-kecil/penyetoran/${row.id}/setujui`,
+                                                                    )
+                                                                }
+                                                            >
+                                                                Setujui
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                tone="danger"
+                                                                onClick={() => {
+                                                                    const note =
+                                                                        window.prompt(
+                                                                            "Alasan penolakan",
+                                                                        );
+                                                                    if (note)
+                                                                        router.post(
+                                                                            `/admin/kas-kecil/penyetoran/${row.id}/tolak`,
+                                                                            {
+                                                                                rejection_notes:
+                                                                                    note,
+                                                                            },
+                                                                        );
+                                                                }}
+                                                            >
+                                                                Tolak
+                                                            </Button>
+                                                        </>
+                                                    )}
+                                                </TableActions>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {!deposits.length && (
+                                <p className="p-8 text-center text-sm text-ink-soft">
+                                    Belum ada penyetoran.
+                                </p>
+                            )}
                         </div>
                     </section>
                 )}
@@ -750,97 +963,87 @@ export default function Index({
                                 </table>
                             </div>
                         </section>
+                        <FinanceTrendChart
+                            title="Pergerakan Saldo Kas Kecil"
+                            subtitle="Garis menunjukkan saldo setelah setiap transaksi pada periode laporan."
+                            items={[...ledgers].reverse().map((row) => ({
+                                label: row.transaction_date,
+                                balance: row.balance_after,
+                            }))}
+                            series={[
+                                {
+                                    key: "balance",
+                                    label: "Saldo kas kecil",
+                                    color: "#2563eb",
+                                    area: true,
+                                },
+                            ]}
+                        />
                     </div>
                 )}
             </div>
 
             <ModalForm
-                open={accountOpen}
-                onClose={() => setAccountOpen(false)}
-                onSubmit={submitAccount}
-                title="Pembentukan Kas Kecil"
-                description="Dana awal masuk ke saldo setelah disetujui dan dilengkapi bukti transfer."
-                size="xl"
-                contentClassName="md:grid-cols-2"
-                actions={
-                    <>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setAccountOpen(false)}
-                        >
-                            Batal
-                        </Button>
-                        <Button type="submit" disabled={accountForm.processing}>
-                            <Banknote size={17} /> Ajukan Pembentukan
-                        </Button>
-                    </>
-                }
+                open={depositOpen}
+                onClose={() => setDepositOpen(false)}
+                title="Setor Kas Kecil ke Kas Perusahaan"
+                description="Transaksi baru mengurangi saldo setelah Keuangan menyetujui."
+                onSubmit={(event) => submitDeposit(event, "pending")}
+                processing={depositForm.processing}
+                submitLabel="Kirim ke Keuangan"
             >
-                <Input
-                    label="Nama Kas Kecil"
+                <Dropdown
+                    label="Kas Kecil"
                     required
-                    value={accountForm.data.name}
-                    error={accountForm.errors.name}
-                    onChange={(e) =>
-                        accountForm.setData("name", e.target.value)
+                    options={accountOptions}
+                    value={depositForm.data.petty_cash_account_id}
+                    onChange={(value) =>
+                        depositForm.setData("petty_cash_account_id", value)
                     }
+                    error={depositForm.errors.petty_cash_account_id}
                 />
-                <div className="grid gap-2">
-                    <FieldLabel>Cabang</FieldLabel>
-                    <Dropdown
-                        value={accountForm.data.branch_id}
-                        options={[
-                            { value: "", label: "Semua cabang" },
-                            ...options.branches,
-                        ]}
-                        label="Pilih cabang"
-                        onChange={(v) => accountForm.setData("branch_id", v)}
-                    />
-                </div>
-                <CurrencyInput
-                    label="Dana Awal / Target"
+                <Dropdown
+                    label="Rekening Kas Perusahaan Tujuan"
                     required
-                    value={accountForm.data.target_amount}
-                    error={accountForm.errors.target_amount}
-                    onChange={(v) => accountForm.setData("target_amount", v)}
-                />
-                <CurrencyInput
-                    label="Batas Saldo Minimum"
-                    required
-                    value={accountForm.data.minimum_balance}
-                    error={accountForm.errors.minimum_balance}
-                    onChange={(v) => accountForm.setData("minimum_balance", v)}
+                    searchable
+                    options={options.bankAccounts ?? []}
+                    value={depositForm.data.master_bank_id}
+                    onChange={(value) =>
+                        depositForm.setData("master_bank_id", value)
+                    }
+                    error={depositForm.errors.master_bank_id}
                 />
                 <Input
-                    label="Tanggal Pengajuan"
+                    label="Tanggal Setor"
                     required
                     type="date"
-                    value={accountForm.data.request_date}
-                    error={accountForm.errors.request_date}
-                    onChange={(e) =>
-                        accountForm.setData("request_date", e.target.value)
+                    value={depositForm.data.deposit_date}
+                    onChange={(event) =>
+                        depositForm.setData("deposit_date", event.target.value)
                     }
+                    error={depositForm.errors.deposit_date}
+                />
+                <CurrencyInput
+                    label="Nominal Setoran"
+                    required
+                    value={depositForm.data.amount}
+                    onChange={(value) => depositForm.setData("amount", value)}
+                    error={depositForm.errors.amount}
                 />
                 <FileField
-                    label="Bukti Penarikan / Transfer Awal"
+                    label="Bukti Setoran / Serah Terima"
                     required
-                    error={accountForm.errors.request_proof}
-                    onChange={(file) =>
-                        accountForm.setData("request_proof", file)
-                    }
-                    hint="JPG, PNG, WEBP, atau PDF. Maksimal 5 MB."
+                    onChange={(file) => depositForm.setData("proof", file)}
+                    error={depositForm.errors.proof}
                 />
-                <div className="md:col-span-2">
-                    <Textarea
-                        label="Catatan"
-                        value={accountForm.data.request_notes}
-                        error={accountForm.errors.request_notes}
-                        onChange={(e) =>
-                            accountForm.setData("request_notes", e.target.value)
-                        }
-                    />
-                </div>
+                <Textarea
+                    label="Catatan"
+                    value={depositForm.data.notes}
+                    onChange={(event) =>
+                        depositForm.setData("notes", event.target.value)
+                    }
+                    error={depositForm.errors.notes}
+                />
             </ModalForm>
 
             <ModalForm
@@ -1109,7 +1312,11 @@ export default function Index({
                 open={Boolean(review)}
                 onClose={() => setReview(null)}
                 onSubmit={approve}
-                title="Setujui Pengisian Dana"
+                title={
+                    review?.status === "approved"
+                        ? "Cairkan Pengisian Dana"
+                        : "Setujui Tahap Persetujuan"
+                }
                 description={
                     review ? `${review.number} · ${rupiah(review.amount)}` : ""
                 }
@@ -1126,27 +1333,37 @@ export default function Index({
                             type="submit"
                             disabled={approvalForm.processing}
                         >
-                            <CheckCircle2 size={17} /> Setujui & Tambah Saldo
+                            <CheckCircle2 size={17} />{" "}
+                            {review?.status === "approved"
+                                ? "Cairkan & Tambah Saldo"
+                                : "Setujui Tahap"}
                         </Button>
                     </>
                 }
             >
-                <FileField
-                    label="Bukti Transfer / Penarikan"
-                    required
-                    error={approvalForm.errors.approval_proof}
-                    onChange={(file) =>
-                        approvalForm.setData("approval_proof", file)
-                    }
-                />
-                <Textarea
-                    label="Catatan Approval"
-                    value={approvalForm.data.approval_notes}
-                    error={approvalForm.errors.approval_notes}
-                    onChange={(e) =>
-                        approvalForm.setData("approval_notes", e.target.value)
-                    }
-                />
+                {review?.status === "approved" && (
+                    <>
+                        <FileField
+                            label="Bukti Transfer / Penarikan"
+                            required
+                            error={approvalForm.errors.approval_proof}
+                            onChange={(file) =>
+                                approvalForm.setData("approval_proof", file)
+                            }
+                        />
+                        <Textarea
+                            label="Catatan Pencairan"
+                            value={approvalForm.data.approval_notes}
+                            error={approvalForm.errors.approval_notes}
+                            onChange={(e) =>
+                                approvalForm.setData(
+                                    "approval_notes",
+                                    e.target.value,
+                                )
+                            }
+                        />
+                    </>
+                )}
             </ModalForm>
 
             <ModalForm

@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\Admin\Marketing;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
+use App\Http\Controllers\Controller;
 use App\Models\Costumer;
-use App\Models\DokumenCostumer;
 use App\Models\DetailRumah;
+use App\Models\DokumenCostumer;
 use App\Models\Perumahan;
 use App\Models\ProgressPembangunan;
 use Illuminate\Database\Eloquent\Builder;
@@ -68,11 +68,11 @@ class MarketingController extends Controller
                 ->whereDate('tanggal', '>=', now()->subDays(30))
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
                 ->count(),
-            'active_projects' => Perumahan::query()
+            'active_projects' => Perumahan::query()->finalized()
                 ->where('status', 'aktif')
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereKey($this->activePerumahanId($request)))
                 ->count(),
-            'active_units' => DetailRumah::query()
+            'active_units' => DetailRumah::query()->finalized()
                 ->where('status', 'aktif')
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
                 ->count(),
@@ -204,7 +204,7 @@ class MarketingController extends Controller
                 ],
                 'menus' => [
                     ['label' => 'Transaksi Cash', 'description' => 'Kelola pembelian cash yang berasal dari SPR disetujui.', 'href' => '/admin/marketing/transaksi-pembelian/cash'],
-                    ['label' => 'Pembayaran SPR', 'description' => 'Bayar booking fee dan uang muka SPR.', 'href' => '/admin/marketing/pembayaran-spr'],
+                    ['label' => 'Penerimaan Customer', 'description' => 'Catat Booking Fee, DP, tagihan, atau pembayaran lebih melalui satu sumber.', 'href' => '/admin/keuangan/penerimaan-customer'],
                     ['label' => 'Konsumen', 'description' => 'Lanjutkan transaksi dari data calon konsumen.', 'href' => '/admin/marketing/konsumen'],
                     ['label' => 'Laporan SPR', 'description' => 'Lihat ringkasan transaksi SPR.', 'href' => '/admin/marketing/laporan'],
                 ],

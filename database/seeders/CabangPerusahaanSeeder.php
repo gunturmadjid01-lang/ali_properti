@@ -16,7 +16,7 @@ class CabangPerusahaanSeeder extends Seeder
             'phone' => '082196903414',
             'latitude' => null,
             'longtitude' => null,
-            'logo' => 'logo.png',
+            'logo' => null,
             'image' => null,
             'deskripsi' => 'Kantor pusat pengelolaan pemasaran dan administrasi Perumahan Sidratul Muntaha.',
             'emaiil' => 'admin@aliproperti.test',

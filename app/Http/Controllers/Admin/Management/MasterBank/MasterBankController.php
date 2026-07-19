@@ -2,13 +2,15 @@
 
 namespace App\Http\Controllers\Admin\Management\MasterBank;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\RendersSeparatedManagementForm;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\MasterBank\StoreMasterBankRequest;
 use App\Http\Requests\Admin\MasterBank\UpdateMasterBankRequest;
 use App\Models\MasterBank;
+use App\Models\CabangPerusahaan;
 use App\Models\Perumahan;
+use App\Services\ApprovalWorkflowService;
 use App\Support\CodeGenerator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -25,7 +27,7 @@ class MasterBankController extends Controller
         $search = trim((string) $request->query('search', ''));
 
         $rows = MasterBank::query()
-            ->with('perumahan:id,nama_perusahaan')
+            ->with(['cabang:id,nama_cabang', 'perumahan:id,nama_perusahaan'])
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     foreach ($this->searchableColumns() as $column) {
@@ -39,6 +41,7 @@ class MasterBankController extends Controller
             ->through(fn (MasterBank $row) => [
                 ...$row->toArray(),
                 'perumahan_nama' => $row->perumahan?->nama_perusahaan ?? '-',
+                'cabang_nama' => $row->cabang?->nama_cabang ?? '-',
                 'record_status_label' => $row->record_status === 'locked' ? 'Locked' : 'Draft',
                 'edit_url' => route($this->routeName().'.edit', $row->id, false),
             ]);
@@ -58,14 +61,14 @@ class MasterBankController extends Controller
         ]);
     }
 
-    public function store(StoreMasterBankRequest $request): RedirectResponse
+    public function store(StoreMasterBankRequest $request, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
-        MasterBank::create([
+        $payload = [
             ...$request->validated(),
             'kode_bank' => CodeGenerator::next(MasterBank::class, 'kode_bank', 'BNK'),
-        ]);
+        ];
 
-        return to_route($this->routeName().'.index')->with('success', $this->title().' berhasil ditambahkan.');
+        return $approvalWorkflow->create('master-bank', $payload, fn (array $data) => MasterBank::create($data));
     }
 
     public function update(UpdateMasterBankRequest $request, string $id): RedirectResponse
@@ -110,7 +113,8 @@ class MasterBankController extends Controller
     {
         return [
             ['key' => 'kode_bank', 'label' => 'Kode Bank'],
-            ['key' => 'perumahan_nama', 'label' => 'Perumahan'],
+            ['key' => 'cabang_nama', 'label' => 'Perusahaan / Cabang'],
+            ['key' => 'perumahan_nama', 'label' => 'Alokasi Proyek'],
             ['key' => 'nama_bank', 'label' => 'Nama Bank'],
             ['key' => 'nomor_rekening', 'label' => 'Nomor Rekening'],
             ['key' => 'nama_rekening', 'label' => 'Nama Rekening'],
@@ -122,7 +126,8 @@ class MasterBankController extends Controller
     protected function fields(): array
     {
         return [
-            ['name' => 'perumahan_id', 'label' => 'Perumahan', 'type' => 'select', 'optionsKey' => 'perumahan', 'required' => true],
+            ['name' => 'cabang_id', 'label' => 'Perusahaan / Cabang', 'type' => 'select', 'optionsKey' => 'cabang', 'required' => true],
+            ['name' => 'perumahan_id', 'label' => 'Alokasi Proyek (Opsional)', 'type' => 'select', 'optionsKey' => 'perumahan'],
             ['name' => 'nama_bank', 'label' => 'Nama Bank', 'type' => 'text', 'required' => true],
             ['name' => 'nomor_rekening', 'label' => 'Nomor Rekening', 'type' => 'text'],
             ['name' => 'nama_rekening', 'label' => 'Nama Rekening', 'type' => 'text'],
@@ -138,7 +143,12 @@ class MasterBankController extends Controller
     protected function options(): array
     {
         return [
-            'perumahan' => Perumahan::query()
+            'cabang' => CabangPerusahaan::query()->finalized()
+                ->orderBy('nama_cabang')
+                ->get(['id', 'nama_cabang'])
+                ->map(fn (CabangPerusahaan $cabang) => ['value' => (string) $cabang->id, 'label' => $cabang->nama_cabang])
+                ->values(),
+            'perumahan' => Perumahan::query()->finalized()
                 ->orderBy('nama_perusahaan')
                 ->get(['id', 'nama_perusahaan'])
                 ->map(fn (Perumahan $perumahan) => ['value' => (string) $perumahan->id, 'label' => $perumahan->nama_perusahaan])
@@ -149,6 +159,6 @@ class MasterBankController extends Controller
 
     protected function description(): string
     {
-        return 'Kelola rekening bank perusahaan untuk alur keluar masuk kas perumahan.';
+        return 'Kelola rekening kas dan bank milik perusahaan/cabang. Alokasi proyek hanya diisi bila rekening memang khusus untuk perumahan tertentu.';
     }
 }

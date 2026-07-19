@@ -6,16 +6,16 @@ namespace App\Models;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, HasRoles;
+    use HasFactory, HasRoles, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -33,6 +33,7 @@ class User extends Authenticatable
         'employment_type',
         'employment_status',
         'has_login_access',
+        'attendance_pin',
         'phone',
         'tax_number',
         'bpjs_health_number',
@@ -53,6 +54,7 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        'attendance_pin',
     ];
 
     /**
@@ -66,6 +68,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'join_date' => 'date',
             'has_login_access' => 'boolean',
+            'attendance_pin' => 'hashed',
             'password' => 'hashed',
         ];
     }
@@ -78,6 +81,11 @@ class User extends Authenticatable
     public function salaries(): HasMany
     {
         return $this->hasMany(EmployeeSalary::class);
+    }
+
+    public function attendanceRecords(): HasMany
+    {
+        return $this->hasMany(AttendanceRecord::class);
     }
 
     public function transaksiKeuangans(): HasMany
@@ -123,6 +131,11 @@ class User extends Authenticatable
     public function sprs(): HasMany
     {
         return $this->hasMany(Spr::class, 'created_by');
+    }
+
+    public function pettyCashAccounts(): HasMany
+    {
+        return $this->hasMany(PettyCashAccount::class, 'assigned_user_id');
     }
 
     public function costumers(): HasMany

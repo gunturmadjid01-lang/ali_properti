@@ -68,6 +68,17 @@ class DetailRumah extends Model
         });
     }
 
+    public function getDisplayLabelAttribute(): string
+    {
+        $block = trim((string) $this->kode_nlok);
+        $number = trim((string) $this->nomor_rumah);
+
+        return collect([
+            $block !== '' ? 'Blok '.$block : null,
+            $number !== '' ? 'No. '.$number : null,
+        ])->filter()->join(' ') ?: 'Unit belum ditentukan';
+    }
+
     public function perumahan(): BelongsTo
     {
         return $this->belongsTo(Perumahan::class);
@@ -96,6 +107,11 @@ class DetailRumah extends Model
     public function sprs(): HasMany
     {
         return $this->hasMany(Spr::class);
+    }
+
+    public function housingReservations(): HasMany
+    {
+        return $this->hasMany(HousingReservation::class, 'detail_rumah_id');
     }
 
     public function ownerships(): HasMany

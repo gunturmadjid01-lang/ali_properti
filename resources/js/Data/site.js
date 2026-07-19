@@ -13,7 +13,7 @@ import {
 const storage = (path) => `/media/${path.split('/').map(encodeURIComponent).join('/')}`;
 
 export const assets = {
-    logo: storage('logo.png'),
+    logo: '/favicon.ico',
     hero: storage('gambar/WhatsApp Image 2026-06-14 at 02.00.02.jpeg'),
     house: [
         'gambar/WhatsApp Image 2026-06-14 at 02.00.02.jpeg',

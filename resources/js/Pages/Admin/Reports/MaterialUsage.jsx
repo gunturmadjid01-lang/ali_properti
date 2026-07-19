@@ -196,7 +196,7 @@ export default function MaterialUsage({
                                 router.get(baseUrl, {}, { replace: true })
                             }
                         >
-                            <RotateCcw size={17} /> Reset
+                            <RotateCcw size={17} /> Atur Ulang
                         </Button>
                         {permissions.canExport && (
                             <Button

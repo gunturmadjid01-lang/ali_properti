@@ -5,10 +5,11 @@ namespace App\Http\Controllers\Admin\Management\CabangPerusahaan;
 use App\Http\Controllers\Admin\Management\CabangPerusahaan\Logic\CabangPerusahaanPayload;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\RendersSeparatedManagementForm;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\CabangPerusahaan\StoreCabangPerusahaanRequest;
 use App\Http\Requests\Admin\CabangPerusahaan\UpdateCabangPerusahaanRequest;
-use App\Http\Controllers\Controller;
 use App\Models\CabangPerusahaan;
+use App\Services\ApprovalWorkflowService;
 use App\Support\CodeGenerator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -66,14 +67,12 @@ class CabangPerusahaanController extends Controller
         ]);
     }
 
-    public function store(StoreCabangPerusahaanRequest $request): RedirectResponse
+    public function store(StoreCabangPerusahaanRequest $request, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
         $payload = app(CabangPerusahaanPayload::class)->fromRequest($request);
         $payload['kode_cabang'] = CodeGenerator::next(CabangPerusahaan::class, 'kode_cabang', 'CBG');
 
-        CabangPerusahaan::create($payload);
-
-        return to_route('admin.management.cabang-perusahaan.index')->with('success', 'Management Cabang Perusahaan berhasil ditambahkan.');
+        return $approvalWorkflow->create('cabang-perusahaan', $payload, fn (array $data) => CabangPerusahaan::create($data));
     }
 
     public function update(UpdateCabangPerusahaanRequest $request, string $id): RedirectResponse
@@ -110,6 +109,7 @@ class CabangPerusahaanController extends Controller
             ['name' => 'type', 'label' => 'Tipe', 'type' => 'select', 'optionsKey' => 'branchTypes', 'required' => true],
             ['name' => 'latitude', 'label' => 'Latitude', 'type' => 'text'],
             ['name' => 'longtitude', 'label' => 'Longitude', 'type' => 'text'],
+            ['name' => 'attendance_radius_meters', 'label' => 'Radius Absensi (meter)', 'type' => 'number', 'required' => true, 'defaultValue' => 100],
             ['name' => 'logo', 'label' => 'Logo', 'type' => 'image'],
             ['name' => 'image', 'label' => 'Foto Kantor Cabang', 'type' => 'image'],
             ['name' => 'address', 'label' => 'Alamat', 'type' => 'textarea', 'full' => true],
@@ -125,7 +125,18 @@ class CabangPerusahaanController extends Controller
         ];
     }
 
-    protected function routeName(): string { return 'admin.management.cabang-perusahaan'; }
-    protected function title(): string { return 'Management Cabang Perusahaan'; }
-    protected function description(): string { return 'Kelola identitas, lokasi, kontak, dan status kantor cabang perusahaan.'; }
+    protected function routeName(): string
+    {
+        return 'admin.management.cabang-perusahaan';
+    }
+
+    protected function title(): string
+    {
+        return 'Management Cabang Perusahaan';
+    }
+
+    protected function description(): string
+    {
+        return 'Kelola identitas, lokasi, kontak, dan status kantor cabang perusahaan.';
+    }
 }

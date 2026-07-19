@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Admin\Management\DokumenLegalitasRumah;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\DokumenLegalitasRumah\StoreDokumenLegalitasRumahRequest;
 use App\Http\Requests\Admin\DokumenLegalitasRumah\UpdateDokumenLegalitasRumahRequest;
 use App\Models\DokumenLegalitasRumah;
@@ -141,7 +141,7 @@ class DokumenLegalitasRumahController extends Controller
     protected function options(): array
     {
         return [
-            'perumahan' => Perumahan::query()
+            'perumahan' => Perumahan::query()->finalized()
                 ->orderBy('nama_perusahaan')
                 ->get(['id', 'nama_perusahaan'])
                 ->map(fn (Perumahan $perumahan) => ['value' => (string) $perumahan->id, 'label' => $perumahan->nama_perusahaan])

@@ -33,8 +33,10 @@ class Costumer extends Model
         'telepon',
         'file_identitas',
         'penghasilan',
+        'pengeluaran_bulanan',
         'keterangan',
         'pekerjaan',
+        'employment_category',
         'nama_perusahaan',
         'alamat_perusahaan',
         'telepon_perusahaan',
@@ -45,12 +47,20 @@ class Costumer extends Model
         'no_identitas_pasangan',
         'tanggal_lahir_pasangan',
         'tempat_lahir_pasangan',
+        'pekerjaan_pasangan',
+        'penghasilan_pasangan',
+        'pengeluaran_bulanan_pasangan',
+        'daftar_cicilan',
     ];
 
     protected $casts = [
         'tanggal_lahir' => 'date',
         'tanggal_lahir_pasangan' => 'date',
         'penghasilan' => 'float',
+        'pengeluaran_bulanan' => 'float',
+        'penghasilan_pasangan' => 'float',
+        'pengeluaran_bulanan_pasangan' => 'float',
+        'daftar_cicilan' => 'array',
     ];
 
     public function followUps(): HasMany

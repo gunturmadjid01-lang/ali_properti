@@ -4,30 +4,12 @@ namespace App\Services;
 
 use App\Models\CashSale;
 use App\Models\Costumer;
-use App\Models\KprMilestone;
-use App\Models\KprSubmission;
 use App\Models\UnitOwnership;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
 class UnitOwnershipService
 {
-    public function syncKprAkad(KprSubmission $submission, KprMilestone $milestone): ?UnitOwnership
-    {
-        $submission->loadMissing('spr.costumer');
-
-        return $this->activateFromTransaction(
-            $submission->spr?->costumer,
-            $submission->spr?->detail_rumah_id,
-            $submission->spr_id,
-            'kpr_akad',
-            $milestone,
-            'kpr',
-            $milestone->tanggal_proses,
-            $milestone->nomor_dokumen,
-        );
-    }
-
     public function syncCashHandover(CashSale $sale): ?UnitOwnership
     {
         $sale->loadMissing('costumer', 'spr');

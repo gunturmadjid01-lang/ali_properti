@@ -284,7 +284,7 @@ class SurveyScheduleController extends Controller
 
     private function perumahanOptions(): array
     {
-        return Perumahan::query()
+        return Perumahan::query()->finalized()
             ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $query->whereIn('id', $this->assignedPerumahanIds(request())))
             ->orderBy('nama_perusahaan')
             ->get(['id', 'nama_perusahaan'])
@@ -297,7 +297,7 @@ class SurveyScheduleController extends Controller
 
     private function detailRumahOptions(): array
     {
-        return DetailRumah::query()
+        return DetailRumah::query()->finalized()
             ->with('perumahan:id,nama_perusahaan')
             ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->orderBy('kode_nlok')

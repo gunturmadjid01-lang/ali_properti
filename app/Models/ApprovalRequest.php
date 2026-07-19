@@ -25,6 +25,9 @@ class ApprovalRequest extends Model
         'before_data',
         'after_data',
         'status',
+        'current_step',
+        'total_steps',
+        'step_history',
         'requested_by',
         'reviewed_by',
         'reviewed_at',
@@ -36,6 +39,9 @@ class ApprovalRequest extends Model
         'before_data' => 'array',
         'after_data' => 'array',
         'reviewed_at' => 'datetime',
+        'current_step' => 'integer',
+        'total_steps' => 'integer',
+        'step_history' => 'array',
     ];
 
     public function requester(): BelongsTo

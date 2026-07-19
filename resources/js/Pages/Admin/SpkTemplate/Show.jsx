@@ -15,7 +15,7 @@ export default function Show({ title, description, template, indexUrl, editUrl, 
                 <section className="rounded-lg border border-white/80 bg-white/78 p-6 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
                         <div><p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">RAB Referensi • Upah Borongan Tukang</p><h2 className="mt-2 font-display text-3xl font-extrabold">{template.nama_template}</h2><p className="mt-2 text-ink-soft dark:text-white/60">{description}</p></div>
-                        <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => router.get(indexUrl)}><ArrowLeft size={17} /> Kembali</Button>{canUpdate && <Button type="button" onClick={() => router.get(editUrl)}><Edit3 size={17} /> Edit Template</Button>}</div>
+                        <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => router.get(indexUrl)}><ArrowLeft size={17} /> Kembali</Button>{canUpdate && <Button type="button" onClick={() => router.get(editUrl)}><Edit3 size={17} /> Ubah Template</Button>}</div>
                     </div>
                 </section>
 

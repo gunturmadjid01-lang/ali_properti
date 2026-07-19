@@ -13,8 +13,7 @@ trait ScopesActivePerumahan
     {
         $user = $request->user();
 
-        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing', 'supervisor_marketing'])
-            && ! $user->hasAnyRole(['owner', 'super_admin']);
+        return (bool) $user && ! $user->hasAnyRole(['owner', 'super_admin']);
     }
 
     protected function activePerumahanId(Request $request): ?int
@@ -26,7 +25,7 @@ trait ScopesActivePerumahan
         }
 
         if ($user->hasAnyRole(['owner', 'super_admin'])) {
-            return (int) ($request->session()->get('active_perumahan_id') ?: Perumahan::query()->value('id'));
+            return (int) ($request->session()->get('active_perumahan_id') ?: Perumahan::query()->finalized()->value('id'));
         }
 
         $allowedIds = $user->perumahans()->pluck('perumahans.id')->map(fn ($id) => (int) $id)->all();
@@ -49,7 +48,7 @@ trait ScopesActivePerumahan
         }
 
         if ($user->hasAnyRole(['owner', 'super_admin'])) {
-            return Perumahan::query()->pluck('id')->map(fn ($id) => (int) $id)->all();
+            return Perumahan::query()->finalized()->pluck('id')->map(fn ($id) => (int) $id)->all();
         }
 
         return $user->perumahans()->pluck('perumahans.id')->map(fn ($id) => (int) $id)->all();

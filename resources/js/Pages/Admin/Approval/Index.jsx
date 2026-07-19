@@ -1,5 +1,5 @@
-import { Head, router, useForm } from '@inertiajs/react';
-import { CheckCircle2, Search, XCircle } from 'lucide-react';
+import { Head, router } from '@inertiajs/react';
+import { Eye, Search } from 'lucide-react';
 import { useState } from 'react';
 import { Button, Dropdown, Input } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
@@ -58,34 +58,16 @@ function Pagination({ links = [] }) {
 }
 
 function ApprovalRow({ row }) {
-    const rejectForm = useForm({ rejection_note: '' });
-    const [rejecting, setRejecting] = useState(false);
-
-    const approve = () => {
-        if (!window.confirm('Setujui request ini?')) {
-            return;
-        }
-
-        router.post(`/admin/approval/${row.id}/approve`, {}, { preserveScroll: true });
-    };
-
-    const reject = (event) => {
-        event.preventDefault();
-        rejectForm.post(`/admin/approval/${row.id}/reject`, {
-            preserveScroll: true,
-            onSuccess: () => setRejecting(false),
-        });
-    };
-
     return (
         <article className="rounded-lg border border-silver-deep/70 bg-white/76 p-5 dark:border-white/10 dark:bg-white/8">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                 <div>
                     <div className="flex flex-wrap items-center gap-2">
                         <StatusBadge status={row.status} />
-                        <span className="rounded-full bg-silver px-3 py-1 text-xs font-extrabold text-ink-soft dark:bg-white/10 dark:text-white/58">{row.action_label}</span>
                     </div>
-                    <h3 className="mt-3 text-base font-extrabold">{row.module_label}</h3>
+                    <p className="mt-3 text-xs font-extrabold uppercase tracking-wider text-ink-soft">{row.module_label}</p>
+                    <h3 className="mt-1 text-lg font-extrabold">{row.business_title}</h3>
+                    <p className="mt-1 text-xs font-extrabold text-amber-700 dark:text-amber-300">Tahap {row.current_step} dari {row.total_steps}</p>
                     <p className="mt-1 text-sm font-semibold text-ink-soft dark:text-white/55">
                         Diajukan oleh {row.requested_by ?? '-'} pada {row.created_at}
                     </p>
@@ -95,37 +77,27 @@ function ApprovalRow({ row }) {
                         </p>
                     )}
                 </div>
-                {row.status === 'pending' && (
-                    <div className="flex flex-wrap gap-2">
-                        <Button type="button" onClick={approve}>
-                            <CheckCircle2 size={17} /> Approve
-                        </Button>
-                        <Button variant="outline" type="button" onClick={() => setRejecting(!rejecting)}>
-                            <XCircle size={17} /> Reject
-                        </Button>
-                    </div>
+                {row.business_detail_url ? (
+                    <Button variant="outline" type="button" onClick={() => router.get(row.business_detail_url)}>
+                        <Eye size={17}/> Lihat Detail
+                    </Button>
+                ) : (
+                    <span className="rounded-lg border border-dashed px-3 py-2 text-xs font-bold text-ink-soft">Detail sumber belum tersedia</span>
                 )}
             </div>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                <DataPreview title="Data Sebelum" data={row.before_data} />
-                <DataPreview title="Data Pengajuan" data={row.after_data} />
-            </div>
-
-            {rejecting && (
-                <form className="mt-4 grid gap-3 rounded-lg bg-red-50 p-4 dark:bg-red-500/10" onSubmit={reject}>
-                    <Input
-                        label="Catatan Reject"
-                        value={rejectForm.data.rejection_note}
-                        onChange={(event) => rejectForm.setData('rejection_note', event.target.value)}
-                    />
-                    <div className="flex justify-end">
-                        <Button className="bg-red-600 text-white hover:bg-red-700" type="submit" disabled={rejectForm.processing}>
-                            Simpan Reject
-                        </Button>
-                    </div>
-                </form>
+            {(row.step_history ?? []).length > 0 && (
+                <div className="mt-4 rounded-lg bg-silver-soft/70 p-4 text-xs dark:bg-white/5">
+                    <p className="font-extrabold">Riwayat Tahap</p>
+                    {(row.step_history ?? []).map((item, index) => (
+                        <p className="mt-1 font-semibold text-ink-soft dark:text-white/60" key={`${item.step}-${index}`}>
+                            Tahap {item.step}: {item.decision} oleh {item.user_name ?? '-'} {item.note ? `— ${item.note}` : ''}
+                        </p>
+                    ))}
+                </div>
             )}
+
+            <div className="mt-5"><DataPreview title="Ringkasan Transaksi" data={row.business_summary} /></div>
         </article>
     );
 }
@@ -144,7 +116,7 @@ function Index({ title, baseUrl, filters, rows, statusOptions }) {
             <Head title={title} />
             <div className="grid gap-6">
                 <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">Approval</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">Persetujuan</p>
                     <h2 className="mt-1 text-xl font-extrabold">{title}</h2>
                     <p className="mt-1 max-w-2xl text-sm leading-6 text-ink-soft dark:text-white/60">
                         Semua perubahan data yang membutuhkan approval akan masuk di halaman ini sebelum diterapkan ke database utama.
@@ -153,7 +125,7 @@ function Index({ title, baseUrl, filters, rows, statusOptions }) {
 
                 <section className="rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form className="flex flex-col gap-3 p-5 md:flex-row md:items-end" onSubmit={submit}>
-                        <Input className="md:max-w-md" label="Search" value={search} onChange={(event) => setSearch(event.target.value)} />
+                        <Input className="md:max-w-md" label="Pencarian" value={search} onChange={(event) => setSearch(event.target.value)} />
                         <div className="grid gap-2 md:w-56">
                             <span className="text-sm font-extrabold text-ink/75 dark:text-white/78">Status</span>
                             <Dropdown value={status} options={statusOptions} onChange={setStatus} />
@@ -181,4 +153,3 @@ function Index({ title, baseUrl, filters, rows, statusOptions }) {
 Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Admin'}>{page}</AdminLayout>;
 
 export default Index;
-

@@ -425,11 +425,11 @@ export default function Form({
                                     ),
                                 },
                                 {
-                                    title: "Progress & Status Data",
+                                    title: "Kemajuan & Status Data",
                                     content: (
                                         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                                             <Input
-                                                label="Progress Awal (%)"
+                                                label="Kemajuan Awal (%)"
                                                 type="number"
                                                 min="0"
                                                 max="100"

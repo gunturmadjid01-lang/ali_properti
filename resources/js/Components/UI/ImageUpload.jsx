@@ -2,6 +2,7 @@ import { ImagePlus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import Button from "./Button";
 import FieldLabel from "./FieldLabel";
+import { fieldHelp } from "./HelpTooltip";
 
 function imageUrl(value) {
     if (!value || typeof value !== "string") {
@@ -24,9 +25,10 @@ export default function ImageUpload({
     label,
     value,
     error,
-    previewLabel = "Preview image",
+    previewLabel = "Pratinjau image",
     onChange,
     required = false,
+    help,
 }) {
     const [objectUrl, setObjectUrl] = useState(null);
     const existingPreview = useMemo(() => imageUrl(value), [value]);
@@ -51,7 +53,12 @@ export default function ImageUpload({
 
     return (
         <div className="grid gap-2 text-sm font-extrabold text-ink/75 dark:text-white/78">
-            <FieldLabel required={required}>{label}</FieldLabel>
+            <FieldLabel
+                required={required}
+                help={help ?? fieldHelp({ label, type: "file", required })}
+            >
+                {label}
+            </FieldLabel>
             <label className="group grid min-h-44 cursor-pointer place-items-center overflow-hidden rounded-lg border border-dashed border-silver-deep bg-white/80 text-center transition hover:border-ink-soft hover:bg-silver dark:border-white/15 dark:bg-white/8 dark:hover:bg-white/10">
                 {preview ? (
                     <img

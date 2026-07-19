@@ -18,6 +18,7 @@ class CabangPerusahaan extends Model
         'phone',
         'latitude',
         'longtitude',
+        'attendance_radius_meters',
         'logo',
         'image',
         'deskripsi',
@@ -32,6 +33,9 @@ class CabangPerusahaan extends Model
 
     protected $casts = [
         'locked_at' => 'datetime',
+        'latitude' => 'float',
+        'longtitude' => 'float',
+        'attendance_radius_meters' => 'integer',
     ];
 
     public function perumahans(): HasMany

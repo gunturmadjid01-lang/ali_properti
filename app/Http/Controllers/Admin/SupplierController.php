@@ -2,9 +2,10 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Models\Supplier;
+use App\Services\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -77,43 +78,42 @@ class SupplierController extends Controller
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
         $this->authorizeSupplier('create');
 
-        Supplier::query()->create([
+        $payload = [
             ...$this->payload($request),
             'kode_supplier' => $this->nextCode(),
             'created_by' => auth()->id(),
             'updated_by' => auth()->id(),
-        ]);
+        ];
 
-        return back()->with('success', 'Supplier berhasil ditambahkan.');
+        return $approvalWorkflow->create('supplier', $payload, fn (array $data) => Supplier::query()->create($data));
     }
 
-    public function update(Request $request, string $id): RedirectResponse
+    public function update(Request $request, string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
         $this->authorizeSupplier('update');
 
         $supplier = Supplier::query()->findOrFail($id);
         $this->abortIfLocked($supplier);
-        $supplier->update([
+        $payload = [
             ...$this->payload($request),
             'updated_by' => auth()->id(),
-        ]);
+        ];
 
-        return back()->with('success', 'Supplier berhasil diperbarui.');
+        return $approvalWorkflow->update('supplier', $supplier, $payload, fn (Supplier $row, array $data) => $row->update($data));
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
         $this->authorizeSupplier('delete');
 
         $supplier = Supplier::query()->findOrFail($id);
         $this->abortIfLocked($supplier);
-        $supplier->delete();
 
-        return back()->with('success', 'Supplier berhasil dihapus.');
+        return $approvalWorkflow->delete('supplier', $supplier, fn (Supplier $row) => $row->delete());
     }
 
     protected function payload(Request $request): array

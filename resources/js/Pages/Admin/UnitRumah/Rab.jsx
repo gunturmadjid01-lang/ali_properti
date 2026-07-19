@@ -317,7 +317,7 @@ export default function Rab({
                                                             type="button"
                                                             variant="ghost"
                                                             size="sm"
-                                                            title="Edit tahap"
+                                                            title="Ubah tahap"
                                                             onClick={() => openEditStage(group)}
                                                         >
                                                             <Edit3 size={14} /> Edit Tahap
@@ -398,7 +398,7 @@ export default function Rab({
                         setStageOpen(false);
                         setEditingStage(null);
                     }}
-                    title={`${editingStage ? 'Edit' : 'Tambah'} Tahap RAB Unit`}
+                    title={`${editingStage ? 'Ubah' : 'Tambah'} Tahap RAB Unit`}
                     description="Atur nama dan posisi tahap pada RAB unit rumah."
                     onSubmit={submitStage}
                     actions={(

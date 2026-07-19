@@ -16,6 +16,10 @@ class MaterialOpeningBalance extends Model
         'barang_material_id',
         'tanggal_saldo',
         'qty',
+        'input_qty',
+        'input_unit_id',
+        'input_unit_symbol',
+        'conversion_to_base',
         'harga_satuan',
         'total_nilai',
         'catatan',
@@ -29,6 +33,8 @@ class MaterialOpeningBalance extends Model
     protected $casts = [
         'tanggal_saldo' => 'date',
         'qty' => 'float',
+        'input_qty' => 'float',
+        'conversion_to_base' => 'float',
         'harga_satuan' => 'float',
         'total_nilai' => 'float',
         'locked_at' => 'datetime',
@@ -42,5 +48,10 @@ class MaterialOpeningBalance extends Model
     public function barangMaterial(): BelongsTo
     {
         return $this->belongsTo(BarangMaterial::class);
+    }
+
+    public function inputUnit(): BelongsTo
+    {
+        return $this->belongsTo(MaterialUnit::class, 'input_unit_id');
     }
 }

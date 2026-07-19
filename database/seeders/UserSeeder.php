@@ -2,9 +2,9 @@
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use App\Models\CabangPerusahaan;
 use App\Models\Perumahan;
+use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -42,8 +42,14 @@ class UserSeeder extends Seeder
             ],
             [
                 'email' => 'manager@ptali.com',
-                'name' => 'Manager Proyek',
+                'name' => 'Manager',
                 'phone' => '081100000006',
+                'role' => 'manager',
+            ],
+            [
+                'email' => 'pimpro@ptali.com',
+                'name' => 'Manager Proyek',
+                'phone' => '081100000007',
                 'role' => 'manajer_pimpro',
             ],
             [
@@ -70,7 +76,7 @@ class UserSeeder extends Seeder
                     'name' => $data['name'],
                     'phone' => $data['phone'],
                     'kantor_cabang_id' => $cabang?->id,
-                    'avatar' => 'logo.png',
+                    'avatar' => null,
                     'password' => Hash::make('password'),
                 ])->save();
 
@@ -80,7 +86,7 @@ class UserSeeder extends Seeder
                     'name' => $data['name'],
                     'phone' => $data['phone'],
                     'kantor_cabang_id' => $cabang?->id,
-                    'avatar' => 'logo.png',
+                    'avatar' => null,
                     'password' => Hash::make('password'),
                 ]);
             }

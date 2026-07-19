@@ -12,7 +12,3 @@ Artisan::command('inspire', function () {
 Schedule::call(function (): void {
     app(MarketingOperationsService::class)->syncAutomaticReminders();
 })->hourly()->name('marketing-reminders-sync')->withoutOverlapping();
-
-Schedule::call(function (): void {
-    app(MarketingOperationsService::class)->expireBookings();
-})->dailyAt('00:15')->name('marketing-booking-expiry')->withoutOverlapping();

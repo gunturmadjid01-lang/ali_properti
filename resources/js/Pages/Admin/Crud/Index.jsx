@@ -1,7 +1,7 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { Edit3, Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Button, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
+import { Button, Dropdown, Form, Input, Modal, TableActions, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
 import { useResourcePermissions } from '../../../Utils/permissions';
 
@@ -25,7 +25,7 @@ function Field({ field, value, error, onChange }) {
         return <Textarea {...common} />;
     }
 
-    if (field.type === 'select') {
+    if (field.type === 'select' || (/_id$/.test(field.name) && (field.options ?? []).length > 0)) {
         return (
             <div className="grid gap-2">
                 <span className="text-sm font-extrabold text-ink/75 dark:text-white/78">{field.label}</span>
@@ -116,7 +116,7 @@ function CrudIndex({ title, description, baseUrl, permissionKey, columns, fields
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
+                <section className="admin-page-hero rounded-xl border p-5 md:p-6">
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                         <div>
                             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">Master Data</p>
@@ -139,7 +139,7 @@ function CrudIndex({ title, description, baseUrl, permissionKey, columns, fields
                                     {columns.map((column) => (
                                         <th className="px-4 py-3 font-extrabold" key={column.key}>{column.label}</th>
                                     ))}
-                                    {canShowActions && <th className="w-28 px-4 py-3 text-right font-extrabold">Aksi</th>}
+                                    {canShowActions && <th className="w-16 px-4 py-3 text-right font-extrabold">Aksi</th>}
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
@@ -151,8 +151,8 @@ function CrudIndex({ title, description, baseUrl, permissionKey, columns, fields
                                             </td>
                                         ))}
                                         {canShowActions && (
-                                            <td className="px-4 py-3">
-                                                <div className="flex justify-end gap-2">
+                                            <td className="w-16 px-4 py-3">
+                                                <TableActions>
                                                     {permissions.canUpdate && (
                                                         <Button variant="outline" size="sm" type="button" onClick={() => openEdit(row)}>
                                                             <Edit3 size={15} />
@@ -163,7 +163,7 @@ function CrudIndex({ title, description, baseUrl, permissionKey, columns, fields
                                                             <Trash2 size={15} />
                                                         </Button>
                                                     )}
-                                                </div>
+                                                </TableActions>
                                             </td>
                                         )}
                                     </tr>

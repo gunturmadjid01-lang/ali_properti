@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Concerns;
 
+use App\Services\ApprovalWorkflowService;
+use App\Support\ApprovalResources;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 
@@ -34,7 +36,12 @@ trait HandlesCrudLock
 
         $model->forceFill($data)->save();
 
-        return back()->with('success', 'Data berhasil di-lock.');
+        $approval = app(ApprovalWorkflowService::class)->submitLocked($model, ApprovalResources::keyForModel($model));
+        $message = $approval->status === 'approved'
+            ? 'Data berhasil di-lock dan disetujui otomatis sesuai Setting Approval.'
+            : "Data berhasil di-lock dan masuk approval tahap {$approval->current_step} dari {$approval->total_steps}.";
+
+        return back()->with('success', $message);
     }
 
     public function unlock(string $id): RedirectResponse
@@ -42,6 +49,7 @@ trait HandlesCrudLock
         abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock data.');
 
         $model = $this->lockableQuery()->findOrFail($id);
+        app(ApprovalWorkflowService::class)->cancelPendingLock($model);
 
         $data = [
             'record_status' => 'draft',

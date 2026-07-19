@@ -1,6 +1,6 @@
 import { Head, Link } from "@inertiajs/react";
 import { ArrowLeft, Eye } from "lucide-react";
-import { Accordion, Button } from "../../../../Components/UI";
+import { Accordion, Button, TableActions } from "../../../../Components/UI";
 import AuditCell from "../../../../Components/UI/AuditCell";
 import AdminLayout from "../../../../Layouts/AdminLayout";
 
@@ -140,7 +140,7 @@ function Detail({
                                         "Blok",
                                         "Nomor",
                                         "Tipe",
-                                        "Progress",
+                                        "Kemajuan",
                                         "Status Bangun",
                                         "Harga Jual",
                                         "Audit",
@@ -194,14 +194,17 @@ function Detail({
                                             {money(row.total_realisasi)}
                                         </td>
                                         <td className="px-4 py-3">
-                                            <Button
-                                                as={Link}
-                                                href={row.detail_url}
-                                                variant="outline"
-                                                size="sm"
-                                            >
-                                                <Eye size={15} /> Detail Unit
-                                            </Button>
+                                            <TableActions>
+                                                <Button
+                                                    as={Link}
+                                                    href={row.detail_url}
+                                                    variant="outline"
+                                                    size="sm"
+                                                >
+                                                    <Eye size={15} /> Detail
+                                                    Unit
+                                                </Button>
+                                            </TableActions>
                                         </td>
                                     </tr>
                                 ))}

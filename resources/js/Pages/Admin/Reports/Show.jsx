@@ -122,7 +122,7 @@ export default function Show({
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <div className="flex flex-col gap-3 border-b border-silver-deep/60 px-5 py-4 dark:border-white/10 md:flex-row md:items-center md:justify-between">
                         <div>
-                            <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-ink-soft">Preview</p>
+                            <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-ink-soft">Pratinjau</p>
                             <h3 className="font-display text-xl font-extrabold">{selectedTypeLabel}</h3>
                         </div>
                         <div className="rounded-lg border border-silver-deep/60 px-4 py-2 text-sm font-extrabold dark:border-white/10">

@@ -65,10 +65,10 @@ class MaterialUsageReportController extends Controller
         }
 
         $perumahan = isset($validated['perumahan_id'])
-            ? Perumahan::query()->findOrFail($validated['perumahan_id'])
+            ? Perumahan::query()->finalized()->findOrFail($validated['perumahan_id'])
             : null;
         $unit = isset($validated['detail_rumah_id'])
-            ? DetailRumah::query()->findOrFail($validated['detail_rumah_id'])
+            ? DetailRumah::query()->finalized()->findOrFail($validated['detail_rumah_id'])
             : null;
 
         if ($unit && $perumahan && (int) $unit->perumahan_id !== (int) $perumahan->id) {
@@ -77,7 +77,7 @@ class MaterialUsageReportController extends Controller
             ]);
         }
         if ($unit && ! $perumahan) {
-            $perumahan = Perumahan::query()->find($unit->perumahan_id);
+            $perumahan = Perumahan::query()->finalized()->find($unit->perumahan_id);
         }
 
         return [[
@@ -97,9 +97,9 @@ class MaterialUsageReportController extends Controller
                 ['value' => 'weekly', 'label' => 'Mingguan (Senin - Minggu)'],
                 ['value' => 'monthly', 'label' => 'Bulanan'],
             ],
-            'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])
+            'perumahans' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
-            'units' => DetailRumah::query()->with('perumahan:id,nama_perusahaan')
+            'units' => DetailRumah::query()->finalized()->with('perumahan:id,nama_perusahaan')
                 ->orderBy('perumahan_id')->orderBy('kode_nlok')->orderBy('nomor_rumah')
                 ->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah', 'tipe_rumah'])
                 ->map(fn ($row) => [

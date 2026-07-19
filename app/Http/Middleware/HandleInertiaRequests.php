@@ -2,13 +2,15 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\Perumahan;
 use App\Models\AppNotification;
 use App\Models\MarketingReminder;
+use App\Models\Perumahan;
+use App\Models\PettyCashAccount;
+use App\Support\SchemaMetadata;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -22,51 +24,99 @@ class HandleInertiaRequests extends Middleware
 
     public function share(Request $request): array
     {
-        $user = $request->user()?->loadMissing(['roles', 'permissions', 'kantorCabang', 'perumahans']);
-        $assignedPerumahans = $this->assignedPerumahans($request, $user);
-        $needsActivePerumahanSelection = $this->needsActivePerumahanSelection($request, $user, $assignedPerumahans);
-        $activePerumahan = $this->activePerumahan($request, $assignedPerumahans);
+        $user = $request->user();
 
         return [
             ...parent::share($request),
             'appName' => config('app.name', 'Sidratul Muntaha'),
-            'auth' => [
-                'user' => $user ? [
-                    'id' => $user->id,
-                    'name' => $user->name,
-                    'email' => $user->email,
-                    'phone' => $user->phone,
-                    'avatar' => $user->avatar,
-                    'avatar_url' => $user->avatar ? route('media', ['path' => $user->avatar], false) : null,
-                    'roles' => $user->roles->pluck('name')->values()->all(),
-                    'permissions' => $user->getAllPermissions()->pluck('name')->values()->all(),
-                    'kantor_cabang' => $user->kantorCabang ? [
-                        'id' => $user->kantorCabang->id,
-                        'nama_cabang' => $user->kantorCabang->nama_cabang,
-                    ] : null,
-                    'assigned_perumahans' => $assignedPerumahans,
-                    'active_perumahan' => $activePerumahan,
-                    'needs_active_perumahan_selection' => $needsActivePerumahanSelection,
-                ] : null,
-                'assigned_perumahans' => $assignedPerumahans,
-                'active_perumahan' => $activePerumahan,
-                'needs_active_perumahan_selection' => $needsActivePerumahanSelection,
-            ],
+            // Do not hydrate hundreds of permission models for JSON, upload, chat,
+            // and other non-Inertia requests that pass through the web middleware.
+            'auth' => fn () => $this->authPayload($request, $user),
             'notifications' => fn () => $this->notifications($request, $user),
             'sidebar_badges' => fn () => [
                 'reminder_follow_up' => $this->reminderFollowUpCount($user),
             ],
             'flash' => [
-                'id' => fn () => $request->session()->has('success') || $request->session()->has('error') ? uniqid('flash_', true) : null,
-                'success' => fn () => $request->session()->get('success'),
-                'error' => fn () => $request->session()->get('error'),
+                // Nested closures are not resolved as lazy Inertia props. Send the
+                // actual scalar values so the global response modal can read them.
+                'id' => $request->session()->has('success') || $request->session()->has('error') ? uniqid('flash_', true) : null,
+                'success' => $request->session()->get('success'),
+                'error' => $request->session()->get('error'),
+                'validation_id' => $request->session()->has('errors') ? uniqid('validation_', true) : null,
             ],
         ];
     }
 
+    protected function authPayload(Request $request, $user): array
+    {
+        $user?->loadMissing(['roles', 'kantorCabang', 'perumahans']);
+        $assignedPerumahans = $this->assignedPerumahans($request, $user);
+        $needsActivePerumahanSelection = $this->needsActivePerumahanSelection($request, $user, $assignedPerumahans);
+        $activePerumahan = $this->activePerumahan($request, $assignedPerumahans);
+        $permissions = $this->permissionNames($user);
+
+        if ($user && SchemaMetadata::hasTable('petty_cash_accounts') && PettyCashAccount::query()->where('assigned_user_id', $user->id)->exists()) {
+            $permissions = array_values(array_unique([...$permissions, 'petty-cash.view']));
+        }
+
+        return [
+            'user' => $user ? [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+                'avatar' => $user->avatar,
+                'avatar_url' => $user->avatar ? route('media', ['path' => $user->avatar], false) : null,
+                'roles' => $user->roles->pluck('name')->values()->all(),
+                'permissions' => $permissions,
+                'kantor_cabang' => $user->kantorCabang ? [
+                    'id' => $user->kantorCabang->id,
+                    'nama_cabang' => $user->kantorCabang->nama_cabang,
+                ] : null,
+                'assigned_perumahans' => $assignedPerumahans,
+                'active_perumahan' => $activePerumahan,
+                'needs_active_perumahan_selection' => $needsActivePerumahanSelection,
+            ] : null,
+            'assigned_perumahans' => $assignedPerumahans,
+            'active_perumahan' => $activePerumahan,
+            'needs_active_perumahan_selection' => $needsActivePerumahanSelection,
+        ];
+    }
+
+    protected function permissionNames($user): array
+    {
+        if (! $user) {
+            return [];
+        }
+
+        $modelType = $user->getMorphClass();
+
+        return DB::table('permissions')
+            ->where(function ($query) use ($user, $modelType): void {
+                $query->whereExists(function ($direct) use ($user, $modelType): void {
+                    $direct->selectRaw('1')
+                        ->from('model_has_permissions')
+                        ->whereColumn('model_has_permissions.permission_id', 'permissions.id')
+                        ->where('model_has_permissions.model_type', $modelType)
+                        ->where('model_has_permissions.model_id', $user->getKey());
+                })->orWhereExists(function ($viaRole) use ($user, $modelType): void {
+                    $viaRole->selectRaw('1')
+                        ->from('role_has_permissions')
+                        ->join('model_has_roles', 'model_has_roles.role_id', '=', 'role_has_permissions.role_id')
+                        ->whereColumn('role_has_permissions.permission_id', 'permissions.id')
+                        ->where('model_has_roles.model_type', $modelType)
+                        ->where('model_has_roles.model_id', $user->getKey());
+                });
+            })
+            ->orderBy('permissions.name')
+            ->pluck('permissions.name')
+            ->values()
+            ->all();
+    }
+
     protected function reminderFollowUpCount($user): int
     {
-        if (! $user || ! Schema::hasTable('marketing_reminders')) {
+        if (! $user || ! SchemaMetadata::hasTable('marketing_reminders')) {
             return 0;
         }
 
@@ -86,8 +136,7 @@ class HandleInertiaRequests extends Middleware
 
     protected function shouldScopeToActivePerumahan($user): bool
     {
-        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing', 'supervisor_marketing'])
-            && ! $user->hasAnyRole(['owner', 'super_admin']);
+        return (bool) $user && ! $user->hasAnyRole(['owner', 'super_admin']);
     }
 
     protected function activePerumahanIdForUser($user): ?int
@@ -104,7 +153,7 @@ class HandleInertiaRequests extends Middleware
 
     protected function needsActivePerumahanSelection(Request $request, $user, array $assignedPerumahans): bool
     {
-        return (bool) $user?->hasAnyRole(['marketing', 'area_marketing', 'supervisor_marketing'])
+        return (bool) $user
             && ! $user->hasAnyRole(['owner', 'super_admin'])
             && count($assignedPerumahans) > 1
             && ! $request->session()->has('active_perumahan_id');
@@ -112,7 +161,7 @@ class HandleInertiaRequests extends Middleware
 
     protected function notifications(Request $request, $user): array
     {
-        if (! $user || ! Schema::hasTable('app_notifications')) {
+        if (! $user || ! SchemaMetadata::hasTable('app_notifications')) {
             return ['unread_count' => 0, 'latest' => []];
         }
 
@@ -138,14 +187,14 @@ class HandleInertiaRequests extends Middleware
 
     protected function assignedPerumahans(Request $request, $user): array
     {
-        if (! Schema::hasTable('perumahans')) {
+        if (! SchemaMetadata::hasTable('perumahans')) {
             return [];
         }
 
         $cacheKey = 'assigned-perumahans:'.($user?->id ?? 0).':'.(int) ($user?->updated_at?->timestamp ?? 0);
 
         return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
-            $query = Perumahan::query()->orderBy('nama_perusahaan');
+            $query = Perumahan::query()->finalized()->orderBy('nama_perusahaan');
 
             if ($user && ! $user->hasAnyRole(['owner', 'super_admin'])) {
                 $ids = $user->perumahans->pluck('id');
@@ -167,6 +216,12 @@ class HandleInertiaRequests extends Middleware
 
     protected function activePerumahan(Request $request, array $assignedPerumahans): ?array
     {
+        if ($request->user()?->hasAnyRole(['owner', 'super_admin'])) {
+            $request->session()->forget('active_perumahan_id');
+
+            return null;
+        }
+
         if (empty($assignedPerumahans)) {
             $request->session()->forget('active_perumahan_id');
 

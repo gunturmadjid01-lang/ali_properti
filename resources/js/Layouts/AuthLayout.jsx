@@ -4,15 +4,15 @@ import { assets } from "../Data/site";
 
 export default function AuthLayout({ children, title = "Login" }) {
     return (
-        <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_16%,rgba(255,241,191,0.55),transparent_24rem),radial-gradient(circle_at_82%_22%,rgba(216,186,114,0.18),transparent_28rem),linear-gradient(135deg,#eff3f7_0%,#dde4ea_56%,#f7efe0_100%)] text-ink">
+        <div className="auth-theme-scope relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_18%_16%,rgba(255,241,191,0.55),transparent_24rem),radial-gradient(circle_at_82%_22%,rgba(216,186,114,0.18),transparent_28rem),linear-gradient(135deg,#eff3f7_0%,#dde4ea_56%,#f7efe0_100%)] text-ink">
             <div className="absolute inset-0 -z-10 bg-[linear-gradient(115deg,transparent_0_68%,rgba(31,37,43,0.04)_68%_68.35%,transparent_68.35%_100%)]" />
 
             <div className="mx-auto grid min-h-screen w-[min(1180px,calc(100%-32px))] items-center gap-8 py-8 lg:grid-cols-[0.92fr_1.08fr] lg:py-12">
-                <section className="relative overflow-hidden rounded-[28px] border border-white/80 bg-[linear-gradient(180deg,rgba(16,21,27,0.96),rgba(26,33,40,0.94))] p-8 text-white shadow-[0_28px_90px_rgba(18,23,28,0.20)]">
+                <section className="relative overflow-hidden rounded-[28px] border border-graphite bg-[linear-gradient(180deg,rgba(16,21,27,0.96),rgba(26,33,40,0.94))] p-8 text-white">
                     <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_18%_16%,rgba(216,186,114,0.34),transparent_18rem),radial-gradient(circle_at_82%_20%,rgba(255,255,255,0.10),transparent_14rem)]" />
                     <Link href="/" className="inline-flex items-center gap-3">
                         <img
-                            className="h-14 w-14 rounded-2xl border border-champagne/40 object-cover shadow-[0_10px_30px_rgba(0,0,0,0.18)]"
+                            className="h-14 w-14 rounded-2xl border border-champagne/60 object-cover"
                             src={assets.logo}
                             alt="Logo Sidratul Muntaha"
                         />
@@ -50,7 +50,7 @@ export default function AuthLayout({ children, title = "Login" }) {
                 </section>
 
                 <section className="flex justify-center">
-                    <div className="w-full max-w-[520px] rounded-[28px] border border-white/80 bg-white/82 p-6 shadow-[0_24px_70px_rgba(31,37,43,0.12)] backdrop-blur-xl md:p-8">
+                    <div className="w-full max-w-[520px] rounded-[28px] border border-ink/70 bg-white/88 p-6 backdrop-blur-xl md:p-8">
                         <div className="mb-6">
                             <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-soft">
                                 {title}

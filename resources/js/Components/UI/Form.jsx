@@ -16,7 +16,7 @@ export default function Form({
     const hasHeader = Boolean(title || description);
 
     return (
-        <form className={`overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft backdrop-blur dark:border-white/10 dark:bg-white/8 ${className}`} {...props}>
+        <form className={`overflow-hidden rounded-lg border border-ink/70 bg-white/90 backdrop-blur dark:border-white/40 dark:bg-white/8 ${className}`} {...props}>
             {hasHeader && (
                 <div className="border-b border-silver-deep/60 px-5 py-4 dark:border-white/10">
                     <button

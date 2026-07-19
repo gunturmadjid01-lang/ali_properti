@@ -2,7 +2,7 @@ import { Head, router } from '@inertiajs/react';
 import { CheckCircle2, Eye, LockKeyhole, PlusCircle, Search, Trash2, Unlock } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
-import { Button, Dropdown, Input } from '../../../Components/UI';
+import { Button, Dropdown, Input, TableActions } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
 export default function Index({ title, description, baseUrl, rows, filters = {}, options = {}, permissions = {} }) {
@@ -86,7 +86,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                         onSubmit={submitFilters}
                     >
                         <Input
-                            label="Search"
+                            label="Pencarian"
                             value={search}
                             placeholder="Cari perumahan, blok, atau unit..."
                             onChange={(event) => setSearch(event.target.value)}
@@ -120,7 +120,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                         </div>
                         <div className="flex items-end">
                             <Button className="w-full" type="button" variant="outline" onClick={resetFilters}>
-                                Reset
+                                Atur Ulang
                             </Button>
                         </div>
                     </form>
@@ -129,7 +129,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                         <table className="min-w-full divide-y divide-silver-deep/60 text-sm dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
                                 <tr>
-                                    {['Tanggal', 'Progress', 'Sumber', 'Perumahan', 'Unit', 'Item Jadwal', 'Nilai', 'Approval', 'Audit', 'Aksi'].map((column) => (
+                                    {['Tanggal', 'Kemajuan', 'Sumber', 'Perumahan', 'Unit', 'Item Jadwal', 'Nilai', 'Persetujuan', 'Audit', 'Aksi'].map((column) => (
                                         <th className="px-5 py-4 font-extrabold" key={column}>
                                             {column}
                                         </th>
@@ -150,10 +150,10 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="min-w-44 px-5 py-4 text-xs">
                                             <span className="font-bold">Dibuat:</span> {row.created_by_name}<br />
                                             <span className="font-bold">Diubah:</span> {row.updated_by_name}<br />
-                                            <span className="font-bold">Approve:</span> {row.approved_by}
+                                            <span className="font-bold">Setujui:</span> {row.approved_by}
                                         </td>
                                         <td className="px-5 py-4">
-                                            <div className="flex flex-wrap gap-2">
+                                            <TableActions>
                                                 <Button type="button" size="sm" variant="outline" onClick={() => router.visit(`${baseUrl}/${row.id}`)}>
                                                     <Eye size={15} />
                                                     Detail
@@ -182,7 +182,7 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                                         Approve
                                                     </Button>
                                                 )}
-                                            </div>
+                                            </TableActions>
                                         </td>
                                     </tr>
                                 ))}
@@ -204,4 +204,4 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
     );
 }
 
-Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Progress Pembangunan'}>{page}</AdminLayout>;
+Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Kemajuan Pembangunan'}>{page}</AdminLayout>;

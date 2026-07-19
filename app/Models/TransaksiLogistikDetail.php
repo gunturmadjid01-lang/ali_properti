@@ -14,6 +14,10 @@ class TransaksiLogistikDetail extends Model
         'transaksi_logistik_id',
         'barang_material_id',
         'qty',
+        'input_qty',
+        'input_unit_id',
+        'input_satuan',
+        'conversion_to_base',
         'satuan',
         'harga_satuan',
         'subtotal',
@@ -23,6 +27,8 @@ class TransaksiLogistikDetail extends Model
 
     protected $casts = [
         'qty' => 'float',
+        'input_qty' => 'float',
+        'conversion_to_base' => 'float',
         'harga_satuan' => 'float',
         'subtotal' => 'float',
     ];
@@ -35,5 +41,10 @@ class TransaksiLogistikDetail extends Model
     public function barangMaterial(): BelongsTo
     {
         return $this->belongsTo(BarangMaterial::class);
+    }
+
+    public function inputUnit(): BelongsTo
+    {
+        return $this->belongsTo(MaterialUnit::class, 'input_unit_id');
     }
 }

@@ -15,7 +15,8 @@ class StoreMasterBankRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'perumahan_id' => ['required', 'exists:perumahans,id'],
+            'cabang_id' => ['required', 'exists:cabang_perusahaans,id'],
+            'perumahan_id' => ['nullable', Rule::exists('perumahans', 'id')->where(fn ($query) => $query->where('cabang_id', $this->input('cabang_id')))],
             'nama_bank' => ['required', 'string', 'max:255'],
             'nomor_rekening' => ['nullable', 'string', 'max:255'],
             'nama_rekening' => ['nullable', 'string', 'max:255'],

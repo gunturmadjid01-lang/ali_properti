@@ -21,6 +21,7 @@ class Journal extends Model
         'source_id',
         'perumahan_id',
         'detail_rumah_id',
+        'master_bank_id',
         'total_debit',
         'total_kredit',
         'keterangan',
@@ -51,5 +52,15 @@ class Journal extends Model
     public function detailRumah(): BelongsTo
     {
         return $this->belongsTo(DetailRumah::class);
+    }
+
+    public function masterBank(): BelongsTo
+    {
+        return $this->belongsTo(MasterBank::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 }

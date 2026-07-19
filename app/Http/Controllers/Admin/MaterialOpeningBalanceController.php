@@ -8,6 +8,7 @@ use App\Models\BarangMaterial;
 use App\Models\Gudang;
 use App\Models\MaterialOpeningBalance;
 use App\Models\StokMaterial;
+use App\Services\MaterialUnitConversionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,10 +18,14 @@ use Inertia\Response;
 
 class MaterialOpeningBalanceController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock {
+        lock as protected lockRecord;
+        unlock as protected unlockRecord;
+    }
 
     public function index(Request $request): Response
     {
+        $this->authorizePermission($request, 'view');
         $gudangId = trim((string) $request->query('gudang_id', ''));
 
         $gudangs = $this->accessibleGudangs();
@@ -37,33 +42,43 @@ class MaterialOpeningBalanceController extends Controller
 
         $rows = filled($gudangId)
             ? BarangMaterial::query()
+                ->with(['baseUnit', 'unitConversions.childUnit'])
                 ->where('status', 'aktif')
                 ->orderBy('kode_barang')
-                ->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'harga_hpp', 'jenis_material', 'merk_material', 'kategori_material'])
+                ->get(['id', 'kode_barang', 'nama_barang', 'base_unit_id', 'satuan', 'harga_hpp', 'jenis_material', 'merk_material', 'kategori_material'])
                 ->map(function (BarangMaterial $material) use ($balances, $selectedGudang, $gudangId) {
                     $balance = $balances->get($material->id);
                     $qty = (float) ($balance?->qty ?? 0);
                     $hargaSatuan = (float) ($balance?->harga_satuan ?? $material->harga_hpp);
+                    $unitOptions = app(MaterialUnitConversionService::class)->options($material);
+                    $inputUnitId = (string) ($balance?->input_unit_id ?? $material->base_unit_id ?? '');
+                    $selectedUnit = collect($unitOptions)->firstWhere('value', $inputUnitId) ?? $unitOptions[0];
+                    $factor = max(0.000001, (float) ($balance?->conversion_to_base ?? $selectedUnit['factor_to_base'] ?? 1));
+                    $inputQty = (float) ($balance?->input_qty ?? $qty);
 
                     return [
-                    'id' => $material->id,
-                    'gudang_id' => $gudangId,
-                    'gudang' => $selectedGudang?->nama_gudang ?? '-',
-                    'kode_barang' => $material->kode_barang,
-                    'nama_barang' => $material->nama_barang,
-                    'jenis_material' => $material->jenis_material ?: $material->kategori_material,
-                    'merk_material' => $material->merk_material,
-                    'satuan' => $material->satuan,
-                    'harga_satuan' => $hargaSatuan,
-                    'tanggal_saldo' => optional($balance?->tanggal_saldo)->format('Y-m-d') ?? now()->toDateString(),
-                    'qty' => $qty,
-                    'total_nilai' => (float) ($balance?->total_nilai ?? ($qty * $hargaSatuan)),
-                    'catatan' => $balance?->catatan ?? '',
-                    'balance_id' => (string) ($balance?->id ?? ''),
-                    'record_status' => $balance?->record_status ?? 'draft',
-                    'record_status_label' => ($balance?->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-                    'can_delete' => (bool) $balance,
-                ];
+                        'id' => $material->id,
+                        'gudang_id' => $gudangId,
+                        'gudang' => $selectedGudang?->nama_gudang ?? '-',
+                        'kode_barang' => $material->kode_barang,
+                        'nama_barang' => $material->nama_barang,
+                        'jenis_material' => $material->jenis_material ?: $material->kategori_material,
+                        'merk_material' => $material->merk_material,
+                        'satuan' => $material->baseUnit?->symbol ?? $material->satuan,
+                        'material_unit_id' => $inputUnitId,
+                        'unit_options' => $unitOptions,
+                        'harga_satuan' => $hargaSatuan / $factor,
+                        'tanggal_saldo' => optional($balance?->tanggal_saldo)->format('Y-m-d') ?? now()->toDateString(),
+                        'qty' => $inputQty,
+                        'qty_base' => $qty,
+                        'total_nilai' => (float) ($balance?->total_nilai ?? ($qty * $hargaSatuan)),
+                        'catatan' => $balance?->catatan ?? '',
+                        'balance_id' => (string) ($balance?->id ?? ''),
+                        'record_status' => $balance?->record_status ?? 'draft',
+                        'record_status_label' => ($balance?->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
+                        'can_delete' => (bool) $balance,
+                        'can_edit' => (bool) ($balance ? auth()->user()?->can('material-opening-balance.update') : auth()->user()?->can('material-opening-balance.create')),
+                    ];
                 })
                 ->values()
             : collect();
@@ -81,12 +96,18 @@ class MaterialOpeningBalanceController extends Controller
             'options' => [
                 'gudangs' => $gudangs,
             ],
+            'permissions' => [
+                'canCreate' => (bool) $request->user()?->can('material-opening-balance.create'),
+                'canUpdate' => (bool) $request->user()?->can('material-opening-balance.update'),
+                'canDelete' => (bool) $request->user()?->can('material-opening-balance.delete'),
+            ],
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
-        $payload = $this->payload($request);
+        $this->authorizePermission($request, 'create');
+        $payload = $this->normalizeBalancePayload($this->payload($request));
         $this->assertGudangAccess($payload['gudang_id']);
 
         DB::transaction(function () use ($payload): void {
@@ -105,11 +126,13 @@ class MaterialOpeningBalanceController extends Controller
 
     public function sync(Request $request): RedirectResponse
     {
+        $this->authorizeAnyPermission($request, ['create', 'update']);
         $validated = $request->validate([
             'gudang_id' => ['required', 'exists:gudangs,id'],
             'tanggal_saldo' => ['required', 'date'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.barang_material_id' => ['required', 'exists:barang_materials,id'],
+            'items.*.material_unit_id' => ['required', 'exists:material_units,id'],
             'items.*.qty' => ['nullable', 'numeric', 'min:0'],
             'items.*.harga_satuan' => ['nullable', 'numeric', 'min:0'],
             'items.*.catatan' => ['nullable', 'string'],
@@ -117,68 +140,81 @@ class MaterialOpeningBalanceController extends Controller
 
         $this->assertGudangAccess($validated['gudang_id']);
 
+        $existingMaterialIds = MaterialOpeningBalance::query()->where('gudang_id', $validated['gudang_id'])->pluck('barang_material_id')->map(fn ($id) => (int) $id);
+        $needsCreate = collect($validated['items'])->contains(fn (array $item) => (float) ($item['qty'] ?? 0) > 0 && ! $existingMaterialIds->contains((int) $item['barang_material_id']));
+        $needsUpdate = collect($validated['items'])->contains(fn (array $item) => $existingMaterialIds->contains((int) $item['barang_material_id']));
+        if ($needsCreate) {
+            $this->authorizePermission($request, 'create');
+        }
+        if ($needsUpdate) {
+            $this->authorizePermission($request, 'update');
+        }
+
         DB::transaction(function () use ($validated): void {
             foreach ($validated['items'] as $item) {
                 $materialId = (int) $item['barang_material_id'];
-                $qty = (float) ($item['qty'] ?? 0);
+                $inputQty = (float) ($item['qty'] ?? 0);
                 $catatan = $item['catatan'] ?? null;
                 $existing = MaterialOpeningBalance::query()
                     ->where('gudang_id', $validated['gudang_id'])
                     ->where('barang_material_id', $materialId)
                     ->first();
-                $material = BarangMaterial::query()->findOrFail($materialId);
+                $normalized = $this->normalizeBalancePayload([
+                    'gudang_id' => $validated['gudang_id'],
+                    'barang_material_id' => $materialId,
+                    'material_unit_id' => $item['material_unit_id'],
+                    'tanggal_saldo' => $validated['tanggal_saldo'],
+                    'qty' => $inputQty,
+                    'harga_satuan' => (float) ($item['harga_satuan'] ?? 0),
+                    'catatan' => $catatan,
+                ]);
 
-                if ($qty <= 0) {
+                if ($inputQty <= 0) {
                     if ($existing) {
                         $this->abortIfLocked($existing);
                         $this->adjustStock((int) $existing->gudang_id, (int) $existing->barang_material_id, -1 * (float) $existing->qty);
                         $existing->update([
                             'tanggal_saldo' => $validated['tanggal_saldo'],
                             'qty' => 0,
-                            'harga_satuan' => (float) ($item['harga_satuan'] ?? $existing->harga_satuan ?? $material->harga_hpp),
+                            'harga_satuan' => $normalized['harga_satuan'],
                             'total_nilai' => 0,
+                            'input_qty' => 0,
+                            'input_unit_id' => $normalized['input_unit_id'],
+                            'input_unit_symbol' => $normalized['input_unit_symbol'],
+                            'conversion_to_base' => $normalized['conversion_to_base'],
                             'catatan' => $catatan,
                             'updated_by' => auth()->id(),
                         ]);
                     }
-                    continue;
-                }
 
-                $nextHarga = (float) ($item['harga_satuan'] ?? 0);
-                if ($nextHarga <= 0) {
-                    $nextHarga = (float) ($existing?->harga_satuan ?? $material->harga_hpp);
+                    continue;
                 }
 
                 if ($existing) {
                     $this->abortIfLocked($existing);
-                    $delta = $qty - (float) $existing->qty;
+                    $delta = (float) $normalized['qty'] - (float) $existing->qty;
                     if ($delta !== 0.0) {
                         $this->adjustStock((int) $existing->gudang_id, (int) $existing->barang_material_id, $delta);
                     }
                     $existing->update([
                         'tanggal_saldo' => $validated['tanggal_saldo'],
-                        'qty' => $qty,
-                        'harga_satuan' => $nextHarga,
-                        'total_nilai' => $qty * $nextHarga,
+                        ...collect($normalized)->except(['gudang_id', 'barang_material_id'])->all(),
+                        'total_nilai' => (float) $normalized['qty'] * (float) $normalized['harga_satuan'],
                         'catatan' => $catatan,
                         'updated_by' => auth()->id(),
                     ]);
+
                     continue;
                 }
 
                 $row = MaterialOpeningBalance::query()->create([
-                    'gudang_id' => $validated['gudang_id'],
-                    'barang_material_id' => $materialId,
-                    'tanggal_saldo' => $validated['tanggal_saldo'],
-                    'qty' => $qty,
-                    'harga_satuan' => $nextHarga,
-                    'total_nilai' => $qty * $nextHarga,
-                    'catatan' => $catatan,
+                    ...$normalized,
+                    'total_nilai' => (float) $normalized['qty'] * (float) $normalized['harga_satuan'],
                     'created_by' => auth()->id(),
                     'updated_by' => auth()->id(),
                 ]);
 
-                $this->adjustStock((int) $row->gudang_id, (int) $row->barang_material_id, $qty);
+                $this->adjustStock((int) $row->gudang_id, (int) $row->barang_material_id, (float) $normalized['qty']);
             }
         });
 
@@ -187,9 +223,10 @@ class MaterialOpeningBalanceController extends Controller
 
     public function update(Request $request, string $id): RedirectResponse
     {
+        $this->authorizePermission($request, 'update');
         $row = MaterialOpeningBalance::query()->findOrFail($id);
         $this->abortIfLocked($row);
-        $payload = $this->payload($request, $row->id);
+        $payload = $this->normalizeBalancePayload($this->payload($request, $row->id));
         $this->assertGudangAccess($payload['gudang_id']);
 
         DB::transaction(function () use ($row, $payload): void {
@@ -207,15 +244,18 @@ class MaterialOpeningBalanceController extends Controller
         return back()->with('success', 'Saldo awal material berhasil diperbarui.');
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(Request $request, string $id): RedirectResponse
     {
+        $this->authorizePermission($request, 'delete');
         $row = MaterialOpeningBalance::query()->findOrFail($id);
+        $this->assertGudangAccess($row->gudang_id);
         $this->abortIfLocked($row);
 
         DB::transaction(function () use ($row): void {
             $this->adjustStock((int) $row->gudang_id, (int) $row->barang_material_id, -1 * (float) $row->qty);
             $row->update([
                 'qty' => 0,
+                'input_qty' => 0,
                 'total_nilai' => 0,
                 'updated_by' => auth()->id(),
             ]);
@@ -235,11 +275,38 @@ class MaterialOpeningBalanceController extends Controller
                     ->ignore($ignoreId),
             ],
             'barang_material_id' => ['required', 'exists:barang_materials,id'],
+            'material_unit_id' => ['required', 'exists:material_units,id'],
             'tanggal_saldo' => ['required', 'date'],
             'qty' => ['required', 'numeric', 'min:0'],
             'harga_satuan' => ['required', 'numeric', 'min:0'],
             'catatan' => ['nullable', 'string'],
         ]);
+    }
+
+    protected function normalizeBalancePayload(array $payload): array
+    {
+        $material = BarangMaterial::query()->with(['baseUnit', 'unitConversions.childUnit'])->findOrFail($payload['barang_material_id']);
+        $unitOption = collect(app(MaterialUnitConversionService::class)->options($material))->firstWhere('value', (string) $payload['material_unit_id']);
+        $inputPrice = (float) $payload['harga_satuan'];
+        if ($inputPrice <= 0) {
+            $inputPrice = (float) ($unitOption['standard_price'] ?? 0);
+        }
+        $normalized = app(MaterialUnitConversionService::class)->normalize(
+            $material,
+            $payload['material_unit_id'],
+            (float) $payload['qty'],
+            $inputPrice,
+        );
+
+        return [
+            ...collect($payload)->except(['material_unit_id'])->all(),
+            'qty' => $normalized['quantity_base'],
+            'harga_satuan' => $normalized['unit_price_base'],
+            'input_qty' => (float) $payload['qty'],
+            'input_unit_id' => $normalized['unit_id'],
+            'input_unit_symbol' => $normalized['unit_symbol'],
+            'conversion_to_base' => $normalized['factor_to_base'],
+        ];
     }
 
     protected function adjustStock(int $gudangId, int $materialId, float $delta): void
@@ -255,6 +322,39 @@ class MaterialOpeningBalanceController extends Controller
         $stock->update(['qty' => $nextQty]);
     }
 
+    public function lock(Request $request, string $id): RedirectResponse
+    {
+        $this->authorizePermission($request, 'update');
+
+        return $this->lockRecord($id);
+    }
+
+    public function unlock(Request $request, string $id): RedirectResponse
+    {
+        $this->authorizePermission($request, 'unlock');
+
+        return $this->unlockRecord($id);
+    }
+
+    protected function authorizePermission(Request $request, string $action): void
+    {
+        abort_unless(
+            $request->user()?->can("material-opening-balance.{$action}") || $request->user()?->can('material-opening-balance.manage'),
+            403,
+            'Anda tidak memiliki permission Saldo Awal Material untuk aksi ini.',
+        );
+    }
+
+    protected function authorizeAnyPermission(Request $request, array $actions): void
+    {
+        abort_unless(
+            collect($actions)->contains(fn (string $action) => $request->user()?->can("material-opening-balance.{$action}"))
+                || $request->user()?->can('material-opening-balance.manage'),
+            403,
+            'Anda tidak memiliki permission untuk memproses Saldo Awal Material.',
+        );
+    }
+
     protected function modelClass(): string
     {
         return MaterialOpeningBalance::class;
@@ -264,7 +364,7 @@ class MaterialOpeningBalanceController extends Controller
     {
         $user = auth()->user();
 
-        $query = Gudang::query()->where('status', 'aktif');
+        $query = Gudang::query()->finalized()->where('status', 'aktif');
 
         if ($user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])) {
             $assignedIds = $this->assignedGudangIds($user);

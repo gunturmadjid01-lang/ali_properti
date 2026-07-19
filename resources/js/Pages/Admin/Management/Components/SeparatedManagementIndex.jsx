@@ -23,7 +23,7 @@ export default function SeparatedManagementIndex({
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                <section className="rounded-2xl border border-white/80 bg-white/80 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
+                <section className="admin-page-hero rounded-xl border p-5 md:p-6">
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                         <div>
                             <p className="text-[11px] font-black uppercase tracking-[0.15em] text-gold-deep">Master Data</p>

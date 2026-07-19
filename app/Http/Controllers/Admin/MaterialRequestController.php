@@ -2,16 +2,18 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
 use App\Models\DetailRumah;
 use App\Models\Gudang;
 use App\Models\MaterialRequest;
 use App\Models\Perumahan;
 use App\Services\AppNotificationService;
+use App\Services\MaterialRequestTemplateService;
 use App\Services\MaterialWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +25,25 @@ class MaterialRequestController extends Controller
     use HandlesCrudLock {
         lock as protected traitLock;
         unlock as protected traitUnlock;
+    }
+
+    public function templates(Request $request, MaterialRequestTemplateService $templates): JsonResponse
+    {
+        abort_unless($request->user()?->can('material-request.create') || $request->user()?->can('material-request.view'), 403);
+
+        $validated = $request->validate([
+            'perumahan_id' => ['required', 'exists:perumahans,id'],
+            'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
+            'tahapan_pembangunan_id' => ['nullable', 'exists:tahapan_pembangunans,id'],
+        ]);
+
+        return response()->json([
+            'data' => $templates->build(
+                $validated['perumahan_id'],
+                $validated['detail_rumah_id'] ?? null,
+                $validated['tahapan_pembangunan_id'] ?? null,
+            ),
+        ]);
     }
 
     public function index(Request $request): Response
@@ -94,7 +115,7 @@ class MaterialRequestController extends Controller
                     'can_issue' => $this->canIssueMaterial($row),
                     'record_status' => $row->record_status ?? 'draft',
                     'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-            ]),
+                ]),
             'filters' => ['search' => $search],
             'options' => $this->options(),
             'canCreate' => $this->canCreateRequest(),
@@ -276,10 +297,10 @@ class MaterialRequestController extends Controller
     protected function options(): array
     {
         return [
-            'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
-            'gudangs' => Gudang::query()->where('status', 'aktif')->orderBy('nama_gudang')->get(['id', 'nama_gudang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])->values(),
-            'detailRumahs' => DetailRumah::query()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}", 'perumahan_id' => (string) $row->perumahan_id])->values(),
-            'barangMaterials' => BarangMaterial::query()->where('status', 'aktif')->orderBy('nama_barang')->get(['id', 'kode_barang', 'nama_barang', 'satuan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->kode_barang} - {$row->nama_barang}", 'satuan' => $row->satuan])->values(),
+            'perumahans' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
+            'gudangs' => Gudang::query()->finalized()->where('status', 'aktif')->orderBy('nama_gudang')->get(['id', 'nama_gudang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])->values(),
+            'detailRumahs' => DetailRumah::query()->finalized()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}", 'perumahan_id' => (string) $row->perumahan_id])->values(),
+            'barangMaterials' => BarangMaterial::query()->finalized()->where('status', 'aktif')->orderBy('nama_barang')->get(['id', 'kode_barang', 'nama_barang', 'satuan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->kode_barang} - {$row->nama_barang}", 'satuan' => $row->satuan])->values(),
         ];
     }
 

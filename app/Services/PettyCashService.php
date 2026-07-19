@@ -7,6 +7,7 @@ use App\Models\HppRealisasi;
 use App\Models\PettyCashAccount;
 use App\Models\PettyCashExpense;
 use App\Models\PettyCashFunding;
+use App\Models\PettyCashDeposit;
 use App\Models\PettyCashLedger;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -40,8 +41,8 @@ class PettyCashService
     {
         DB::transaction(function () use ($funding, $approverId, $proofPath, $notes): void {
             $funding = PettyCashFunding::query()->lockForUpdate()->findOrFail($funding->id);
-            if ($funding->status !== PettyCashFunding::PENDING) {
-                throw ValidationException::withMessages(['status' => 'Permohonan ini sudah diproses.']);
+            if ($funding->status !== PettyCashFunding::APPROVED) {
+                throw ValidationException::withMessages(['status' => 'Permohonan belum memperoleh approval final atau sudah dicairkan.']);
             }
 
             $account = PettyCashAccount::query()->lockForUpdate()->findOrFail($funding->petty_cash_account_id);
@@ -49,7 +50,7 @@ class PettyCashService
             $account->update(['balance' => $newBalance, 'updated_by' => $approverId]);
 
             $funding->update([
-                'status' => PettyCashFunding::APPROVED,
+                'status' => PettyCashFunding::DISBURSED,
                 'approved_by' => $approverId,
                 'approved_at' => now(),
                 'approval_proof_path' => $proofPath,
@@ -81,7 +82,7 @@ class PettyCashService
             $perumahanId = $payload['perumahan_id'] ?? null;
 
             if ($unitId) {
-                $unit = DetailRumah::query()->findOrFail($unitId);
+                $unit = DetailRumah::query()->finalized()->findOrFail($unitId);
                 if ($perumahanId && (int) $unit->perumahan_id !== (int) $perumahanId) {
                     throw ValidationException::withMessages(['detail_rumah_id' => 'Unit tidak berada pada perumahan yang dipilih.']);
                 }
@@ -139,6 +140,30 @@ class PettyCashService
             $this->accounting->recordPettyCashExpense($expense->fresh());
 
             return $expense;
+        });
+    }
+
+    public function approveDeposit(PettyCashDeposit $deposit, int $approverId): void
+    {
+        DB::transaction(function () use ($deposit, $approverId): void {
+            $deposit = PettyCashDeposit::query()->lockForUpdate()->findOrFail($deposit->id);
+            if ($deposit->deposited_at) {
+                return;
+            }
+
+            $account = PettyCashAccount::query()->lockForUpdate()->findOrFail($deposit->petty_cash_account_id);
+            if ((float) $account->balance < (float) $deposit->amount) {
+                throw ValidationException::withMessages(['amount' => 'Saldo Kas Kecil tidak mencukupi saat penyetoran disetujui.']);
+            }
+
+            $newBalance = (float) $account->balance - (float) $deposit->amount;
+            $account->update(['balance' => $newBalance, 'updated_by' => $approverId]);
+            $deposit->update(['status' => 'approved', 'deposited_at' => now(), 'deposited_by' => $approverId, 'updated_by' => $approverId]);
+            PettyCashLedger::query()->firstOrCreate(
+                ['source_type' => PettyCashDeposit::class, 'source_id' => $deposit->id],
+                ['petty_cash_account_id' => $account->id, 'transaction_date' => $deposit->deposit_date, 'direction' => 'out', 'amount' => $deposit->amount, 'balance_after' => $newBalance, 'description' => 'Penyetoran ke Kas Perusahaan '.$deposit->number, 'created_by' => $approverId],
+            );
+            $this->accounting->recordPettyCashDeposit($deposit->fresh());
         });
     }
 }

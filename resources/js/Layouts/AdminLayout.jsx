@@ -5,6 +5,11 @@ import { Button, Dropdown } from "../Components/UI";
 import RequestResponseModal from "../Components/UI/RequestResponseModal";
 import FloatingChat from "../Components/Chat/FloatingChat";
 import {
+    DASHBOARD_TEMPLATE_STORAGE_KEY,
+    readDashboardTemplatePreference,
+    resolveDashboardTemplate,
+} from "../Themes/dashboardTemplates";
+import {
     Bell,
     ChevronDown,
     ChevronLeft,
@@ -12,6 +17,7 @@ import {
     Menu,
     MessageCircle,
     Moon,
+    Search,
     Sun,
     UserCircle2,
     X,
@@ -71,14 +77,31 @@ function activeItemKey(items, currentUrl) {
     return items.find((item) => isActiveItem(item, currentUrl))?.title ?? null;
 }
 
+function permissionCandidates(permission) {
+    const candidates = [permission];
+    if (permission.endsWith(".view"))
+        candidates.push(`${permission.slice(0, -5)}.manage`);
+    if (permission.startsWith("marketing.")) {
+        const lastDot = permission.lastIndexOf(".");
+        const prefix = permission
+            .slice(0, lastDot)
+            .replace(/^marketing\./, "marketing-");
+        const action = permission.slice(lastDot + 1);
+        candidates.push(`${prefix}.${action}`);
+        if (action === "manage") candidates.push(`${prefix}.view`);
+    }
+    return candidates;
+}
+
 function canSeeSidebarItem(item, permissions) {
-    const permissionAllowed =
-        !item.permission || permissions.includes(item.permission);
+    const has = (permission) =>
+        permissionCandidates(permission).some((candidate) =>
+            permissions.includes(candidate),
+        );
+    const permissionAllowed = !item.permission || has(item.permission);
     const permissionsAnyAllowed =
         !item.permissionsAny?.length ||
-        item.permissionsAny.some((permission) =>
-            permissions.includes(permission),
-        );
+        item.permissionsAny.some((permission) => has(permission));
 
     return permissionAllowed && permissionsAnyAllowed;
 }
@@ -101,6 +124,25 @@ function filterSidebarItems(items, permissions, inheritedPermission = true) {
             }
 
             return visible ? item : null;
+        })
+        .filter(Boolean);
+}
+
+function searchSidebarItems(items, query) {
+    const keyword = query.trim().toLocaleLowerCase("id-ID");
+    if (!keyword) return items;
+
+    return items
+        .map((item) => {
+            const titleMatches = item.title
+                .toLocaleLowerCase("id-ID")
+                .includes(keyword);
+            const children = item.items
+                ? searchSidebarItems(item.items, query)
+                : null;
+            if (titleMatches) return item;
+            if (children?.length) return { ...item, items: children };
+            return null;
         })
         .filter(Boolean);
 }
@@ -224,7 +266,7 @@ function SidebarItem({
     );
 }
 
-export default function AdminLayout({ children, title = "Dashboard" }) {
+export default function AdminLayout({ children, title = "Dasbor" }) {
     const { auth } = usePage().props;
     const { notifications } = usePage().props;
     const { sidebar_badges: sidebarBadges = {} } = usePage().props;
@@ -239,6 +281,9 @@ export default function AdminLayout({ children, title = "Dashboard" }) {
         user?.needs_active_perumahan_selection,
     );
     const permissions = user?.permissions?.length ? user.permissions : [];
+    const canViewAllPerumahans = (user?.roles ?? []).some((role) =>
+        ["owner", "super_admin"].includes(role),
+    );
     const displayUser = user ?? {
         name: "Guest Admin",
         email: "Akses tanpa login",
@@ -246,6 +291,7 @@ export default function AdminLayout({ children, title = "Dashboard" }) {
     };
     const [collapsed, setCollapsed] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
+    const [menuSearch, setMenuSearch] = useState("");
     const [chatUnread, setChatUnread] = useState({ count: 0, sources: [] });
     const [theme, setTheme] = useState(() => {
         if (typeof window === "undefined") {
@@ -254,10 +300,40 @@ export default function AdminLayout({ children, title = "Dashboard" }) {
 
         return localStorage.getItem("admin-theme") ?? "light";
     });
+    const [dashboardTemplateKey, setDashboardTemplateKey] = useState(
+        readDashboardTemplatePreference,
+    );
+    const dashboardTemplate = resolveDashboardTemplate(dashboardTemplateKey);
 
     useEffect(() => {
         localStorage.setItem("admin-theme", theme);
     }, [theme]);
+
+    useEffect(() => {
+        localStorage.setItem(
+            DASHBOARD_TEMPLATE_STORAGE_KEY,
+            dashboardTemplate.key,
+        );
+    }, [dashboardTemplate.key]);
+
+    useEffect(() => {
+        const changeDashboardTemplate = (event) => {
+            setDashboardTemplateKey(
+                resolveDashboardTemplate(event.detail?.template).key,
+            );
+        };
+
+        window.addEventListener(
+            "admin:dashboard-template-change",
+            changeDashboardTemplate,
+        );
+
+        return () =>
+            window.removeEventListener(
+                "admin:dashboard-template-change",
+                changeDashboardTemplate,
+            );
+    }, []);
 
     useEffect(() => {
         const updateChatUnread = (event) =>
@@ -289,10 +365,35 @@ export default function AdminLayout({ children, title = "Dashboard" }) {
     }, [permissions]);
 
     const hasMenu = menuSections.length > 0;
+    const searchedMenuSections = useMemo(
+        () =>
+            menuSections
+                .map((section) => {
+                    const keyword = menuSearch
+                        .trim()
+                        .toLocaleLowerCase("id-ID");
+                    const sectionMatches = section.title
+                        .toLocaleLowerCase("id-ID")
+                        .includes(keyword);
+                    return sectionMatches
+                        ? section
+                        : {
+                              ...section,
+                              items: searchSidebarItems(
+                                  section.items,
+                                  menuSearch,
+                              ),
+                          };
+                })
+                .filter((section) => section.items.length > 0),
+        [menuSections, menuSearch],
+    );
 
     return (
         <div
-            className={`min-h-screen overflow-x-hidden bg-silver text-ink transition-colors dark:bg-[#0e1116] dark:text-white ${dark ? "dark" : ""}`}
+            className={`admin-theme-scope min-h-screen overflow-x-hidden bg-silver text-ink transition-colors dark:bg-[#0e1116] dark:text-white ${dark ? "dark" : ""}`}
+            data-color-theme={theme}
+            data-dashboard-template={dashboardTemplate.key}
         >
             {mobileOpen && (
                 <button
@@ -375,9 +476,37 @@ export default function AdminLayout({ children, title = "Dashboard" }) {
                     </div>
                 )}
 
-                <nav className="flex-1 space-y-2 overflow-y-auto p-4">
-                    {hasMenu ? (
-                        menuSections.map((section) => (
+                <nav className="flex-1 space-y-3 overflow-y-auto p-4">
+                    {!collapsed && hasMenu && (
+                        <label className="relative block">
+                            <Search
+                                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-soft dark:text-white/45"
+                                size={16}
+                            />
+                            <input
+                                className="w-full rounded-lg border border-silver-deep/70 bg-white/75 py-2.5 pl-9 pr-9 text-xs font-bold outline-none transition focus:border-gold dark:border-white/10 dark:bg-white/7"
+                                type="search"
+                                value={menuSearch}
+                                onChange={(event) =>
+                                    setMenuSearch(event.target.value)
+                                }
+                                placeholder="Cari menu..."
+                                aria-label="Cari menu sidebar"
+                            />
+                            {menuSearch && (
+                                <button
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-ink-soft"
+                                    type="button"
+                                    onClick={() => setMenuSearch("")}
+                                    aria-label="Hapus pencarian"
+                                >
+                                    <X size={14} />
+                                </button>
+                            )}
+                        </label>
+                    )}
+                    {searchedMenuSections.length ? (
+                        searchedMenuSections.map((section) => (
                             <div className="space-y-2" key={section.title}>
                                 {!collapsed && (
                                     <p className="px-2 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft dark:text-white/45">
@@ -436,6 +565,7 @@ export default function AdminLayout({ children, title = "Dashboard" }) {
                         </div>
                     </div>
                     <div className="flex min-w-0 shrink-0 items-center gap-3">
+                        {!canViewAllPerumahans && (
                         <div className="hidden w-[320px] md:block">
                             <Dropdown
                                 value={
@@ -454,6 +584,7 @@ export default function AdminLayout({ children, title = "Dashboard" }) {
                                 buttonClassName="min-h-10"
                             />
                         </div>
+                        )}
                         <Button
                             as={Link}
                             href="/admin/notifications"
@@ -507,6 +638,7 @@ export default function AdminLayout({ children, title = "Dashboard" }) {
                     </div>
                 </header>
 
+                {!canViewAllPerumahans && (
                 <div className="border-b border-white/70 bg-white/70 px-4 py-3 backdrop-blur-xl dark:border-white/10 dark:bg-[#10141a]/70 md:hidden">
                     <Dropdown
                         value={
@@ -525,6 +657,7 @@ export default function AdminLayout({ children, title = "Dashboard" }) {
                         buttonClassName="min-h-10"
                     />
                 </div>
+                )}
 
                 <main className="min-w-0 overflow-x-hidden p-4 lg:p-6">
                     {children}

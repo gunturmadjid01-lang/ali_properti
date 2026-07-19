@@ -19,6 +19,7 @@ import {
     Input,
     Modal,
     Textarea,
+    TableActions,
 } from "../../../Components/UI";
 import AdminLayout from "../../../Layouts/AdminLayout";
 import { useResourcePermissions } from "../../../Utils/permissions";
@@ -446,7 +447,7 @@ export default function Index({
             <html>
             <head>
                 <meta charset="utf-8" />
-                <title>${row.kode_jadwal || "Preview Jadwal"}</title>
+                <title>${row.kode_jadwal || "Pratinjau Jadwal"}</title>
                 <style>
                     @page { size: landscape; margin: 12mm; }
                     body { font-family: Arial, sans-serif; color: #111827; margin: 0; }
@@ -558,7 +559,7 @@ export default function Index({
                             </tr>
                         </tbody>
                     </table>
-                    <div style="margin-top: 14px; font-size: 11px;" class="muted">Preview ini bisa dicetak ke PDF dari dialog print browser.</div>
+                    <div style="margin-top: 14px; font-size: 11px;" class="muted">Pratinjau ini bisa dicetak ke PDF dari dialog print browser.</div>
                 </div>
             </body>
             </html>
@@ -1063,7 +1064,7 @@ export default function Index({
                                             {row.updated_by_name}
                                         </td>
                                         <td className="px-5 py-4">
-                                            <div className="flex flex-wrap gap-2">
+                                            <TableActions>
                                                 <Button
                                                     type="button"
                                                     size="sm"
@@ -1140,7 +1141,7 @@ export default function Index({
                                                             Unlock
                                                         </Button>
                                                     )}
-                                            </div>
+                                            </TableActions>
                                         </td>
                                     </tr>
                                 ))}
@@ -1483,7 +1484,7 @@ export default function Index({
             <Modal
                 open={Boolean(editing)}
                 onClose={() => setEditing(null)}
-                title={editing ? `Edit ${editing.kode_jadwal}` : "Edit Jadwal"}
+                title={editing ? `Edit ${editing.kode_jadwal}` : "Ubah Jadwal"}
                 footer={
                     <>
                         <Button
@@ -1539,7 +1540,7 @@ export default function Index({
                                 }
                             />
                             <Input
-                                label="Persentase Progress %"
+                                label="Persentase Kemajuan %"
                                 type="text"
                                 inputMode="decimal"
                                 value={editForm.data.target_progress}

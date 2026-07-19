@@ -6,26 +6,22 @@ use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
 use App\Models\Costumer;
 use App\Models\CostumerFollowUp;
+use App\Models\CustomerReceipt;
 use App\Models\Gudang;
 use App\Models\KprSubmission;
 use App\Models\MaterialPurchase;
 use App\Models\MaterialPurchaseDetail;
-use App\Models\MaterialReturn;
 use App\Models\MaterialReturnDetail;
-use App\Models\MaterialStockOpname;
 use App\Models\MaterialStockOpnameDetail;
-use App\Models\MaterialUsage;
 use App\Models\MaterialUsageDetail;
 use App\Models\OfficeAsset;
 use App\Models\Perumahan;
 use App\Models\SiteMaterialStock;
 use App\Models\Spr;
-use App\Models\SprPayment;
 use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -132,8 +128,78 @@ class ReportCenterController extends Controller
             'pembelian' => $this->purchaseReport($type, $request, $limit),
             'persediaan-material' => $this->inventoryReport($type, $request, $limit),
             'marketing' => $this->marketingReport($type, $request, $limit),
+            'aset-perusahaan' => $this->companyAssetReport($type, $request, $limit),
+            'alat-berat' => $this->heavyEquipmentReport($type, $request, $limit),
             default => abort(404),
         };
+    }
+
+    private function companyAssetReport(string $type, Request $request, int $limit): array
+    {
+        if ($type === 'daftar-aset') {
+            $rows = DB::table('office_assets as assets')
+                ->join('inventory_items as items', 'items.id', '=', 'assets.inventory_item_id')
+                ->leftJoin('inventory_categories as categories', 'categories.id', '=', 'items.inventory_category_id')
+                ->leftJoin('inventory_locations as locations', 'locations.id', '=', 'assets.inventory_location_id')
+                ->whereNull('assets.deleted_at')
+                ->when($request->query('location_id'), fn ($q, $v) => $q->where('assets.inventory_location_id', $v))
+                ->when($request->query('status'), fn ($q, $v) => $q->where('assets.status', $v))
+                ->tap(fn ($q) => $this->dateFilter($q, $request, 'assets.created_at'))
+                ->orderBy('assets.kode_aset')->limit($limit)
+                ->get(['assets.kode_aset', 'items.name as item', 'categories.name as kategori', 'locations.name as lokasi', 'assets.condition as kondisi', 'assets.status'])
+                ->map(fn ($r) => (array) $r);
+
+            return $this->result(['kode_aset' => 'Kode Aset', 'item' => 'Nama Aset', 'kategori' => 'Kategori', 'lokasi' => 'Lokasi', 'kondisi' => 'Kondisi', 'status' => 'Status'], $rows);
+        }
+
+        $definitions = [
+            'peminjaman' => ['inventory_loans as source', 'source.date', ['source.transaction_no as nomor', 'source.date', 'source.borrower as penanggung_jawab', 'source.taken_by_name as pengambil', 'source.purpose as keterangan', 'source.status']],
+            'mutasi' => ['inventory_transfers as source', 'source.date', ['source.transaction_no as nomor', 'source.date', 'items.name as item', 'origin.name as lokasi_asal', 'destination.name as lokasi_tujuan', 'source.quantity', 'source.reason as keterangan']],
+            'kerusakan' => ['inventory_damage_reports as source', 'source.date', ['source.id as nomor', 'source.date', 'items.name as item', 'locations.name as lokasi', 'source.severity as tingkat', 'source.repair_status as status', 'source.damage as keterangan']],
+            'kehilangan' => ['inventory_loss_reports as source', 'source.date', ['source.id as nomor', 'source.date', 'items.name as item', 'locations.name as lokasi', 'source.quantity', 'source.status', 'source.chronology as keterangan']],
+        ];
+        [$table, $dateColumn, $columns] = $definitions[$type] ?? abort(404);
+        $query = DB::table($table)->whereNull('source.deleted_at');
+        if ($type === 'mutasi') {
+            $query->join('inventory_items as items', 'items.id', '=', 'source.inventory_item_id')->leftJoin('inventory_locations as origin', 'origin.id', '=', 'source.from_location_id')->leftJoin('inventory_locations as destination', 'destination.id', '=', 'source.to_location_id');
+        } elseif (in_array($type, ['kerusakan', 'kehilangan'], true)) {
+            $locationColumn = $type === 'kerusakan' ? 'inventory_location_id' : 'last_location_id';
+            $query->join('inventory_items as items', 'items.id', '=', 'source.inventory_item_id')->leftJoin('inventory_locations as locations', 'locations.id', '=', "source.{$locationColumn}");
+        }
+        $query->when($request->query('status'), fn ($q, $v) => $q->where($type === 'kerusakan' ? 'source.repair_status' : 'source.status', $v))
+            ->tap(fn ($q) => $this->dateFilter($q, $request, $dateColumn));
+        $rows = $query->orderByDesc($dateColumn)->limit($limit)->get($columns)->map(fn ($r) => (array) $r);
+        $labels = collect($rows->first() ?? [])->keys()->mapWithKeys(fn ($key) => [$key => str($key)->replace('_', ' ')->title()->toString()])->all();
+
+        return $this->result($labels, $rows);
+    }
+
+    private function heavyEquipmentReport(string $type, Request $request, int $limit): array
+    {
+        if ($type === 'daftar-alat') {
+            $rows = DB::table('heavy_equipments as equipment')->join('heavy_equipment_types as types', 'types.id', '=', 'equipment.heavy_equipment_type_id')
+                ->whereNull('equipment.deleted_at')->when($request->query('equipment_id'), fn ($q, $v) => $q->where('equipment.id', $v))
+                ->when($request->query('status'), fn ($q, $v) => $q->where('equipment.status', $v))->orderBy('equipment.code')->limit($limit)
+                ->get(['equipment.code as kode', 'equipment.name as alat', 'types.name as jenis', 'equipment.brand as merk', 'equipment.model', 'equipment.current_hour_meter as hour_meter', 'equipment.ownership as kepemilikan', 'equipment.status'])->map(fn ($r) => (array) $r);
+
+            return $this->result(['kode' => 'Kode', 'alat' => 'Alat Berat', 'jenis' => 'Jenis', 'merk' => 'Merk', 'model' => 'Model', 'hour_meter' => 'Hour Meter', 'kepemilikan' => 'Kepemilikan', 'status' => 'Status'], $rows);
+        }
+        $definitions = [
+            'penggunaan' => ['heavy_equipment_usages', 'transaction_no as nomor', ['operator_id', 'project', 'hour_meter_start', 'hour_meter_end', 'duration_hours', 'status']],
+            'maintenance' => ['heavy_equipment_maintenances', 'maintenance_no as nomor', ['maintenance_type', 'workshop', 'cost', 'next_schedule', 'status']],
+            'bbm' => ['heavy_equipment_fuelings', 'id as nomor', ['fuel_type', 'liters', 'price_per_liter', 'total_cost', 'hour_meter']],
+            'kerusakan' => ['heavy_equipment_damages', 'id as nomor', ['description', 'severity', 'repair_status as status', 'completed_date']],
+        ];
+        [$table,$number,$fields] = $definitions[$type] ?? abort(404);
+        $rows = DB::table("{$table} as source")->join('heavy_equipments as equipment', 'equipment.id', '=', 'source.heavy_equipment_id')->whereNull('source.deleted_at')
+            ->when($request->query('equipment_id'), fn ($q, $v) => $q->where('source.heavy_equipment_id', $v))
+            ->when($request->query('status'), fn ($q, $v) => $q->where($type === 'kerusakan' ? 'source.repair_status' : 'source.status', $v))
+            ->tap(fn ($q) => $this->dateFilter($q, $request, 'source.date'))->orderByDesc('source.date')->limit($limit)
+            ->get(array_merge([DB::raw("source.{$number}"), 'source.date', 'equipment.code as kode_alat', 'equipment.name as alat'], array_map(fn ($f) => "source.{$f}", $fields)))
+            ->map(fn ($r) => (array) $r);
+        $labels = collect($rows->first() ?? [])->keys()->mapWithKeys(fn ($key) => [$key => str($key)->replace('_', ' ')->title()->toString()])->all();
+
+        return $this->result($labels, $rows);
     }
 
     private function masterReport(string $type, Request $request, int $limit): array
@@ -145,7 +211,7 @@ class ReportCenterController extends Controller
                 ->when($gudangId, fn (Builder $query) => $query->where('gudang_id', $gudangId))
                 ->groupBy('barang_material_id');
 
-            $rows = BarangMaterial::query()
+            $rows = BarangMaterial::query()->finalized()
                 ->leftJoinSub($stocks, 'stok', 'stok.barang_material_id', '=', 'barang_materials.id')
                 ->select('barang_materials.*', DB::raw('COALESCE(stok.stok, 0) as stok_tersedia'))
                 ->when($request->query('kategori'), fn (Builder $query, $value) => $query->where('jenis_material', $value))
@@ -199,7 +265,7 @@ class ReportCenterController extends Controller
         }
 
         if ($type === 'daftar-supplier') {
-            $rows = Supplier::query()
+            $rows = Supplier::query()->finalized()
                 ->when($request->query('tanggal_mulai'), fn (Builder $query, $value) => $query->whereDate('created_at', '>=', $value))
                 ->when($request->query('tanggal_selesai'), fn (Builder $query, $value) => $query->whereDate('created_at', '<=', $value))
                 ->orderBy('kode_supplier')
@@ -218,7 +284,7 @@ class ReportCenterController extends Controller
         }
 
         if (in_array($type, ['daftar-pelanggan', 'daftar-pelanggan-per-supplier'], true)) {
-            $rows = Costumer::query()
+            $rows = Costumer::query()->finalized()
                 ->with(['perumahan:id,nama_perusahaan', 'creator:id,name'])
                 ->when($request->query('tanggal_mulai'), fn (Builder $query, $value) => $query->whereDate('created_at', '>=', $value))
                 ->when($request->query('tanggal_selesai'), fn (Builder $query, $value) => $query->whereDate('created_at', '<=', $value))
@@ -317,7 +383,7 @@ class ReportCenterController extends Controller
             return $this->result(['tanggal' => 'Tanggal', 'kode' => 'No Transaksi', 'supplier' => 'Supplier', 'gudang' => 'Gudang', 'material' => 'Material', 'qty' => 'Jumlah', 'harga' => 'Harga', 'total' => 'Total'], $rows);
         }
 
-        $rows = MaterialPurchase::query()
+        $rows = MaterialPurchase::query()->finalized()
             ->with(['supplierData:id,kode_supplier,nama_supplier', 'gudang:id,nama_gudang', 'creator:id,name'])
             ->tap(fn (Builder $query) => $this->purchaseFilter($query, $request))
             ->orderByDesc('tanggal')
@@ -419,19 +485,20 @@ class ReportCenterController extends Controller
 
         if (in_array($type, ['pembayaran-booking-fee', 'uang-muka'], true)) {
             $paymentType = $type === 'pembayaran-booking-fee' ? 'booking_fee' : 'uang_muka';
-            $rows = SprPayment::query()
-                ->with(['spr.costumer:id,nama', 'spr.detailRumah:id,kode_nlok,nomor_rumah', 'creator:id,name'])
-                ->tap(fn (Builder $query) => $this->dateFilter($query, $request, 'tanggal_pembayaran'))
-                ->where('jenis_pembayaran', $paymentType)
-                ->orderByDesc('tanggal_pembayaran')
+            $purpose = $paymentType === 'uang_muka' ? 'down_payment' : 'booking_fee';
+            $rows = CustomerReceipt::query()->finalized()
+                ->with(['salesTransaction.customer:id,nama', 'salesTransaction.housingUnit:id,kode_nlok,nomor_rumah', 'salesTransaction.spr:id,kode_spr', 'creator:id,name'])
+                ->tap(fn (Builder $query) => $this->dateFilter($query, $request, 'payment_date'))
+                ->where('receipt_purpose', $purpose)->where('status', 'posted')
+                ->orderByDesc('payment_date')
                 ->limit($limit)
                 ->get()
-                ->map(fn (SprPayment $row) => [
-                    'tanggal' => optional($row->tanggal_pembayaran)->format('Y-m-d'),
-                    'spr' => $row->spr?->kode_spr ?? '-',
-                    'pelanggan' => $row->spr?->costumer?->nama ?? '-',
-                    'unit' => $row->spr?->detailRumah ? trim(($row->spr->detailRumah->kode_nlok ?? '').' '.($row->spr->detailRumah->nomor_rumah ?? '')) : '-',
-                    'nominal' => $this->money($row->nominal),
+                ->map(fn (CustomerReceipt $row) => [
+                    'tanggal' => optional($row->payment_date)->format('Y-m-d'),
+                    'spr' => $row->salesTransaction?->spr?->kode_spr ?? '-',
+                    'pelanggan' => $row->salesTransaction?->customer?->nama ?? '-',
+                    'unit' => $row->salesTransaction?->housingUnit ? trim(($row->salesTransaction->housingUnit->kode_nlok ?? '').' '.($row->salesTransaction->housingUnit->nomor_rumah ?? '')) : '-',
+                    'nominal' => $this->money($row->amount),
                     'status' => $row->status,
                     'user' => $row->creator?->name ?? '-',
                 ]);
@@ -440,7 +507,7 @@ class ReportCenterController extends Controller
         }
 
         if (in_array($type, ['pengajuan-kpr', 'follow-up-kpr', 'akad', 'serah-terima'], true)) {
-            $rows = KprSubmission::query()
+            $rows = KprSubmission::query()->finalized()
                 ->with(['spr.costumer:id,nama', 'spr.detailRumah:id,kode_nlok,nomor_rumah', 'bank:id,nama_bank', 'handler:id,name'])
                 ->tap(fn (Builder $query) => $this->dateFilter($query, $request, 'tanggal_pengajuan'))
                 ->orderByDesc('tanggal_pengajuan')
@@ -460,7 +527,7 @@ class ReportCenterController extends Controller
             return $this->result(['tanggal' => 'Tanggal', 'kode' => 'Kode KPR', 'spr' => 'SPR', 'pelanggan' => 'Pelanggan', 'unit' => 'Unit', 'bank' => 'Bank', 'nilai' => 'Nilai', 'status' => 'Status'], $rows);
         }
 
-        $rows = Spr::query()
+        $rows = Spr::query()->finalized()
             ->with(['costumer:id,nama', 'detailRumah:id,kode_nlok,nomor_rumah'])
             ->tap(fn (Builder $query) => $this->dateFilter($query, $request, 'tanggal_spr'))
             ->when($request->query('status'), fn (Builder $query, $value) => $query->where('status', $value))
@@ -489,7 +556,7 @@ class ReportCenterController extends Controller
             ->when($request->query('user_id'), fn (Builder $query, $value) => $query->where('created_by', $value));
     }
 
-    private function dateFilter(Builder $query, Request $request, string $column): void
+    private function dateFilter($query, Request $request, string $column): void
     {
         $query
             ->when($request->query('tanggal_mulai'), fn (Builder $query, $value) => $query->whereDate($column, '>=', $value))
@@ -554,6 +621,16 @@ class ReportCenterController extends Controller
                     ...$baseDate,
                 ],
             },
+            'aset-perusahaan' => [
+                ['name' => 'location_id', 'label' => 'Lokasi Aset', 'type' => 'select', 'optionsKey' => 'inventoryLocations'],
+                ['name' => 'status', 'label' => 'Status', 'type' => 'text'],
+                ...$baseDate,
+            ],
+            'alat-berat' => [
+                ['name' => 'equipment_id', 'label' => 'Alat Berat', 'type' => 'select', 'optionsKey' => 'heavyEquipments'],
+                ['name' => 'status', 'label' => 'Status', 'type' => 'text'],
+                ...$baseDate,
+            ],
             default => $baseDate,
         };
     }
@@ -561,18 +638,20 @@ class ReportCenterController extends Controller
     private function filterOptions(): array
     {
         return [
-            'gudangs' => $this->options(Gudang::query()->orderBy('nama_gudang')->get(['id', 'nama_gudang']), 'nama_gudang'),
-            'suppliers' => $this->options(Supplier::query()->orderBy('nama_supplier')->get(['id', 'nama_supplier']), 'nama_supplier'),
+            'gudangs' => $this->options(Gudang::query()->finalized()->orderBy('nama_gudang')->get(['id', 'nama_gudang']), 'nama_gudang'),
+            'suppliers' => $this->options(Supplier::query()->finalized()->orderBy('nama_supplier')->get(['id', 'nama_supplier']), 'nama_supplier'),
             'users' => $this->options(User::query()->orderBy('name')->get(['id', 'name']), 'name'),
-            'perumahans' => $this->options(Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan']), 'nama_perusahaan'),
-            'materialJenis' => BarangMaterial::query()->whereNotNull('jenis_material')->distinct()->orderBy('jenis_material')->pluck('jenis_material')->map(fn ($value) => ['value' => $value, 'label' => $value])->values(),
-            'materialMerks' => BarangMaterial::query()->whereNotNull('merk_material')->distinct()->orderBy('merk_material')->pluck('merk_material')->map(fn ($value) => ['value' => $value, 'label' => $value])->values(),
+            'perumahans' => $this->options(Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan']), 'nama_perusahaan'),
+            'materialJenis' => BarangMaterial::query()->finalized()->whereNotNull('jenis_material')->distinct()->orderBy('jenis_material')->pluck('jenis_material')->map(fn ($value) => ['value' => $value, 'label' => $value])->values(),
+            'materialMerks' => BarangMaterial::query()->finalized()->whereNotNull('merk_material')->distinct()->orderBy('merk_material')->pluck('merk_material')->map(fn ($value) => ['value' => $value, 'label' => $value])->values(),
             'assetCategories' => DB::table('inventory_categories')->whereNull('deleted_at')->orderBy('name')->pluck('name')->map(fn ($value) => ['value' => $value, 'label' => $value])->values(),
             'assetStatuses' => OfficeAsset::query()->whereNotNull('status')->distinct()->orderBy('status')->pluck('status')->map(fn ($value) => ['value' => $value, 'label' => $value])->values(),
             'followUpMedia' => CostumerFollowUp::query()->whereNotNull('metode_follow_up')->distinct()->orderBy('metode_follow_up')->pluck('metode_follow_up')->map(fn ($value) => ['value' => $value, 'label' => $value])->values(),
             'yesNo' => [['value' => '1', 'label' => 'Ya'], ['value' => '0', 'label' => 'Tidak']],
             'kemampuan' => CostumerFollowUp::query()->whereNotNull('progress_kemampuan')->distinct()->orderBy('progress_kemampuan')->pluck('progress_kemampuan')->map(fn ($value) => ['value' => $value, 'label' => $value])->values(),
             'sprStatuses' => [['value' => 'menunggu_manager', 'label' => 'Menunggu Manager'], ['value' => 'menunggu_owner', 'label' => 'Menunggu Owner'], ['value' => 'disetujui', 'label' => 'Disetujui'], ['value' => 'ditolak', 'label' => 'Ditolak']],
+            'inventoryLocations' => $this->options(DB::table('inventory_locations')->whereNull('deleted_at')->orderBy('name')->get(['id', 'name']), 'name'),
+            'heavyEquipments' => DB::table('heavy_equipments')->whereNull('deleted_at')->orderBy('name')->get(['id', 'code', 'name'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->code.' — '.$row->name])->values(),
         ];
     }
 
@@ -591,6 +670,8 @@ class ReportCenterController extends Controller
             'media_follow_up' => $request->query('media_follow_up', ''),
             'status_serius' => $request->query('status_serius', ''),
             'status_kemampuan' => $request->query('status_kemampuan', ''),
+            'location_id' => $request->query('location_id', ''),
+            'equipment_id' => $request->query('equipment_id', ''),
         ];
     }
 
@@ -656,6 +737,30 @@ class ReportCenterController extends Controller
                     'follow-up-kpr' => ['label' => 'Laporan Follow Up KPR'],
                     'akad' => ['label' => 'Laporan Akad'],
                     'serah-terima' => ['label' => 'Laporan Serah Terima'],
+                ],
+            ],
+            'aset-perusahaan' => [
+                'title' => 'Laporan Aset Perusahaan',
+                'description' => 'Data aset, peminjaman, mutasi, kerusakan, dan kehilangan dengan jejak lokasi serta penanggung jawab.',
+                'permission' => 'laporan-master-data.view',
+                'types' => [
+                    'daftar-aset' => ['label' => 'Daftar dan Status Aset'],
+                    'peminjaman' => ['label' => 'Histori Peminjaman Aset'],
+                    'mutasi' => ['label' => 'Histori Mutasi Aset'],
+                    'kerusakan' => ['label' => 'Exception Aset Rusak'],
+                    'kehilangan' => ['label' => 'Exception Aset Hilang'],
+                ],
+            ],
+            'alat-berat' => [
+                'title' => 'Laporan Alat Berat',
+                'description' => 'Data alat, pemakaian, maintenance, konsumsi BBM, biaya, dan exception kerusakan.',
+                'permission' => 'laporan-master-data.view',
+                'types' => [
+                    'daftar-alat' => ['label' => 'Daftar dan Status Alat Berat'],
+                    'penggunaan' => ['label' => 'Penggunaan dan Jam Kerja'],
+                    'maintenance' => ['label' => 'Maintenance dan Biaya'],
+                    'bbm' => ['label' => 'Konsumsi dan Biaya BBM'],
+                    'kerusakan' => ['label' => 'Kerusakan dan Status Perbaikan'],
                 ],
             ],
         ];

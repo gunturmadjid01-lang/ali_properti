@@ -17,6 +17,10 @@ trait UsesApprovalSettings
 
     protected function requiresApprovalFor(string $moduleKey, string $action = 'create'): bool
     {
+        if ($action !== 'create') {
+            return false;
+        }
+
         return (bool) $this->approvalSetting($moduleKey, $action)?->requires_approval;
     }
 

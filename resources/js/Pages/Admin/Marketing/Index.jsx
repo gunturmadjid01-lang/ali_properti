@@ -107,10 +107,10 @@ function DataTable({ title, rows = [], columns = [] }) {
 
 function Index({ title, description, points = [], menus = [], featured = [], summary = {}, roles = [], customers = [], progressRows = [] }) {
     const stats = [
-        ['Total Customer', summary.total_customers ?? 0, Users],
+        ['Total Pelanggan', summary.total_customers ?? 0, Users],
         ['Prospek Tinggi', summary.high_prospects ?? 0, PhoneCall],
-        ['Dokumen Customer', summary.documents ?? 0, LayoutGrid],
-        ['Progress 30 Hari', summary.recent_progress ?? 0, ArrowRight],
+        ['Dokumen Pelanggan', summary.documents ?? 0, LayoutGrid],
+        ['Kemajuan 30 Hari', summary.recent_progress ?? 0, ArrowRight],
     ];
 
     return (
@@ -154,7 +154,7 @@ function Index({ title, description, points = [], menus = [], featured = [], sum
                         />
 
                         <DataTable
-                            title="Progress Pembangunan Terbaru"
+                            title="Kemajuan Pembangunan Terbaru"
                             rows={progressRows}
                             columns={[
                                 { key: 'tanggal', label: 'Tanggal' },

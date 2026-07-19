@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\PerumahanHpp\UpdatePerumahanHppRequest;
 use App\Models\DetailRumah;
 use App\Models\DetailRumahHpp;
@@ -14,9 +14,9 @@ use App\Models\Perumahan;
 use App\Models\TahapanPembangunan;
 use App\Services\HppTemplateService;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -63,41 +63,41 @@ class UnitRumahController extends Controller
             ->withQueryString()
             ->through(function (DetailRumah $row) {
                 return [
-                'id' => $row->id,
-                'perumahan_id' => $row->perumahan_id,
-                'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
-                'detail_url' => route('admin.management.perumahan.rumah.detail', [$row->perumahan_id, $row->id], false),
-                'edit_url' => route('admin.unit-rumah.edit', $row->id, false),
-                'kode_nlok' => $row->kode_nlok,
-                'blok_label' => $row->kode_nlok,
-                'nomor_rumah' => $row->nomor_rumah,
-                'tipe_rumah' => $row->tipe_rumah,
-                'model_unit' => $row->model_unit,
-                'luas_bangunan' => $row->luas_bangunan,
-                'luas_tanah' => $row->luas_tanah,
-                'jumlah_lantai' => $row->jumlah_lantai,
-                'kamar_tidur' => $row->kamar_tidur,
-                'kamar_mandi' => $row->kamar_mandi,
-                'daya_listrik' => $row->daya_listrik,
-                'sumber_air' => $row->sumber_air,
-                'carport' => $row->carport,
-                'arah_hadap' => $row->arah_hadap,
-                'posisi_unit' => $row->posisi_unit,
-                'harga_jual' => $row->harga_jual,
-                'status_penjualan' => $row->status_penjualan,
-                'status_pembangunan' => $row->status_pembangunan,
-                'progress_terakhir' => $row->progress_terakhir,
-                'tanggal_mulai_bangun' => optional($row->tanggal_mulai_bangun)->format('Y-m-d'),
-                'tanggal_selesai_bangun' => optional($row->tanggal_selesai_bangun)->format('Y-m-d'),
-                'spesifikasi' => $row->spesifikasi,
-                'catatan' => $row->catatan,
-                'status' => $row->status,
-                'record_status' => $row->record_status ?? 'draft',
-                'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-                'created_by' => $row->creator?->name ?? '-',
-                'updated_by' => $row->updater?->name ?? '-',
-                'can_edit' => ($row->record_status ?? 'draft') !== 'locked' || $this->currentUserCanManageLockedRecords(),
-                'can_delete' => ($row->record_status ?? 'draft') !== 'locked' || $this->currentUserCanManageLockedRecords(),
+                    'id' => $row->id,
+                    'perumahan_id' => $row->perumahan_id,
+                    'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
+                    'detail_url' => route('admin.management.perumahan.rumah.detail', [$row->perumahan_id, $row->id], false),
+                    'edit_url' => route('admin.unit-rumah.edit', $row->id, false),
+                    'kode_nlok' => $row->kode_nlok,
+                    'blok_label' => $row->kode_nlok,
+                    'nomor_rumah' => $row->nomor_rumah,
+                    'tipe_rumah' => $row->tipe_rumah,
+                    'model_unit' => $row->model_unit,
+                    'luas_bangunan' => $row->luas_bangunan,
+                    'luas_tanah' => $row->luas_tanah,
+                    'jumlah_lantai' => $row->jumlah_lantai,
+                    'kamar_tidur' => $row->kamar_tidur,
+                    'kamar_mandi' => $row->kamar_mandi,
+                    'daya_listrik' => $row->daya_listrik,
+                    'sumber_air' => $row->sumber_air,
+                    'carport' => $row->carport,
+                    'arah_hadap' => $row->arah_hadap,
+                    'posisi_unit' => $row->posisi_unit,
+                    'harga_jual' => $row->harga_jual,
+                    'status_penjualan' => $row->status_penjualan,
+                    'status_pembangunan' => $row->status_pembangunan,
+                    'progress_terakhir' => $row->progress_terakhir,
+                    'tanggal_mulai_bangun' => optional($row->tanggal_mulai_bangun)->format('Y-m-d'),
+                    'tanggal_selesai_bangun' => optional($row->tanggal_selesai_bangun)->format('Y-m-d'),
+                    'spesifikasi' => $row->spesifikasi,
+                    'catatan' => $row->catatan,
+                    'status' => $row->status,
+                    'record_status' => $row->record_status ?? 'draft',
+                    'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
+                    'created_by' => $row->creator?->name ?? '-',
+                    'updated_by' => $row->updater?->name ?? '-',
+                    'can_edit' => ($row->record_status ?? 'draft') !== 'locked' || $this->currentUserCanManageLockedRecords(),
+                    'can_delete' => ($row->record_status ?? 'draft') !== 'locked' || $this->currentUserCanManageLockedRecords(),
                 ];
             });
 
@@ -349,6 +349,7 @@ class UnitRumahController extends Controller
             ...$payload,
             'updated_by' => auth()->id(),
         ]);
+
         return redirect()->route('admin.unit-rumah.index')->with('success', 'Unit rumah berhasil diperbarui.');
     }
 
@@ -458,6 +459,7 @@ class UnitRumahController extends Controller
 
                     if ($itemId !== null && $existing) {
                         $existing->update($data);
+
                         continue;
                     }
 
@@ -532,7 +534,7 @@ class UnitRumahController extends Controller
         $money = fn (float $value) => 'Rp '.number_format($value, 0, ',', '.');
         $number = fn (float $value) => rtrim(rtrim(number_format($value, 2, ',', '.'), '0'), ',');
 
-        $drawHeader = function () use (&$content, &$y, $width, $height, $margin, $columns, $headers, $text, $rect, $line, $rumah): void {
+        $drawHeader = function () use (&$content, &$y, $height, $margin, $columns, $headers, $text, $rect, $line, $rumah): void {
             $y = $height - 38;
             $content .= $text($margin, $y, 'RAB PER UNIT RUMAH '.($rumah->perumahan?->nama_perusahaan ?? ''), 15, 'F2');
             $y -= 18;
@@ -731,7 +733,7 @@ class UnitRumahController extends Controller
             $contentId = $pageId + 1;
             $kids[] = "{$pageId} 0 R";
             $objects[$pageId] = "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {$width} {$height}] /Resources << /Font << /F1 {$fontRegularId} 0 R /F2 {$fontBoldId} 0 R >> >> /Contents {$contentId} 0 R >>";
-            $objects[$contentId] = "<< /Length ".strlen($content)." >>\nstream\n{$content}\nendstream";
+            $objects[$contentId] = '<< /Length '.strlen($content)." >>\nstream\n{$content}\nendstream";
         }
 
         $objects[2] = '<< /Type /Pages /Kids ['.implode(' ', $kids).'] /Count '.$pageCount.' >>';
@@ -841,7 +843,7 @@ class UnitRumahController extends Controller
     protected function options(): array
     {
         return [
-            'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn (Perumahan $row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
+            'perumahans' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn (Perumahan $row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
             'blokOptions' => $this->blokOptions(),
             'filterBlokOptions' => [['value' => '', 'label' => 'Semua Blok'], ...$this->blokOptions()],
             'tipeRumahOptions' => $this->tipeRumahOptions(),

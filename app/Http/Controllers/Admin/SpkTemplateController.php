@@ -10,7 +10,6 @@ use App\Models\SpkWorkTemplateItem;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -206,7 +205,7 @@ class SpkTemplateController extends Controller
         $payload['konteks'] = $context;
 
         if ($template && (int) $template->perumahan_id !== (int) $payload['perumahan_id']) {
-            $templatePerumahan = Perumahan::query()->find((int) $payload['perumahan_id']);
+            $templatePerumahan = Perumahan::query()->finalized()->find((int) $payload['perumahan_id']);
             if (! $templatePerumahan) {
                 throw ValidationException::withMessages([
                     'perumahan_id' => 'Perumahan tidak ditemukan.',
@@ -328,6 +327,7 @@ class SpkTemplateController extends Controller
             })->values(),
             'groups_text' => $groups->map(function (SpkWorkTemplateGroup $group) {
                 $items = $group->items->pluck('nama_pekerjaan')->filter()->take(3)->implode(', ');
+
                 return trim($group->judul_tahapan.($items !== '' ? " ({$items})" : ''));
             })->implode(' | '),
             'can_edit' => $this->canManage($template->konteks, 'update'),
@@ -337,7 +337,7 @@ class SpkTemplateController extends Controller
 
     protected function perumahanOptions(Request $request): array
     {
-        $query = Perumahan::query()->orderBy('nama_perusahaan');
+        $query = Perumahan::query()->finalized()->orderBy('nama_perusahaan');
 
         if (! $this->canSeeAllPerumahans()) {
             $query->whereIn('id', $this->allowedPerumahanIds($request));

@@ -39,6 +39,7 @@ class AdminAreaPages
                 ],
                 'menus' => [
                     ['label' => 'Calon Konsumen', 'description' => 'Input dan pantau data prospek pembeli.', 'href' => '/admin/marketing/calon-konsumen'],
+                    ['label' => 'Reservasi Perumahan', 'description' => 'Tahan unit dan terbitkan tagihan Booking Fee.', 'href' => '/admin/marketing/reservasi-perumahan'],
                     ['label' => 'Jejak Follow Up', 'description' => 'Lihat histori tindak lanjut setiap prospek.', 'href' => '/admin/marketing/jejak-follow-up'],
                     ['label' => 'Konsumen', 'description' => 'Kelola data konsumen hasil follow up.', 'href' => '/admin/marketing/konsumen'],
                     ['label' => 'Transaksi SPR', 'description' => 'Proses Surat Pemesanan Rumah dengan skema pembayaran.', 'href' => '/admin/marketing/spr'],

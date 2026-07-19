@@ -133,11 +133,13 @@ class MaterialReturnController extends Controller
 
     private function canCreateReturn(): bool
     {
-        return (bool) (! auth()->user()?->hasAnyRole(['user_area_gudang', 'admin_gudang']) && auth()->user()?->can('material-return.create'));
+        return (bool) (auth()->user()?->can('material-return.create') || auth()->user()?->can('material-return.manage'));
     }
 
     private function canReceive(): bool
     {
-        return (bool) (! auth()->user()?->hasAnyRole(['user_area_gudang', 'admin_gudang']) && auth()->user()?->hasAnyRole(['owner', 'super_admin']));
+        return (bool) (auth()->user()?->can('material-return.update')
+            || auth()->user()?->can('material-return.manage')
+            || auth()->user()?->hasRole('super_admin'));
     }
 }

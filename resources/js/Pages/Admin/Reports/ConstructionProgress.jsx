@@ -200,7 +200,7 @@ export default function ConstructionProgress({
                             <Search size={17} /> Tampilkan Laporan
                         </Button>
                         <Button type="button" variant="outline" onClick={reset}>
-                            <RotateCcw size={17} /> Reset
+                            <RotateCcw size={17} /> Atur Ulang
                         </Button>
                         {permissions.canExport && report.units.length > 0 && (
                             <Button
@@ -457,7 +457,7 @@ export default function ConstructionProgress({
 }
 
 ConstructionProgress.layout = (page) => (
-    <AdminLayout title={page?.props?.title ?? "Laporan Progress Pembangunan"}>
+    <AdminLayout title={page?.props?.title ?? "Laporan Kemajuan Pembangunan"}>
         {page}
     </AdminLayout>
 );

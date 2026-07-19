@@ -30,8 +30,10 @@ class StoreCostumerRequest extends FormRequest
             'telepon' => ['nullable', 'string', 'max:255'],
             'file_identitas' => ['nullable', 'string', 'max:255'],
             'penghasilan' => ['nullable', 'numeric', 'min:0'],
+            'pengeluaran_bulanan' => ['nullable', 'numeric', 'min:0'],
             'keterangan' => ['nullable', 'string'],
             'pekerjaan' => ['nullable', 'string', 'max:255'],
+            'employment_category' => ['required', 'in:pns,tni_polri,bumn,pegawai_swasta,wiraswasta,profesional,pensiunan,lainnya'],
             'nama_perusahaan' => ['nullable', 'string', 'max:255'],
             'alamat_perusahaan' => ['nullable', 'string'],
             'telepon_perusahaan' => ['nullable', 'string', 'max:255'],
@@ -42,6 +44,16 @@ class StoreCostumerRequest extends FormRequest
             'no_identitas_pasangan' => ['nullable', 'string', 'max:255'],
             'tanggal_lahir_pasangan' => ['nullable', 'date'],
             'tempat_lahir_pasangan' => ['nullable', 'string', 'max:255'],
+            'pekerjaan_pasangan' => ['nullable', 'string', 'max:255'],
+            'penghasilan_pasangan' => ['nullable', 'numeric', 'min:0'],
+            'pengeluaran_bulanan_pasangan' => ['nullable', 'numeric', 'min:0'],
+            'daftar_cicilan' => ['nullable', 'array', 'max:25'],
+            'daftar_cicilan.*.pemilik' => ['nullable', 'in:konsumen,pasangan'],
+            'daftar_cicilan.*.jenis' => ['nullable', 'string', 'max:100'],
+            'daftar_cicilan.*.kreditur' => ['nullable', 'string', 'max:150'],
+            'daftar_cicilan.*.angsuran_bulanan' => ['nullable', 'numeric', 'min:0'],
+            'daftar_cicilan.*.sisa_pokok' => ['nullable', 'numeric', 'min:0'],
+            'daftar_cicilan.*.tanggal_selesai' => ['nullable', 'date'],
         ];
     }
 }

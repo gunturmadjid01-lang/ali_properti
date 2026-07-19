@@ -12,6 +12,7 @@ class MasterBank extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
+        'cabang_id',
         'perumahan_id',
         'kode_bank',
         'nama_bank',
@@ -30,5 +31,10 @@ class MasterBank extends Model
     public function perumahan(): BelongsTo
     {
         return $this->belongsTo(Perumahan::class);
+    }
+
+    public function cabang(): BelongsTo
+    {
+        return $this->belongsTo(CabangPerusahaan::class, 'cabang_id');
     }
 }

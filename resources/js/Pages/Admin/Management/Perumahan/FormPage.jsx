@@ -181,7 +181,7 @@ export default function FormPage({
                             wajib diisi.
                         </p>
                         <span className="shrink-0 rounded-full bg-silver-soft px-3 py-1 text-xs font-black dark:bg-white/10">
-                            {method === "put" ? "Mode Edit" : "Data Baru"}
+                            {method === "put" ? "Mode Ubah" : "Data Baru"}
                         </span>
                     </div>
 

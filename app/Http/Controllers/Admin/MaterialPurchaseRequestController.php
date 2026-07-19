@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
 use App\Models\Gudang;
 use App\Models\MaterialPurchaseRequest;
@@ -302,13 +302,13 @@ class MaterialPurchaseRequestController extends Controller
     protected function options(): array
     {
         return [
-            'gudangs' => Gudang::query()
+            'gudangs' => Gudang::query()->finalized()
                 ->where('status', 'aktif')
                 ->orderBy('nama_gudang')
                 ->get(['id', 'nama_gudang'])
                 ->map(fn (Gudang $row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])
                 ->values(),
-            'barangMaterials' => BarangMaterial::query()
+            'barangMaterials' => BarangMaterial::query()->finalized()
                 ->orderBy('kode_barang')
                 ->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'harga_hpp'])
                 ->map(fn (BarangMaterial $row) => [

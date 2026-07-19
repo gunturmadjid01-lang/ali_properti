@@ -28,6 +28,7 @@ function itemTemplate(material = null) {
         kode_barang: material?.kode_barang ?? "",
         nama_barang: material?.nama_barang ?? "",
         qty: "",
+        material_unit_id: material?.base_unit_id ?? "",
         satuan: material?.satuan ?? "",
         harga_satuan: material?.harga_hpp ?? "",
         diskon: "",
@@ -83,6 +84,7 @@ export default function Create({
             kode_barang: item.kode_barang ?? "",
             nama_barang: item.nama_barang ?? "",
             qty: item.qty ?? "",
+            material_unit_id: item.material_unit_id ?? "",
             satuan: item.satuan ?? "",
             harga_satuan: item.harga_satuan ?? "",
             diskon: item.diskon ?? 0,
@@ -128,11 +130,19 @@ export default function Create({
                         next.nama_barang ??
                         "";
                     next.satuan = material?.satuan ?? next.satuan ?? "";
+                    next.material_unit_id = material?.base_unit_id ?? "";
                     next.harga_satuan =
                         material?.harga_hpp ?? next.harga_satuan ?? "";
                     if (!next.diskon) {
                         next.diskon = 0;
                     }
+                }
+
+                if (key === "material_unit_id") {
+                    const material = selectedMaterials.get(String(next.barang_material_id));
+                    const unit = (material?.unit_options ?? []).find((option) => String(option.value) === String(value));
+                    next.satuan = unit?.symbol ?? next.satuan;
+                    next.harga_satuan = unit?.standard_price ?? next.harga_satuan;
                 }
 
                 return next;
@@ -442,6 +452,7 @@ export default function Create({
                                     "Keterangan",
                                     "Jumlah",
                                     "Satuan",
+                                    "Setara Level 1",
                                     "Harga",
                                     "Potongan",
                                     "Total",
@@ -472,6 +483,9 @@ export default function Create({
                                     0,
                                     lineGross - lineDiscount,
                                 );
+                                const selectedUnit = (material?.unit_options ?? []).find((option) => String(option.value) === String(item.material_unit_id));
+                                const normalizedQty = Number(item.qty || 0) / Number(selectedUnit?.factor_to_base || 1);
+                                const baseUnit = (material?.unit_options ?? [])[0];
 
                                 return (
                                     <tr key={index}>
@@ -537,7 +551,7 @@ export default function Create({
                                                 className="h-9 w-28 rounded-md border border-silver-deep/70 bg-white/85 px-3 text-right font-bold dark:border-white/10 dark:bg-white/8"
                                                 type="number"
                                                 min="0"
-                                                step="0.001"
+                                                step="0.000001"
                                                 value={item.qty}
                                                 onChange={(event) =>
                                                     setItem(
@@ -549,18 +563,13 @@ export default function Create({
                                             />
                                         </td>
                                         <td className="px-3 py-2">
-                                            <input
-                                                className="h-9 w-24 rounded-md border border-silver-deep/70 bg-white/85 px-3 font-bold dark:border-white/10 dark:bg-white/8"
-                                                value={item.satuan}
-                                                onChange={(event) =>
-                                                    setItem(
-                                                        index,
-                                                        "satuan",
-                                                        event.target.value,
-                                                    )
-                                                }
-                                            />
+                                            <div className="min-w-32"><Dropdown
+                                                value={item.material_unit_id ?? ""}
+                                                options={material?.unit_options ?? []}
+                                                onChange={(value) => setItem(index, "material_unit_id", value)}
+                                            /></div>
                                         </td>
+                                        <td className="px-3 py-2 text-right font-black">{Number(normalizedQty || 0).toLocaleString('id-ID', { maximumFractionDigits: 6 })} {baseUnit?.symbol ?? ''}</td>
                                         <td className="px-3 py-2">
                                             <input
                                                 className="h-9 w-36 rounded-md border border-silver-deep/70 bg-white/85 px-3 text-right font-bold dark:border-white/10 dark:bg-white/8"

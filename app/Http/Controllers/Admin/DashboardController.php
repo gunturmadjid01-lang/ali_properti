@@ -14,7 +14,9 @@ class DashboardController extends Controller
     {
         return Inertia::render('Admin/Dashboard', $dashboard->build(
             $request->user(),
-            (int) $request->session()->get('active_perumahan_id') ?: null,
+            $request->user()?->hasAnyRole(['owner', 'super_admin'])
+                ? null
+                : ((int) $request->session()->get('active_perumahan_id') ?: null),
             in_array($request->query('period'), ['day','month','year'], true) ? $request->query('period') : 'month',
             $request->query('value'),
         ));

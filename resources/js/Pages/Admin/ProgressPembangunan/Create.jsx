@@ -232,7 +232,7 @@ export default function Create({ title, description, baseUrl, indexUrl, options 
                 {canCreate ? (
                     <Form
                         collapsible
-                        title="Form Progress Pembangunan"
+                        title="Form Kemajuan Pembangunan"
                         description="Isi progress lapangan per tahap, pilih jadwal kerja yang sesuai, lalu kaitkan permintaan material yang sudah keluar dari gudang bila memang ada pemakaian."
                         onSubmit={submit}
                         actions={(
@@ -354,7 +354,7 @@ export default function Create({ title, description, baseUrl, indexUrl, options 
                                 onChange={(event) => form.setData('tanggal', event.target.value)}
                             />
                             <Input
-                                label="Progress (%)"
+                                label="Kemajuan (%)"
                                 type="number"
                                 min="0"
                                 max="100"
@@ -418,7 +418,7 @@ export default function Create({ title, description, baseUrl, indexUrl, options 
                                         <table className="min-w-[1180px] divide-y divide-silver-deep/60 text-xs dark:divide-white/10">
                                             <thead className="sticky top-0 bg-silver-soft/95 text-left uppercase tracking-[0.12em] text-ink-soft dark:bg-graphite dark:text-white/55">
                                                 <tr>
-                                                    {['Material', 'Keluar', 'Jml Pemakaian', 'Item HPP / RAB Unit', 'RAB', 'Realisasi', 'Sisa', 'Progress'].map((column) => (
+                                                    {['Material', 'Keluar', 'Jml Pemakaian', 'Item HPP / RAB Unit', 'RAB', 'Realisasi', 'Sisa', 'Kemajuan'].map((column) => (
                                                         <th className="px-3 py-3 font-extrabold" key={column}>{column}</th>
                                                     ))}
                                                 </tr>
@@ -634,4 +634,4 @@ export default function Create({ title, description, baseUrl, indexUrl, options 
     );
 }
 
-Create.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Progress Pembangunan'}>{page}</AdminLayout>;
+Create.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Kemajuan Pembangunan'}>{page}</AdminLayout>;

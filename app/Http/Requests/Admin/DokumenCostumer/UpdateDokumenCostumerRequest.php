@@ -16,7 +16,7 @@ class UpdateDokumenCostumerRequest extends FormRequest
     {
         return [
             'nama_dokumen' => ['required', 'string', 'max:255'],
-            'kategori_pengajuan' => ['required', Rule::in(['umum', 'spr', 'kpr', 'cash', 'bertahap'])],
+            'kategori_pengajuan' => ['required', Rule::in(['spr', 'cash_bertahap', 'kpr_bank', 'kpr_developer'])],
             'wajib' => ['required', 'boolean'],
             'keterangan' => ['nullable', 'string'],
             'status' => ['required', Rule::in(['aktif', 'nonaktif'])],

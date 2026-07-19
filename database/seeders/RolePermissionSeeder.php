@@ -2,8 +2,9 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
 use App\Models\User;
+use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -25,8 +26,11 @@ class RolePermissionSeeder extends Seeder
             'roles.manage',
             'approval.view',
             'approval.settings',
+            'document-template.view',
             'payroll.view',
             'payroll.manage',
+            'attendance.view',
+            'attendance.settings',
 
             'cabang.view',
             'cabang.create',
@@ -51,22 +55,16 @@ class RolePermissionSeeder extends Seeder
             'booking.update',
             'booking.delete',
             'booking.manage',
-            'spr-payment.view',
-            'spr-payment.create',
-            'spr-payment.update',
-            'spr-payment.delete',
+            'housing-reservation.view',
+            'housing-reservation.create',
+            'housing-reservation.update',
+            'housing-reservation.delete',
+            'housing-reservation.lock',
+            'housing-reservation.print',
             'kpr.view',
             'kpr.create',
             'kpr.update',
             'kpr.delete',
-            'kpr-akad.view',
-            'kpr-akad.create',
-            'kpr-akad.update',
-            'kpr-akad.delete',
-            'handover-customer.view',
-            'handover-customer.create',
-            'handover-customer.update',
-            'handover-customer.delete',
             'payment-simulation.view',
             'pricelist.view',
             'unit-stock.view',
@@ -191,11 +189,9 @@ class RolePermissionSeeder extends Seeder
             'customer' => $matrixActions,
             'customer-follow-up' => ['view', 'create', 'update', 'delete', 'unlock'],
             'booking' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'spr-payment' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'housing-reservation' => ['view', 'create', 'update', 'delete', 'lock', 'print'],
             'kpr' => ['view', 'create', 'update', 'delete', 'unlock'],
             'cash-purchase' => $matrixActions,
-            'kpr-akad' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'handover-customer' => ['view', 'create', 'update', 'delete', 'unlock'],
             'payment-simulation' => ['view', 'create', 'update', 'delete', 'unlock'],
             'pricelist' => ['view', 'create', 'update', 'delete', 'unlock'],
             'unit-stock' => ['view'],
@@ -218,9 +214,19 @@ class RolePermissionSeeder extends Seeder
             'spk-template-perumahan' => ['view', 'create', 'update', 'delete'],
             'spk-template-unit' => ['view', 'create', 'update', 'delete'],
             'spk-payment' => ['view', 'create', 'update'],
-            'company-inventory' => ['view', 'create', 'update', 'delete', 'export', 'verify'],
-            'heavy-equipment' => ['view', 'create', 'update', 'delete', 'export'],
+            'company-inventory' => ['view', 'create', 'update', 'delete', 'export', 'verify', 'approve', 'print'],
+            'heavy-equipment' => ['view', 'create', 'update', 'delete', 'export', 'approve', 'print'],
             'master-material' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'material-type' => ['view', 'create', 'update', 'delete'],
+            'material-brand' => ['view', 'create', 'update', 'delete'],
+            'material-unit' => ['view', 'create', 'update', 'delete'],
+            'material-group' => ['view', 'create', 'update', 'delete'],
+            'bank-credit-master' => ['view', 'create', 'update', 'delete', 'submit', 'approve', 'reject'],
+            'bank-branch' => ['view', 'create', 'update', 'delete', 'submit', 'approve', 'reject'],
+            'bank-credit-product' => ['view', 'create', 'update', 'delete', 'submit', 'approve', 'reject'],
+            'bank-housing-partnership' => ['view', 'create', 'update', 'delete', 'submit', 'approve', 'reject'],
+            'bank-document-requirement' => ['view', 'create', 'update', 'delete'],
+            'bank-partnership-history' => ['view'],
             'supplier' => ['view', 'create', 'update', 'delete', 'unlock'],
             'material-price' => ['view', 'create', 'delete', 'unlock'],
             'material-opening-balance' => ['view', 'create', 'update', 'delete', 'unlock'],
@@ -228,21 +234,45 @@ class RolePermissionSeeder extends Seeder
             'material-usage' => ['view', 'create', 'update', 'delete', 'unlock'],
             'material-return' => ['view', 'create', 'update', 'delete', 'unlock'],
             'material-purchase' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'material-stock-opname' => ['view', 'create', 'update', 'delete'],
+            'material-stock-opname' => ['view', 'create', 'update', 'delete', 'view-all'],
             'site-material-stock' => ['view'],
             'tukang' => ['view', 'create', 'update', 'delete'],
             'rab-perumahan' => ['view', 'create', 'update', 'delete', 'manage'],
             'rab-unit' => ['view', 'create', 'update', 'delete', 'manage'],
             'keuangan' => $matrixActions,
-            'petty-cash' => ['view', 'create', 'approve'],
+            'petty-cash' => ['view', 'create', 'approve', 'disburse'],
             'bank-account-ledger' => ['view'],
-            'refund-spr' => ['view', 'create', 'update', 'delete'],
             'laporan' => ['view'],
             'laporan-master-data' => ['view'],
             'laporan-pembelian' => ['view'],
             'laporan-persediaan-material' => ['view'],
             'laporan-marketing' => ['view'],
         ];
+        $sectionActions = ['view', 'create', 'update', 'delete', 'export', 'verify', 'approve', 'print'];
+        foreach (['company-inventory' => ['dashboard', 'categories', 'items', 'units', 'locations', 'receipts', 'loans', 'returns', 'transfers', 'damages', 'losses', 'stock-opname', 'ledger', 'reports'], 'heavy-equipment' => ['dashboard', 'equipment', 'types', 'components', 'replacements', 'usage', 'operators', 'maintenance', 'damages', 'fuel', 'reports']] as $prefix => $sections) {
+            foreach ($sections as $section) {
+                $matrixModules["{$prefix}.{$section}"] = $sectionActions;
+            }
+        }
+        $integratedSalesPages = [
+            'sales' => ['transactions', 'transaction-detail', 'payment-schedules', 'payments', 'handover', 'after-sales', 'reports'],
+            'cash-installment' => ['schemes', 'scheme-detail', 'scheme-housing', 'scheme-steps', 'scheme-fees', 'scheme-requirements', 'scheme-documents', 'scheme-versions', 'scheme-history', 'scheme-reports', 'contracts', 'contract-detail', 'approvals', 'schedules', 'billings', 'arrears', 'payment-history', 'settlements', 'restructuring', 'cancellations', 'reports'],
+            'developer-kpr' => ['products', 'product-detail', 'product-housing', 'financing-terms', 'margins', 'fees', 'requirements', 'documents', 'risk-approval', 'penalties', 'early-settlement', 'product-versions', 'product-history', 'product-reports', 'applications', 'application-detail', 'affordability-analysis', 'document-validation', 'internal-approval', 'contracts', 'schedules', 'receivables', 'arrears', 'payments', 'restructuring', 'cancellations', 'reports'],
+            'bank-kpr' => ['applications', 'application-detail', 'document-validation', 'slik', 'appraisal', 'bank-decision', 'sp3k', 'financing', 'contract-preparation', 'contract-schedule', 'contract-execution', 'disbursement', 'bank-change', 'rejections', 'reports'],
+        ];
+        foreach ($integratedSalesPages as $prefix => $pages) {
+            foreach ($pages as $page) {
+                $matrixModules["{$prefix}.{$page}"] = ['view', 'create', 'update', 'delete', 'submit', 'approve', 'reject', 'print', 'export'];
+            }
+        }
+        foreach (['summary', 'schedules', 'payments', 'construction', 'handover', 'after-sales', 'history'] as $tab) {
+            $matrixModules["sales.transaction-detail.{$tab}"] = ['view'];
+        }
+        $matrixModules['receivables'] = ['view', 'print', 'settings'];
+        $matrixModules['customer-receipts'] = ['view', 'create', 'update', 'lock', 'unlock', 'print'];
+        $matrixModules['customer-charges'] = ['view', 'create', 'update', 'lock', 'unlock', 'print', 'reverse'];
+        $matrixModules['customer-refunds'] = ['view', 'update', 'lock', 'unlock', 'print'];
+        $matrixModules['sales-process'] = ['view', 'update', 'lock', 'unlock', 'print'];
         foreach ($matrixModules as $module => $actions) {
             foreach ($actions as $action) {
                 $permissions[] = $module.'.'.$action;
@@ -287,9 +317,13 @@ class RolePermissionSeeder extends Seeder
             return ! collect($ownerBlockedPrefixes)->contains(fn (string $prefix) => str_starts_with($permission, $prefix));
         }));
 
-        foreach ($permissions as $permission) {
-            Permission::findOrCreate($permission, 'web');
-        }
+        $now = now();
+        Permission::query()->upsert(
+            collect($permissions)->map(fn (string $permission) => ['name' => $permission, 'guard_name' => 'web', 'created_at' => $now, 'updated_at' => $now])->all(),
+            ['name', 'guard_name'],
+            ['updated_at'],
+        );
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         Role::query()
             ->whereIn('name', [
@@ -329,22 +363,12 @@ class RolePermissionSeeder extends Seeder
                 'booking.view',
                 'booking.create',
                 'booking.update',
-                'spr-payment.view',
-                'spr-payment.create',
-                'spr-payment.update',
                 'kpr.view',
                 'kpr.create',
                 'kpr.update',
-                'kpr-akad.view',
-                'kpr-akad.create',
-                'kpr-akad.update',
-                'handover-customer.view',
-                'handover-customer.create',
-                'handover-customer.update',
                 'unit-stock.view',
                 'pricelist.view',
                 'payment-simulation.view',
-                'refund-spr.view',
                 'marketing.lead-source.manage',
                 'marketing.lead-report.view',
                 'marketing.pipeline.view',
@@ -380,8 +404,6 @@ class RolePermissionSeeder extends Seeder
                 'spk-template-unit.delete',
                 'spk-payment.view',
                 'kpr.view',
-                'kpr-akad.view',
-                'handover-customer.view',
                 'master-material.view',
                 'supplier.view',
                 'supplier.create',
@@ -481,6 +503,12 @@ class RolePermissionSeeder extends Seeder
                 'supplier.unlock',
                 'material-purchase.view',
                 'material-stock-opname.view',
+                'bank-credit-master.view', 'bank-credit-master.create', 'bank-credit-master.update', 'bank-credit-master.delete', 'bank-credit-master.submit',
+                'bank-branch.view', 'bank-branch.create', 'bank-branch.update', 'bank-branch.delete', 'bank-branch.submit',
+                'bank-credit-product.view', 'bank-credit-product.create', 'bank-credit-product.update', 'bank-credit-product.delete', 'bank-credit-product.submit',
+                'bank-housing-partnership.view', 'bank-housing-partnership.create', 'bank-housing-partnership.update', 'bank-housing-partnership.delete', 'bank-housing-partnership.submit',
+                'bank-document-requirement.view', 'bank-document-requirement.create', 'bank-document-requirement.update', 'bank-document-requirement.delete',
+                'bank-partnership-history.view',
             ],
             'manajer_pimpro' => [
                 'dashboard.view',
@@ -555,13 +583,8 @@ class RolePermissionSeeder extends Seeder
                 'booking.create',
                 'booking.update',
                 'booking.manage',
-                'spr-payment.view',
-                'spr-payment.create',
-                'spr-payment.update',
                 'kpr.view',
                 'kpr.update',
-                'kpr-akad.view',
-                'handover-customer.view',
                 'marketing-reminder.view',
                 'marketing-reminder.create',
                 'marketing-reminder.update',
@@ -572,6 +595,8 @@ class RolePermissionSeeder extends Seeder
             ],
             'keuangan' => [
                 'dashboard.view',
+                'payroll.view',
+                'payroll.manage',
                 'petty-cash.view',
                 'petty-cash.create',
                 'customer.view',
@@ -647,6 +672,10 @@ class RolePermissionSeeder extends Seeder
                 'supplier.delete',
                 'supplier.unlock',
                 'material-purchase.view',
+                'material-group.view',
+                'material-group.create',
+                'material-group.update',
+                'material-group.delete',
             ],
             'user_area_gudang' => [
                 'dashboard.view',
@@ -665,6 +694,18 @@ class RolePermissionSeeder extends Seeder
                 'master-material.create',
                 'master-material.update',
                 'master-material.delete',
+                'material-type.view',
+                'material-type.create',
+                'material-type.update',
+                'material-type.delete',
+                'material-brand.view',
+                'material-brand.create',
+                'material-brand.update',
+                'material-brand.delete',
+                'material-unit.view',
+                'material-unit.create',
+                'material-unit.update',
+                'material-unit.delete',
                 'material-price.view',
                 'material-price.create',
                 'material-price.delete',
@@ -702,6 +743,25 @@ class RolePermissionSeeder extends Seeder
             ],
         ];
 
+        $integratedViewPermissions = collect($integratedSalesPages)->flatMap(fn ($pages, $prefix) => collect($pages)->map(fn ($page) => "{$prefix}.{$page}.view"))->values()->all();
+        $integratedMasterPermissions = collect([
+            'cash-installment' => ['schemes', 'scheme-steps'],
+            'developer-kpr' => ['products'],
+        ])->flatMap(fn ($pages, $prefix) => collect($pages)->flatMap(fn ($page) => collect(['view', 'create', 'update', 'delete', 'submit', 'print'])->map(fn ($action) => "{$prefix}.{$page}.{$action}")))->values()->all();
+        $integratedReviewPermissions = collect($integratedSalesPages)->flatMap(fn ($pages, $prefix) => collect($pages)->flatMap(fn ($page) => collect(['view', 'approve', 'reject', 'print', 'export'])->map(fn ($action) => "{$prefix}.{$page}.{$action}")))->values()->all();
+        $transactionDetailViews = collect(['summary', 'schedules', 'payments', 'construction', 'handover', 'after-sales', 'history'])->map(fn ($tab) => "sales.transaction-detail.{$tab}.view")->all();
+        $customerChargePermissions = collect(['view', 'create', 'update', 'lock', 'unlock', 'print', 'reverse'])->map(fn ($action) => "customer-charges.{$action}")->all();
+        $customerRefundPermissions = collect(['view', 'update', 'lock', 'unlock', 'print'])->map(fn ($action) => "customer-refunds.{$action}")->all();
+        $reservationManage = collect(['view', 'create', 'update', 'delete', 'lock', 'print'])->map(fn ($action) => "housing-reservation.{$action}")->all();
+        $reservationRead = ['housing-reservation.view', 'housing-reservation.print'];
+        $rolePermissions['admin'] = array_values(array_unique([...$rolePermissions['admin'], ...$reservationManage, ...$integratedViewPermissions, ...$integratedMasterPermissions, ...$transactionDetailViews, ...$customerChargePermissions, ...$customerRefundPermissions, 'document-template.view', 'receivables.view', 'receivables.print', 'customer-receipts.view', 'customer-receipts.create', 'customer-receipts.update', 'customer-receipts.lock', 'customer-receipts.unlock', 'customer-receipts.print', 'sales-process.view', 'sales-process.update', 'sales-process.lock', 'sales-process.unlock', 'sales-process.print']));
+        $rolePermissions['manager'] = array_values(array_unique([...$rolePermissions['manager'], ...$reservationRead, ...$integratedReviewPermissions, ...$transactionDetailViews, ...$customerChargePermissions, ...$customerRefundPermissions, 'document-template.view', 'receivables.view', 'receivables.print', 'receivables.settings', 'customer-receipts.view', 'customer-receipts.print', 'sales-process.view', 'sales-process.unlock', 'sales-process.print']));
+        $rolePermissions['marketing'] = array_values(array_unique([...$rolePermissions['marketing'], ...$reservationManage, 'document-template.view', 'sales.transactions.view', 'sales.transaction-detail.view', ...$transactionDetailViews, 'cash-installment.schemes.view', 'cash-installment.contracts.view', 'developer-kpr.products.view', 'developer-kpr.applications.view', 'bank-kpr.applications.view', 'bank-kpr.application-detail.view', 'bank-kpr.document-validation.view', 'bank-kpr.slik.view', 'bank-kpr.appraisal.view', 'bank-kpr.bank-decision.view', 'bank-kpr.sp3k.view', 'sales-process.view', 'sales-process.update', 'sales-process.lock', 'sales-process.print', 'bank-document-requirement.view']));
+        $rolePermissions['keuangan'] = array_values(array_unique([...$rolePermissions['keuangan'], ...$reservationRead, ...$integratedViewPermissions, ...$transactionDetailViews, ...$customerChargePermissions, ...$customerRefundPermissions, 'receivables.view', 'receivables.print', 'receivables.settings', 'customer-receipts.view', 'customer-receipts.create', 'customer-receipts.update', 'customer-receipts.lock', 'customer-receipts.unlock', 'customer-receipts.print', 'sales-process.view', 'sales-process.print']));
+        foreach (['manajer_pimpro', 'pengawas'] as $roleName) {
+            $rolePermissions[$roleName] = array_values(array_unique([...$rolePermissions[$roleName], 'sales.transactions.view', 'sales.transaction-detail.view', 'sales.transaction-detail.summary.view', 'sales.transaction-detail.construction.view', 'sales.transaction-detail.handover.view', 'sales-process.view', 'sales-process.update', 'sales-process.lock', 'sales-process.print']));
+        }
+
         foreach ($rolePermissions as $roleName => $rolePermissionNames) {
             $role = Role::findOrCreate($roleName, 'web');
             $role->syncPermissions(
@@ -710,12 +770,36 @@ class RolePermissionSeeder extends Seeder
                     ->whereIn('name', $rolePermissionNames)
                     ->get(),
             );
+            foreach (['company-inventory' => ['dashboard', 'categories', 'items', 'units', 'locations', 'receipts', 'loans', 'returns', 'transfers', 'damages', 'losses', 'stock-opname', 'ledger', 'reports'], 'heavy-equipment' => ['dashboard', 'equipment', 'types', 'components', 'replacements', 'usage', 'operators', 'maintenance', 'damages', 'fuel', 'reports']] as $prefix => $sections) {
+                foreach ($sectionActions as $action) {
+                    if (in_array("{$prefix}.{$action}", $rolePermissionNames, true)) {
+                        $role->givePermissionTo(collect($sections)->map(fn ($section) => "{$prefix}.{$section}.{$action}")->all());
+                    }
+                }
+                foreach ($sectionActions as $action) {
+                    if (Permission::where('name', "{$prefix}.{$action}")->where('guard_name', 'web')->exists() && $role->hasPermissionTo("{$prefix}.{$action}")) {
+                        $role->revokePermissionTo("{$prefix}.{$action}");
+                    }
+                }
+            }
         }
 
-        User::query()
-            ->where('email', 'marketing@ptali.com')
-            ->first()
-            ?->assignRole('marketing');
+        foreach ([
+            'owner@ptali.com' => 'owner',
+            'admin@ptali.com' => 'admin',
+            'keuangan@ptali.com' => 'keuangan',
+            'marketing@ptali.com' => 'marketing',
+            'manager@ptali.com' => 'manager',
+            'pimpro@ptali.com' => 'manajer_pimpro',
+            'pengawas@ptali.com' => 'pengawas',
+            'gudang@ptali.com' => 'user_area_gudang',
+        ] as $email => $roleName) {
+            User::query()->where('email', $email)->first()?->syncRoles([$roleName]);
+        }
+
+        DB::table('model_has_permissions')
+            ->where('model_type', User::class)
+            ->delete();
 
         Permission::query()
             ->where('guard_name', 'web')

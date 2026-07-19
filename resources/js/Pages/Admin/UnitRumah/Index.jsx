@@ -10,7 +10,7 @@ import {
     Unlock,
 } from "lucide-react";
 import { useState } from "react";
-import { Button, Dropdown, Input } from "../../../Components/UI";
+import { Button, Dropdown, Input, TableActions } from "../../../Components/UI";
 import AuditCell from "../../../Components/UI/AuditCell";
 import AdminLayout from "../../../Layouts/AdminLayout";
 import { useResourcePermissions } from "../../../Utils/permissions";
@@ -79,7 +79,7 @@ export default function Index({
         const action = row.record_status === "locked" ? "unlock" : "lock";
         const message =
             action === "lock"
-                ? "Lock data unit ini?"
+                ? "Kunci data unit ini?"
                 : "Buka lock data unit ini?";
         if (window.confirm(message)) {
             router.post(
@@ -119,7 +119,7 @@ export default function Index({
                         onSubmit={submitFilters}
                     >
                         <Input
-                            label="Search"
+                            label="Pencarian"
                             value={search}
                             placeholder="Cari perumahan, blok, nomor, atau tipe..."
                             onChange={(event) => setSearch(event.target.value)}
@@ -157,7 +157,7 @@ export default function Index({
                             variant="outline"
                             onClick={() => router.get(baseUrl)}
                         >
-                            <RotateCcw size={17} /> Reset
+                            <RotateCcw size={17} /> Atur Ulang
                         </Button>
                     </form>
 
@@ -173,11 +173,11 @@ export default function Index({
                                         "Perumahan",
                                         "Blok / Nomor",
                                         "Tipe",
-                                        "Progress",
+                                        "Kemajuan",
                                         "Status Bangun",
                                         "Harga Jual",
                                         "Audit",
-                                        "Lock",
+                                        "Kunci",
                                         "Status",
                                         "Aksi",
                                     ].map((column) => (
@@ -231,7 +231,7 @@ export default function Index({
                                             {row.status}
                                         </td>
                                         <td className="px-4 py-4">
-                                            <div className="flex flex-wrap gap-2">
+                                            <TableActions>
                                                 {access.canUpdate &&
                                                     row.can_edit && (
                                                         <Button
@@ -284,7 +284,7 @@ export default function Index({
                                                         )}
                                                     </Button>
                                                 )}
-                                            </div>
+                                            </TableActions>
                                         </td>
                                     </tr>
                                 ))}

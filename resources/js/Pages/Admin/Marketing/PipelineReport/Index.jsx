@@ -28,8 +28,8 @@ export default function Index({
     };
 
     const stats = [
-        ['Aktivitas Pipeline', summary.activities ?? 0, Activity],
-        ['Customer Bergerak', summary.customers ?? 0, Users],
+        ['Aktivitas Alur Penjualan', summary.activities ?? 0, Activity],
+        ['Pelanggan Bergerak', summary.customers ?? 0, Users],
         ['Closing', summary.closing ?? 0, Target],
         ['Rasio Closing', `${summary.closing_rate ?? 0}%`, BarChart3],
     ];
@@ -67,7 +67,7 @@ export default function Index({
                 <Card className="overflow-hidden">
                     <div className="border-b border-silver-deep/60 px-5 py-4 dark:border-white/10">
                         <h2 className="text-lg font-extrabold">Funnel dan Konversi Tahapan</h2>
-                        <p className="mt-1 text-xs font-semibold text-ink-soft">Total adalah customer unik yang masuk tahap tersebut selama periode.</p>
+                        <p className="mt-1 text-xs font-semibold text-ink-soft">Total adalah pelanggan unik yang masuk tahap tersebut selama periode.</p>
                     </div>
                     <div className="overflow-x-auto">
                         <div className="flex min-w-max gap-3 p-5">
@@ -86,7 +86,7 @@ export default function Index({
                     <Card className="overflow-hidden">
                         <h2 className="border-b border-silver-deep/60 px-5 py-4 text-lg font-extrabold dark:border-white/10">Performa Per Marketing</h2>
                         <div className="overflow-x-auto"><table className="min-w-full text-sm">
-                            <thead className="bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-white/5"><tr>{['Marketing', 'Aktivitas', 'Customer', 'Survey', 'SPR', 'Closing'].map((label) => <th className="px-4 py-3" key={label}>{label}</th>)}</tr></thead>
+                            <thead className="bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-white/5"><tr>{['Marketing', 'Aktivitas', 'Pelanggan', 'Survei', 'SPR', 'Closing'].map((label) => <th className="px-4 py-3" key={label}>{label}</th>)}</tr></thead>
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">{marketingRows.map((row) => <tr key={row.user}>
                                 <td className="px-4 py-4 font-extrabold">{row.user}</td><td className="px-4 py-4">{row.activities}</td><td className="px-4 py-4">{row.customers}</td><td className="px-4 py-4">{row.survey}</td><td className="px-4 py-4">{row.spr}</td><td className="px-4 py-4 font-extrabold">{row.closing}</td>
                             </tr>)}</tbody>
@@ -102,9 +102,9 @@ export default function Index({
                 </div>
 
                 <Card className="overflow-hidden">
-                    <h2 className="border-b border-silver-deep/60 px-5 py-4 text-lg font-extrabold dark:border-white/10">Riwayat Perpindahan Pipeline</h2>
+                    <h2 className="border-b border-silver-deep/60 px-5 py-4 text-lg font-extrabold dark:border-white/10">Riwayat Perpindahan Alur Penjualan</h2>
                     <div className="max-h-[620px] overflow-auto"><table className="min-w-full text-sm">
-                        <thead className="sticky top-0 bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-graphite"><tr>{['Tanggal', 'Customer', 'Dari', 'Ke', 'Marketing', 'Catatan'].map((label) => <th className="px-4 py-3" key={label}>{label}</th>)}</tr></thead>
+                        <thead className="sticky top-0 bg-silver-soft text-left text-xs uppercase text-ink-soft dark:bg-graphite"><tr>{['Tanggal', 'Pelanggan', 'Dari', 'Ke', 'Marketing', 'Catatan'].map((label) => <th className="px-4 py-3" key={label}>{label}</th>)}</tr></thead>
                         <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">{timeline.map((row) => <tr key={row.id}>
                             <td className="px-4 py-4">{row.date}</td><td className="px-4 py-4 font-bold">{row.customer}<br /><small className="text-ink-soft">{row.code}</small></td><td className="px-4 py-4">{row.from}</td><td className="px-4 py-4 font-extrabold">{row.to}</td><td className="px-4 py-4">{row.user}</td><td className="px-4 py-4">{row.note}</td>
                         </tr>)}</tbody>
@@ -115,4 +115,4 @@ export default function Index({
     );
 }
 
-Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Laporan Pipeline'}>{page}</AdminLayout>;
+Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Laporan Alur Penjualan'}>{page}</AdminLayout>;

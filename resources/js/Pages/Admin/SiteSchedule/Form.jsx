@@ -637,7 +637,7 @@ export default function ScheduleForm({
                                         }
                                     />
                                     <Input
-                                        label="Target Progress (%)"
+                                        label="Target Kemajuan (%)"
                                         required
                                         type="text"
                                         inputMode="decimal"

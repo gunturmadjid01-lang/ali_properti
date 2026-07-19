@@ -68,7 +68,7 @@ export default function HppFormModal({ open, title, actionUrl, items = [], onClo
         >
             <div className="grid gap-3">
                 <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-extrabold text-ink/75 dark:text-white/78">Edit nilai HPP</span>
+                    <span className="text-sm font-extrabold text-ink/75 dark:text-white/78">Ubah nilai HPP</span>
                 </div>
 
                 {form.data.items.map((item, index) => (

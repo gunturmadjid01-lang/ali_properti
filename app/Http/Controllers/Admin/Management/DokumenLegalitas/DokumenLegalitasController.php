@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers\Admin\Management\DokumenLegalitas;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\RendersSeparatedManagementForm;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\DokumenLegalitas\StoreDokumenLegalitasRequest;
 use App\Http\Requests\Admin\DokumenLegalitas\UpdateDokumenLegalitasRequest;
 use App\Models\DokumenLegalitas;
 use App\Models\Perumahan;
+use App\Services\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -53,11 +54,9 @@ class DokumenLegalitasController extends Controller
         ]);
     }
 
-    public function store(StoreDokumenLegalitasRequest $request): RedirectResponse
+    public function store(StoreDokumenLegalitasRequest $request, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
-        DokumenLegalitas::create($request->validated());
-
-        return to_route($this->routeName().'.index')->with('success', $this->title().' berhasil ditambahkan.');
+        return $approvalWorkflow->create('dokumen-legalitas', $request->validated(), fn (array $data) => DokumenLegalitas::create($data));
     }
 
     public function update(UpdateDokumenLegalitasRequest $request, string $id): RedirectResponse
@@ -147,7 +146,7 @@ class DokumenLegalitasController extends Controller
     protected function options(): array
     {
         return [
-            'perumahan' => Perumahan::query()
+            'perumahan' => Perumahan::query()->finalized()
                 ->orderBy('nama_perusahaan')
                 ->get(['id', 'nama_perusahaan'])
                 ->map(fn (Perumahan $perumahan) => ['value' => (string) $perumahan->id, 'label' => $perumahan->nama_perusahaan])

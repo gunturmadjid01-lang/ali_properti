@@ -10,7 +10,7 @@ use App\Models\FieldDefect;
 use App\Models\ProgressPembangunan;
 use App\Models\QualityInspection;
 use App\Models\SiteSchedule;
-use App\Models\TahapanPembangunan;
+use App\Services\TahapanOptionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -117,7 +117,7 @@ class QualityInspectionController extends Controller
             'foto' => ['nullable', 'image', 'max:4096'],
         ]);
 
-        $approvalRequired = $this->requiresApprovalFor('quality-inspection');
+        $approvalRequired = $this->requiresApprovalFor('quality-inspection', 'create');
 
         $inspection = QualityInspection::query()->create([
             ...$this->normalizePayload(collect($validated)->except('foto')->all()),
@@ -183,7 +183,7 @@ class QualityInspectionController extends Controller
             $foto = $request->file('foto')->store('kontrol-kualitas', 'public');
         }
 
-        $approvalRequired = $this->requiresApprovalFor('quality-inspection');
+        $approvalRequired = $this->requiresApprovalFor('quality-inspection', 'update');
 
         $row->update([
             ...$this->normalizePayload(collect($validated)->except('foto')->all()),
@@ -274,8 +274,8 @@ class QualityInspectionController extends Controller
     private function options(): array
     {
         $options = $this->fieldOptions();
-        $options['tahapanPembangunansUnit'] = app(\App\Services\TahapanOptionService::class)->forContext('unit');
-        $options['tahapanPembangunansKawasan'] = app(\App\Services\TahapanOptionService::class)->forContext('kawasan');
+        $options['tahapanPembangunansUnit'] = app(TahapanOptionService::class)->forContext('unit');
+        $options['tahapanPembangunansKawasan'] = app(TahapanOptionService::class)->forContext('kawasan');
         $options['siteSchedules'] = SiteSchedule::query()
             ->with(['perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah'])
             ->orderBy('tanggal_target')

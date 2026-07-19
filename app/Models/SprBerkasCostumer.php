@@ -14,6 +14,8 @@ class SprBerkasCostumer extends Model
     protected $fillable = [
         'spr_id',
         'dokumen_costumer_id',
+        'customer_document_id',
+        'is_selected',
         'uploaded_by',
         'nama_file',
         'path_file',
@@ -24,6 +26,7 @@ class SprBerkasCostumer extends Model
 
     protected $casts = [
         'file_size' => 'integer',
+        'is_selected' => 'boolean',
     ];
 
     public function spr(): BelongsTo
@@ -39,5 +42,10 @@ class SprBerkasCostumer extends Model
     public function uploader(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by');
+    }
+
+    public function repositoryDocument(): BelongsTo
+    {
+        return $this->belongsTo(CustomerDocument::class, 'customer_document_id');
     }
 }

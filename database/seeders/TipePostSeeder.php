@@ -70,7 +70,7 @@ class TipePostSeeder extends Seeder
             ['nama_post' => 'Biaya Operasional Kantor', 'jenis' => 'pengeluaran', 'debit' => ChartOfAccount::BEBAN_OPERASIONAL, 'credit' => ChartOfAccount::KAS_BANK],
             ['nama_post' => 'Biaya Material Bangunan', 'jenis' => 'pengeluaran', 'debit' => ChartOfAccount::HPP_MATERIAL, 'credit' => ChartOfAccount::KAS_BANK],
             ['nama_post' => 'Biaya Tenaga Kerja', 'jenis' => 'pengeluaran', 'debit' => '6-1000', 'credit' => ChartOfAccount::KAS_BANK],
-            ['nama_post' => 'Setoran Modal Owner', 'jenis' => 'pemasukan', 'debit' => ChartOfAccount::KAS_BANK, 'credit' => '3-1000'],
+            ['nama_post' => 'Setoran Modal Awal', 'jenis' => 'pemasukan', 'debit' => ChartOfAccount::KAS_BANK, 'credit' => '3-1000'],
             ['nama_post' => 'Investasi Investor - Penyertaan Modal', 'jenis' => 'pemasukan', 'debit' => ChartOfAccount::KAS_BANK, 'credit' => '3-1100'],
             ['nama_post' => 'Pinjaman Investor', 'jenis' => 'pemasukan', 'debit' => ChartOfAccount::KAS_BANK, 'credit' => ChartOfAccount::HUTANG_INVESTOR],
             ['nama_post' => 'Pengembalian Pinjaman Investor', 'jenis' => 'pengeluaran', 'debit' => ChartOfAccount::HUTANG_INVESTOR, 'credit' => ChartOfAccount::KAS_BANK],

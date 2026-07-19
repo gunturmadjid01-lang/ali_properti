@@ -5,18 +5,18 @@ import FieldRenderer from '../../Management/Components/FieldRenderer';
 const groups = [
     {
         key: 'profile',
-        title: 'Profile Customer',
-        description: 'Data identitas utama dan kontak customer.',
+        title: 'Profile Pelanggan',
+        description: 'Data identitas utama dan kontak pelanggan.',
     },
     {
         key: 'pekerjaan',
-        title: 'Pekerjaan Customer',
-        description: 'Data pekerjaan, penghasilan, dan perusahaan customer.',
+        title: 'Pekerjaan Pelanggan',
+        description: 'Data pekerjaan, penghasilan, dan perusahaan pelanggan.',
     },
     {
         key: 'pasangan',
-        title: 'Pasangan Customer',
-        description: 'Data pasangan jika customer sudah menikah.',
+        title: 'Pasangan Pelanggan',
+        description: 'Data pasangan jika pelanggan sudah menikah.',
     },
 ];
 
@@ -26,7 +26,7 @@ export default function CostumerForm({ open, title, fields, options, form, selec
             open={open}
             onClose={onClose}
             title={selected ? `Edit ${title}` : `Tambah ${title}`}
-            description="Input data customer sesuai migration terbaru."
+            description="Input data pelanggan sesuai migration terbaru."
             onSubmit={onSubmit}
             contentClassName="gap-5"
             size="xl"

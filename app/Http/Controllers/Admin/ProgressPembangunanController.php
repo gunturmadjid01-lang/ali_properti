@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\UsesApprovalSettings;
+use App\Http\Controllers\Controller;
 use App\Models\DetailRumah;
 use App\Models\DetailRumahHppItem;
 use App\Models\HppRealisasi;
@@ -13,13 +13,13 @@ use App\Models\MaterialRequestDetail;
 use App\Models\MaterialUsage;
 use App\Models\Perumahan;
 use App\Models\ProgressPembangunan;
+use App\Models\SiteMaterialStock;
 use App\Models\SiteReport;
 use App\Models\SiteSchedule;
-use App\Models\SiteMaterialStock;
 use App\Models\TahapanPembangunan;
 use App\Services\MaterialHppRealizationService;
 use App\Services\MaterialWorkflowService;
-use Illuminate\Database\Eloquent\Model;
+use App\Services\TahapanOptionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -131,12 +131,12 @@ class ProgressPembangunanController extends Controller
                 'detail_rumah_id' => $detailRumahId,
             ],
             'options' => [
-                'perumahans' => Perumahan::query()
+                'perumahans' => Perumahan::query()->finalized()
                     ->orderBy('nama_perusahaan')
                     ->get(['id', 'nama_perusahaan'])
                     ->map(fn (Perumahan $row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])
                     ->values(),
-                'detailRumahs' => DetailRumah::query()
+                'detailRumahs' => DetailRumah::query()->finalized()
                     ->with('perumahan:id,nama_perusahaan')
                     ->orderBy('kode_nlok')
                     ->orderBy('nomor_rumah')
@@ -148,7 +148,7 @@ class ProgressPembangunanController extends Controller
                     ])
                     ->values(),
                 'siteSchedules' => $this->siteScheduleOptions(),
-                'hppTahapanOptions' => app(\App\Services\TahapanOptionService::class)->forContext('unit'),
+                'hppTahapanOptions' => app(TahapanOptionService::class)->forContext('unit'),
                 'approvedMaterialRequests' => $this->approvedMaterialRequestOptions($perumahanId, $detailRumahId),
             ],
         ]);
@@ -158,6 +158,7 @@ class ProgressPembangunanController extends Controller
     {
         $perumahanId = $request->query('perumahan_id');
         $detailRumahId = $request->query('detail_rumah_id');
+
         return Inertia::render('Admin/ProgressPembangunan/Create', [
             'title' => 'Tambah Progress Pembangunan',
             'description' => 'Pengawas menginput progress lapangan dengan bukti foto dan bisa langsung memilih permintaan material approved yang terkait.',
@@ -167,12 +168,12 @@ class ProgressPembangunanController extends Controller
                 'canCreate' => $this->canCreateProgress(),
             ],
             'options' => [
-                'perumahans' => Perumahan::query()
+                'perumahans' => Perumahan::query()->finalized()
                     ->orderBy('nama_perusahaan')
                     ->get(['id', 'nama_perusahaan'])
                     ->map(fn (Perumahan $row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])
                     ->values(),
-                'detailRumahs' => DetailRumah::query()
+                'detailRumahs' => DetailRumah::query()->finalized()
                     ->with('perumahan:id,nama_perusahaan')
                     ->orderBy('kode_nlok')
                     ->orderBy('nomor_rumah')
@@ -184,7 +185,7 @@ class ProgressPembangunanController extends Controller
                     ])
                     ->values(),
                 'siteSchedules' => $this->siteScheduleOptions($perumahanId, $detailRumahId),
-                'hppTahapanOptions' => app(\App\Services\TahapanOptionService::class)->forContext('unit'),
+                'hppTahapanOptions' => app(TahapanOptionService::class)->forContext('unit'),
                 'approvedMaterialRequests' => $this->approvedMaterialRequestOptions($perumahanId, $detailRumahId),
                 'hppItems' => $this->hppItemOptions(),
             ],
@@ -320,7 +321,7 @@ class ProgressPembangunanController extends Controller
         ]);
 
         $rumah = filled($validated['detail_rumah_id'] ?? null)
-            ? DetailRumah::query()->findOrFail($validated['detail_rumah_id'])
+            ? DetailRumah::query()->finalized()->findOrFail($validated['detail_rumah_id'])
             : null;
         $schedule = SiteSchedule::query()->with(['perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah', 'spkKontraktor.items'])->findOrFail($validated['site_schedule_id']);
         $scheduleStage = $this->scheduleStageByKey($schedule, $validated['schedule_stage_key']);
@@ -334,7 +335,7 @@ class ProgressPembangunanController extends Controller
         }
         $this->ensureScheduleItemCapacity($schedule->id, $validated['schedule_stage_key'], $validated['schedule_item_key'], (float) $validated['persentase']);
 
-        $approvalRequired = $this->requiresApprovalFor('progress');
+        $approvalRequired = $this->requiresApprovalFor('progress', 'create');
 
         $progress = DB::transaction(function () use ($request, $validated, $rumah, $schedule, $scheduleStage, $scheduleItem, $approvalRequired) {
             $progress = ProgressPembangunan::query()->create([
@@ -416,7 +417,7 @@ class ProgressPembangunanController extends Controller
         ]);
 
         $rumah = filled($validated['detail_rumah_id'] ?? null)
-            ? DetailRumah::query()->findOrFail($validated['detail_rumah_id'])
+            ? DetailRumah::query()->finalized()->findOrFail($validated['detail_rumah_id'])
             : null;
         $schedule = SiteSchedule::query()->with(['perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah', 'spkKontraktor.items'])->findOrFail($validated['site_schedule_id']);
         $scheduleStage = $this->scheduleStageByKey($schedule, $validated['schedule_stage_key']);
@@ -444,7 +445,7 @@ class ProgressPembangunanController extends Controller
             $fotoPath = $request->file('foto')->store('progress-pembangunan', 'public');
         }
 
-        $approvalRequired = $this->requiresApprovalFor('progress');
+        $approvalRequired = $this->requiresApprovalFor('progress', 'update');
 
         DB::transaction(function () use (
             $progress,
@@ -1020,7 +1021,7 @@ class ProgressPembangunanController extends Controller
 
     private function stageScopeKey(mixed $perumahanId = null, mixed $detailRumahId = null): string
     {
-        return ($detailRumahId ? 'unit:'.$detailRumahId : 'perumahan:'.$perumahanId);
+        return $detailRumahId ? 'unit:'.$detailRumahId : 'perumahan:'.$perumahanId;
     }
 
     private function stageNameKey(string $name): string
@@ -1174,13 +1175,13 @@ class ProgressPembangunanController extends Controller
         })->values()->all();
 
         $usage = $workflow->recordUsage([
-                'tanggal' => $progress->tanggal?->toDateString() ?? now()->toDateString(),
-                'perumahan_id' => $perumahanId ?? $progress->detailRumah?->perumahan_id ?? $progress->siteSchedule?->perumahan_id,
-                'detail_rumah_id' => $progress->detail_rumah_id,
-                'progress_pembangunan_id' => $progress->id,
-                'keterangan' => 'Pemakaian dari progress '.$progress->nama_progress,
-                'items' => $payloadItems,
-            ]);
+            'tanggal' => $progress->tanggal?->toDateString() ?? now()->toDateString(),
+            'perumahan_id' => $perumahanId ?? $progress->detailRumah?->perumahan_id ?? $progress->siteSchedule?->perumahan_id,
+            'detail_rumah_id' => $progress->detail_rumah_id,
+            'progress_pembangunan_id' => $progress->id,
+            'keterangan' => 'Pemakaian dari progress '.$progress->nama_progress,
+            'items' => $payloadItems,
+        ]);
 
         $usageService->syncFromUsage($usage);
 

@@ -2,14 +2,14 @@
 
 namespace App\Http\Controllers\Admin\Marketing;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Marketing\StoreCostumerRequest;
 use App\Http\Requests\Admin\Marketing\UpdateCostumerRequest;
 use App\Models\Costumer;
-use App\Models\MarketingLeadSource;
 use App\Models\MarketingCampaign;
+use App\Models\MarketingLeadSource;
 use App\Services\ApprovalWorkflowService;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Illuminate\Database\Eloquent\Builder;
@@ -124,12 +124,55 @@ class CostumerController extends Controller
         ]);
     }
 
+    public function create(Request $request): Response
+    {
+        return Inertia::render('Admin/Marketing/Costumer/FormPage', [
+            'title' => 'Tambah Calon Konsumen',
+            'description' => 'Input identitas, pekerjaan, dan data pasangan customer.',
+            'baseUrl' => route('admin.marketing.calon-konsumen.index', absolute: false),
+            'actionUrl' => route('admin.marketing.calon-konsumen.store', absolute: false),
+            'method' => 'post', 'fields' => $this->fields(), 'options' => $this->formOptions(), 'row' => null,
+        ]);
+    }
+
+    public function edit(Request $request, string $id): Response
+    {
+        $row = Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+            ->findOrFail($id);
+        $this->abortIfLocked($row);
+        $payload = $row->only(collect($this->fields())->pluck('name')->all());
+        foreach (['tanggal_lahir', 'tanggal_lahir_pasangan'] as $field) {
+            $payload[$field] = optional($row->{$field})->format('Y-m-d');
+        }
+
+        return Inertia::render('Admin/Marketing/Costumer/FormPage', [
+            'title' => 'Edit Calon Konsumen '.$row->kode_costumer,
+            'description' => 'Perbarui data customer pada halaman khusus.',
+            'baseUrl' => route('admin.marketing.calon-konsumen.index', absolute: false),
+            'actionUrl' => route('admin.marketing.calon-konsumen.update', $row->id, false),
+            'method' => 'put', 'fields' => $this->fields(), 'options' => $this->formOptions(), 'row' => $payload,
+        ]);
+    }
+
+    public function show(Request $request, string $id): Response
+    {
+        $row = Costumer::query()->with(['leadSource:id,nama_sumber', 'campaign:id,nama_campaign', 'perumahan:id,nama_perusahaan'])->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $q) => $q->where('created_by', $request->user()?->id))->when($this->shouldScopeToActivePerumahan($request), fn (Builder $q) => $this->scopeToActivePerumahan($q, $request))->findOrFail($id);
+        $data = $row->only(collect($this->fields())->pluck('name')->all());
+        $data = ['id' => $row->id, 'kode_costumer' => $row->kode_costumer, 'perumahan' => $row->perumahan?->nama_perusahaan ?? '-', 'sumber_lead' => $row->leadSource?->nama_sumber ?? '-', 'campaign' => $row->campaign?->nama_campaign ?? '-', 'record_status' => $row->record_status ?? 'draft', ...$data];
+        foreach (['tanggal_lahir', 'tanggal_lahir_pasangan'] as $field) {
+            $data[$field] = optional($row->{$field})->format('d/m/Y');
+        }
+
+        return Inertia::render('Admin/Marketing/Costumer/Show', ['title' => 'Detail Calon Konsumen '.$row->kode_costumer, 'baseUrl' => route('admin.marketing.calon-konsumen.index', absolute: false), 'row' => $data, 'fields' => $this->fields(), 'canEdit' => ($row->record_status ?? 'draft') !== 'locked']);
+    }
+
     public function store(
         StoreCostumerRequest $request,
         MarketingLeadStatusService $leadStatus,
         ApprovalWorkflowService $approvalWorkflow,
-    ): RedirectResponse
-    {
+    ): RedirectResponse {
         $this->ensureCampaignAllowed($request, $request->validated('marketing_campaign_id'));
 
         $payload = [
@@ -159,8 +202,7 @@ class CostumerController extends Controller
         UpdateCostumerRequest $request,
         string $id,
         ApprovalWorkflowService $approvalWorkflow,
-    ): RedirectResponse
-    {
+    ): RedirectResponse {
         $row = Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
@@ -186,8 +228,7 @@ class CostumerController extends Controller
         Request $request,
         string $id,
         ApprovalWorkflowService $approvalWorkflow,
-    ): RedirectResponse
-    {
+    ): RedirectResponse {
         $row = Costumer::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
@@ -219,7 +260,9 @@ class CostumerController extends Controller
             ['name' => 'keterangan', 'label' => 'Keterangan Customer', 'type' => 'textarea', 'group' => 'profile', 'full' => true],
 
             ['name' => 'pekerjaan', 'label' => 'Pekerjaan', 'type' => 'text', 'group' => 'pekerjaan'],
+            ['name' => 'employment_category', 'label' => 'Kategori Pekerjaan', 'type' => 'select', 'optionsKey' => 'employmentOptions', 'group' => 'pekerjaan', 'required' => true],
             ['name' => 'penghasilan', 'label' => 'Penghasilan', 'type' => 'currency', 'group' => 'pekerjaan'],
+            ['name' => 'pengeluaran_bulanan', 'label' => 'Pengeluaran Bulanan', 'type' => 'currency', 'group' => 'pekerjaan'],
             ['name' => 'nama_perusahaan', 'label' => 'Nama Perusahaan', 'type' => 'text', 'group' => 'pekerjaan'],
             ['name' => 'telepon_perusahaan', 'label' => 'Telepon Perusahaan', 'type' => 'text', 'group' => 'pekerjaan'],
             ['name' => 'alamat_perusahaan', 'label' => 'Alamat Perusahaan', 'type' => 'textarea', 'group' => 'pekerjaan', 'full' => true],
@@ -231,7 +274,21 @@ class CostumerController extends Controller
             ['name' => 'no_identitas_pasangan', 'label' => 'No Identitas Pasangan', 'type' => 'text', 'group' => 'pasangan'],
             ['name' => 'tanggal_lahir_pasangan', 'label' => 'Tanggal Lahir Pasangan', 'type' => 'date', 'group' => 'pasangan'],
             ['name' => 'tempat_lahir_pasangan', 'label' => 'Tempat Lahir Pasangan', 'type' => 'text', 'group' => 'pasangan'],
+            ['name' => 'pekerjaan_pasangan', 'label' => 'Pekerjaan Pasangan', 'type' => 'text', 'group' => 'pasangan'],
+            ['name' => 'penghasilan_pasangan', 'label' => 'Penghasilan Pasangan', 'type' => 'currency', 'group' => 'pasangan'],
+            ['name' => 'pengeluaran_bulanan_pasangan', 'label' => 'Pengeluaran Bulanan Pasangan', 'type' => 'currency', 'group' => 'pasangan'],
+            ['name' => 'daftar_cicilan', 'label' => 'Daftar Cicilan Berjalan', 'type' => 'installments', 'group' => 'cicilan', 'full' => true],
         ];
+    }
+
+    private function formOptions(): array
+    {
+        return ['genderOptions' => $this->genderOptions(), 'identityOptions' => $this->identityOptions(), 'maritalOptions' => $this->maritalOptions(), 'employmentOptions' => $this->employmentOptions(), 'leadSourceOptions' => $this->leadSourceOptions(), 'campaignOptions' => $this->campaignOptions(), 'leadStatusOptions' => $this->leadStatusOptions()];
+    }
+
+    protected function employmentOptions(): array
+    {
+        return collect(['pns' => 'PNS / ASN', 'tni_polri' => 'TNI / Polri', 'bumn' => 'Pegawai BUMN/BUMD', 'pegawai_swasta' => 'Pegawai Swasta', 'wiraswasta' => 'Wiraswasta', 'profesional' => 'Profesional', 'pensiunan' => 'Pensiunan', 'lainnya' => 'Lainnya'])->map(fn ($label, $value) => compact('value', 'label'))->values()->all();
     }
 
     protected function genderOptions(): array

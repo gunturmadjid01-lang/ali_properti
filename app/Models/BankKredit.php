@@ -24,6 +24,13 @@ class BankKredit extends Model
         'biaya_provisi_persen',
         'biaya_admin',
         'status',
+        'jenis_bank',
+        'alamat_pusat',
+        'website',
+        'logo',
+        'nomor_telepon',
+        'email',
+        'catatan',
         'record_status',
         'locked_at',
         'locked_by',
@@ -42,5 +49,20 @@ class BankKredit extends Model
     public function submissions(): HasMany
     {
         return $this->hasMany(KprSubmission::class);
+    }
+
+    public function branches(): HasMany
+    {
+        return $this->hasMany(BankBranch::class);
+    }
+
+    public function creditProducts(): HasMany
+    {
+        return $this->hasMany(BankCreditProduct::class);
+    }
+
+    public function partnerships(): HasMany
+    {
+        return $this->hasMany(BankHousingPartnership::class);
     }
 }

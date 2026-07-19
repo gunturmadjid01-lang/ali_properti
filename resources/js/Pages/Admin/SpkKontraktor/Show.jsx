@@ -76,7 +76,7 @@ export default function Show({ title, description, spk, indexUrl }) {
                                 ['Sumber Tenaga Kerja', spk.sumber_tenaga_kerja],
                                 ['Kontraktor / Pelaksana', spk.kontraktor],
                                 ['Metode Pembayaran', spk.metode_pembayaran === 'cash' ? 'Cash / Sekaligus' : 'Cicil / Termin'],
-                                ['Role Approval', spk.approval_role === 'admin' ? 'Admin' : 'Manajer'],
+                                ['Peran Persetujuan', spk.approval_role === 'admin' ? 'Admin' : 'Manajer'],
                                 ['Tanggal SPK', date(spk.tanggal_spk)],
                                 ['Mulai Pekerjaan', date(spk.tanggal_mulai)],
                                 ['Target Selesai', date(spk.tanggal_selesai)],

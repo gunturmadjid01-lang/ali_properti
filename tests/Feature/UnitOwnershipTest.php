@@ -3,11 +3,7 @@
 use App\Models\CabangPerusahaan;
 use App\Models\Costumer;
 use App\Models\DetailRumah;
-use App\Models\KprMilestone;
-use App\Models\KprSubmission;
 use App\Models\Perumahan;
-use App\Models\Spr;
-use App\Models\UnitOwnership;
 use App\Models\User;
 use App\Services\UnitOwnershipService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -70,33 +66,6 @@ test('legacy ownership marks unit sold and keeps ownership history', function ()
 
     expect($first->fresh()->is_active)->toBeTrue()
         ->and($unit->fresh()->currentOwnership?->owner_name)->toBe('Pemilik Pertama');
-});
-
-test('kpr akad synchronization creates locked automatic ownership', function () {
-    ['user' => $user, 'unit' => $unit, 'customer' => $customer] = ownershipFixture();
-    $spr = Spr::query()->create([
-        'kode_spr' => 'SPR-OWN-1', 'costumer_id' => $customer->id, 'detail_rumah_id' => $unit->id,
-        'created_by' => $user->id, 'tanggal_spr' => '2026-01-01', 'metode_pembayaran' => 'kpr',
-        'harga_jual' => 250000000, 'status' => Spr::STATUS_DISETUJUI,
-    ]);
-    $submission = KprSubmission::query()->create([
-        'kode_kpr' => 'KPR-OWN-1', 'spr_id' => $spr->id, 'handled_by' => $user->id,
-        'tanggal_pengajuan' => '2026-01-02', 'nilai_pengajuan' => 200000000, 'status' => 'akad',
-    ]);
-    $milestone = KprMilestone::query()->create([
-        'kpr_submission_id' => $submission->id, 'jenis' => KprMilestone::AKAD,
-        'tanggal_proses' => '2026-02-01 10:00:00', 'lokasi' => 'Bank', 'nomor_dokumen' => 'AKAD-001',
-    ]);
-
-    $ownership = app(UnitOwnershipService::class)->syncKprAkad($submission, $milestone);
-
-    expect($ownership)->toBeInstanceOf(UnitOwnership::class)
-        ->and($ownership->source_type)->toBe('kpr_akad')
-        ->and($ownership->spr_id)->toBe($spr->id)
-        ->and($ownership->owner_name)->toBe($customer->nama)
-        ->and($ownership->document_number)->toBe('AKAD-001')
-        ->and($ownership->record_status)->toBe('locked')
-        ->and($unit->fresh()->status_penjualan)->toBe('terjual');
 });
 
 test('super admin can input legacy owner from ownership page', function () {

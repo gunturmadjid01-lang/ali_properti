@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Controller;
-use App\Models\Costumer;
 use App\Models\CabangPerusahaan;
+use App\Models\Costumer;
 use App\Models\DetailRumah;
 use App\Models\Perumahan;
 use App\Models\UnitOwnership;
@@ -161,12 +161,14 @@ class UnitOwnershipController extends Controller
     public function lock(string $id): RedirectResponse
     {
         $this->authorizeAction('update');
+
         return $this->traitLock($id);
     }
 
     public function unlock(string $id): RedirectResponse
     {
         $this->authorizeAction('unlock');
+
         return $this->traitUnlock($id);
     }
 
@@ -196,7 +198,7 @@ class UnitOwnershipController extends Controller
             return Costumer::query()->findOrFail($payload['costumer_id']);
         }
 
-        $unit = DetailRumah::query()->findOrFail($payload['detail_rumah_id']);
+        $unit = DetailRumah::query()->finalized()->findOrFail($payload['detail_rumah_id']);
         $existing = Costumer::query()->where('no_identitas', $payload['identity_number'])->first();
         if ($existing) {
             return $existing;
@@ -224,15 +226,15 @@ class UnitOwnershipController extends Controller
     protected function options(): array
     {
         return [
-            'branches' => CabangPerusahaan::query()->orderBy('nama_cabang')->get(['id', 'nama_cabang'])
+            'branches' => CabangPerusahaan::query()->finalized()->orderBy('nama_cabang')->get(['id', 'nama_cabang'])
                 ->map(fn (CabangPerusahaan $branch) => ['value' => (string) $branch->id, 'label' => $branch->nama_cabang])->values(),
-            'projects' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'cabang_id', 'nama_perusahaan'])
+            'projects' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'cabang_id', 'nama_perusahaan'])
                 ->map(fn (Perumahan $project) => [
                     'value' => (string) $project->id,
                     'label' => $project->nama_perusahaan,
                     'cabang_id' => (string) $project->cabang_id,
                 ])->values(),
-            'units' => DetailRumah::query()
+            'units' => DetailRumah::query()->finalized()
                 ->with(['perumahan:id,cabang_id,nama_perusahaan', 'currentOwnership'])
                 ->orderBy('perumahan_id')->orderBy('kode_nlok')->orderBy('nomor_rumah')
                 ->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah', 'tipe_rumah', 'status_penjualan'])
@@ -317,6 +319,7 @@ class UnitOwnershipController extends Controller
     protected function can(string $action): bool
     {
         $user = auth()->user();
+
         return (bool) ($user?->hasRole('super_admin') || $user?->can("unit-ownership.{$action}") || $user?->can('unit-ownership.manage'));
     }
 

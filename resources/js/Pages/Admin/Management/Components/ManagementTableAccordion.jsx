@@ -1,7 +1,7 @@
 import { Link } from '@inertiajs/react';
 import { ChevronDown, Edit3, Eye, Lock, Search, Trash2, Unlock } from 'lucide-react';
 import { useState } from 'react';
-import { Button, Input } from '../../../../Components/UI';
+import { Button, Input, TableActions } from '../../../../Components/UI';
 import AuditCell from '../../../../Components/UI/AuditCell';
 import DetailModal from '../../../../Components/UI/DetailModal';
 
@@ -28,7 +28,7 @@ function Pagination({ links = [] }) {
     );
 }
 
-export default function ManagementTableAccordion({ title, columns, rows, filters, permissions = {}, onEdit, onDelete, onSearch, onLock, onUnlock, extraActions, defaultOpen = true, showDetailAction = true }) {
+export default function ManagementTableAccordion({ title, columns, rows, filters, permissions = {}, onEdit, onDetail, onDelete, onSearch, onLock, onUnlock, extraActions, defaultOpen = true, showDetailAction = true }) {
     const [open, setOpen] = useState(defaultOpen);
     const [search, setSearch] = useState(filters.search ?? '');
     const [detail, setDetail] = useState(null);
@@ -68,7 +68,7 @@ export default function ManagementTableAccordion({ title, columns, rows, filters
                     <form className="flex flex-col gap-3 px-5 py-3 md:flex-row md:items-end md:justify-between" onSubmit={submitSearch}>
                         <Input
                             className="w-full md:max-w-md"
-                            label="Search"
+                            label="Pencarian"
                             value={search}
                             placeholder="Cari data..."
                             onChange={(event) => setSearch(event.target.value)}
@@ -101,23 +101,23 @@ export default function ManagementTableAccordion({ title, columns, rows, filters
                                             </td>
                                         ))}
                                         <td className="px-4 py-3">
-                                            <div className="flex justify-end gap-2">
+                                            <TableActions>
                                                 {showDetailAction && (
-                                                    <Button variant="outline" size="sm" type="button" title="Detail Data" onClick={() => setDetail(row)}>
+                                                    <Button variant="outline" size="sm" type="button" title="Detail Data" onClick={() => onDetail ? onDetail(row) : setDetail(row)}>
                                                         <Eye size={15} />
                                                     </Button>
                                                 )}
                                                 {extraActions?.(row)}
                                                 {row.record_status === 'locked' ? (
                                                     permissions.canUnlock && (
-                                                        <Button variant="outline" size="sm" type="button" title="Buka Lock" onClick={() => onUnlock?.(row)}>
+                                                        <Button variant="outline" size="sm" type="button" title="Buka Kunci" onClick={() => onUnlock?.(row)}>
                                                             <Unlock size={15} />
                                                         </Button>
                                                     )
                                                 ) : (
                                                     <>
                                                         {permissions.canUnlock && (
-                                                            <Button variant="outline" size="sm" type="button" title="Lock Data" onClick={() => onLock?.(row)}>
+                                                            <Button variant="outline" size="sm" type="button" title="Kunci Data" onClick={() => onLock?.(row)}>
                                                                 <Lock size={15} />
                                                             </Button>
                                                         )}
@@ -133,7 +133,7 @@ export default function ManagementTableAccordion({ title, columns, rows, filters
                                                         )}
                                                     </>
                                                 )}
-                                            </div>
+                                            </TableActions>
                                         </td>
                                     </tr>
                                 ))}
@@ -152,13 +152,13 @@ export default function ManagementTableAccordion({ title, columns, rows, filters
                 </>
             )}
         </section>
-        <DetailModal
+        {!onDetail && <DetailModal
             open={Boolean(detail)}
             onClose={() => setDetail(null)}
             row={detail}
             title={detail ? `Detail ${title}` : 'Detail Data'}
             columns={columns}
-        />
+        />}
         </>
     );
 }

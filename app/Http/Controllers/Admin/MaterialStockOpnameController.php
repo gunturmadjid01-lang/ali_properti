@@ -8,6 +8,7 @@ use App\Models\Gudang;
 use App\Models\MaterialStockOpname;
 use App\Models\StokMaterial;
 use App\Models\TransaksiLogistik;
+use App\Services\MaterialUnitConversionService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -34,7 +35,7 @@ class MaterialStockOpnameController extends Controller
         $this->assertGudangAccess($validated['gudang_id']);
 
         $materialIds = collect($validated['items'])->pluck('barang_material_id')->map(fn ($id) => (int) $id)->unique()->values();
-        $materials = BarangMaterial::query()
+        $materials = BarangMaterial::query()->finalized()
             ->where('status', 'aktif')
             ->whereIn('id', $materialIds)
             ->get()
@@ -69,8 +70,15 @@ class MaterialStockOpnameController extends Controller
                 $materialId = (int) $item['barang_material_id'];
                 $material = $materials->get($materialId);
                 $stokSistem = (float) ($stocks->get($materialId)?->qty ?? 0);
-                $fisik = (float) ($item['fisik'] ?? 0);
-                $selisih = round($fisik - $stokSistem, 3);
+                $counts = collect($item['unit_counts'] ?? []);
+                $fisik = $counts->isNotEmpty()
+                    ? $counts->sum(function (array $count) use ($material): float {
+                        $normalized = app(MaterialUnitConversionService::class)->normalize($material, $count['unit_id'] ?? null, (float) ($count['qty'] ?? 0));
+
+                        return $normalized['quantity_base'];
+                    })
+                    : (float) ($item['fisik'] ?? 0);
+                $selisih = round($fisik - $stokSistem, 6);
                 $masuk = $selisih > 0 ? $selisih : 0;
                 $keluar = $selisih < 0 ? abs($selisih) : 0;
 
@@ -78,6 +86,7 @@ class MaterialStockOpnameController extends Controller
                     'barang_material_id' => $materialId,
                     'stok_sistem' => $stokSistem,
                     'fisik' => $fisik,
+                    'physical_unit_counts' => $counts->values()->all(),
                     'masuk' => $masuk,
                     'keluar' => $keluar,
                     'selisih' => $selisih,
@@ -233,6 +242,9 @@ class MaterialStockOpnameController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.barang_material_id' => ['required', 'exists:barang_materials,id'],
             'items.*.fisik' => ['required', 'numeric', 'min:0'],
+            'items.*.unit_counts' => ['nullable', 'array'],
+            'items.*.unit_counts.*.unit_id' => ['required', 'exists:material_units,id'],
+            'items.*.unit_counts.*.qty' => ['required', 'numeric', 'min:0'],
             'items.*.catatan' => ['nullable', 'string'],
         ]);
     }
@@ -245,9 +257,10 @@ class MaterialStockOpnameController extends Controller
             ->keyBy('barang_material_id');
 
         return BarangMaterial::query()
+            ->with(['baseUnit:id,name,symbol', 'unitConversions.childUnit:id,name,symbol'])
             ->where('status', 'aktif')
             ->orderBy('kode_barang')
-            ->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'jenis_material', 'merk_material', 'kategori_material'])
+            ->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'jenis_material', 'merk_material', 'kategori_material', 'base_unit_id', 'harga_hpp'])
             ->map(function (BarangMaterial $material) use ($stocks) {
                 $qty = (float) ($stocks->get($material->id)?->qty ?? 0);
                 $jenis = trim((string) ($material->jenis_material ?: $material->kategori_material));
@@ -264,6 +277,7 @@ class MaterialStockOpnameController extends Controller
                     'masuk' => 0,
                     'keluar' => 0,
                     'selisih' => 0,
+                    'unit_options' => app(MaterialUnitConversionService::class)->options($material),
                 ];
             })
             ->values();
@@ -362,19 +376,25 @@ class MaterialStockOpnameController extends Controller
 
     protected function canCreate(): bool
     {
-        return (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'admin_gudang', 'owner', 'manager', 'manajer_pimpro', 'super_admin']);
+        $user = auth()->user();
+
+        return (bool) ($user?->can('material-stock-opname.create')
+            || $user?->can('material-stock-opname.manage')
+            || $user?->hasRole('super_admin'));
     }
 
     protected function canViewAllRecords(): bool
     {
-        return (bool) auth()->user()?->hasAnyRole(['owner', 'manager', 'manajer_pimpro', 'super_admin']);
+        return (bool) (auth()->user()?->can('material-stock-opname.view-all')
+            || auth()->user()?->can('material-stock-opname.manage')
+            || auth()->user()?->hasRole('super_admin'));
     }
 
     protected function accessibleGudangs()
     {
         $user = auth()->user();
 
-        $query = Gudang::query()->where('status', 'aktif');
+        $query = Gudang::query()->finalized()->where('status', 'aktif');
 
         if ($user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])) {
             $assignedIds = $this->assignedGudangIds($user);

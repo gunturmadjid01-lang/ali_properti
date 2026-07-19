@@ -1,6 +1,6 @@
 const variants = {
-    primary: 'bg-ink text-white shadow-soft hover:bg-graphite dark:bg-white dark:text-graphite dark:hover:bg-silver',
-    outline: 'border border-silver-deep/80 bg-white/70 text-ink-soft hover:bg-silver dark:border-white/10 dark:bg-graphite/70 dark:text-white/72 dark:hover:bg-white/10',
+    primary: 'border border-graphite bg-ink text-white hover:bg-graphite dark:border-amber-300 dark:bg-amber-400 dark:text-graphite dark:hover:bg-amber-300',
+    outline: 'border border-ink/70 bg-white/70 text-ink hover:bg-silver dark:border-white/45 dark:bg-graphite/70 dark:text-white dark:hover:bg-white/10',
     ghost: 'text-ink-soft hover:bg-silver hover:text-ink dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white',
     dark: 'bg-graphite text-white hover:bg-ink dark:bg-white dark:text-graphite',
 };

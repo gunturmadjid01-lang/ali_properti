@@ -2,10 +2,15 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
 use App\Models\Gudang;
+use App\Models\MaterialBrand;
+use App\Models\MaterialType;
+use App\Models\MaterialUnit;
+use App\Services\ApprovalWorkflowService;
+use App\Services\MaterialUnitConversionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,6 +24,7 @@ class MasterMaterialController extends Controller
 
     public function index(Request $request): Response
     {
+        abort_unless($request->user()?->can('master-material.view') || $request->user()?->can('master-material.manage'), 403);
         $search = trim((string) $request->query('search', ''));
         $gudangId = trim((string) $request->query('gudang_id', ''));
         $gudangs = $this->accessibleGudangs();
@@ -33,6 +39,7 @@ class MasterMaterialController extends Controller
             : collect($allowedGudangIds)->map(fn ($id) => (int) $id)->filter()->values();
 
         $rows = BarangMaterial::query()
+            ->with(['materialType:id,name', 'materialBrand:id,name', 'baseUnit:id,name,symbol'])
             ->withSum([
                 'stokMaterials as stok_tersedia' => fn (Builder $query) => $stockGudangIds->isNotEmpty()
                     ? $query->whereIn('gudang_id', $stockGudangIds)
@@ -50,9 +57,9 @@ class MasterMaterialController extends Controller
                 'id' => $row->id,
                 'kode_barang' => $row->kode_barang,
                 'nama_barang' => $row->nama_barang,
-                'jenis_material' => $row->jenis_material ?: $row->kategori_material,
-                'merk_material' => $row->merk_material,
-                'satuan' => $row->satuan,
+                'jenis_material' => $row->materialType?->name ?? $row->jenis_material ?: $row->kategori_material,
+                'merk_material' => $row->materialBrand?->name ?? $row->merk_material,
+                'satuan' => $row->baseUnit?->symbol ?? $row->satuan,
                 'harga_hpp' => $row->harga_hpp,
                 'stok_tersedia' => (float) ($row->stok_tersedia ?? 0),
                 'stok_minimum' => $row->stok_minimum,
@@ -65,75 +72,138 @@ class MasterMaterialController extends Controller
         return Inertia::render('Admin/Logistik/MasterMaterial', [
             'title' => 'Kelola Item Material',
             'baseUrl' => route('admin.master-material.index', absolute: false),
+            'createUrl' => route('admin.master-material.create', absolute: false),
             'rows' => $rows,
             'filters' => ['search' => $search, 'gudang_id' => $gudangId],
             'options' => [
                 'gudangs' => $gudangs,
-                'jenisMaterial' => $this->jenisMaterialOptions(),
                 'status' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']],
+            ],
+            'permissions' => [
+                'canCreate' => (bool) ($request->user()?->can('master-material.create') || $request->user()?->can('master-material.manage')),
+                'canUpdate' => (bool) ($request->user()?->can('master-material.update') || $request->user()?->can('master-material.manage')),
+                'canDelete' => (bool) ($request->user()?->can('master-material.delete') || $request->user()?->can('master-material.manage')),
             ],
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function create(Request $request): Response
     {
-        $payload = $this->payload($request);
+        abort_unless($request->user()?->can('master-material.create') || $request->user()?->can('master-material.manage'), 403);
 
-        DB::transaction(function () use ($payload) {
-            $material = BarangMaterial::query()->create([
-                ...$payload,
-                'kode_barang' => $this->nextCode(),
-            ]);
-
-            $this->recordPrice($material, (float) $payload['harga_hpp'], 'Harga awal material.');
-        });
-
-        return back()->with('success', 'Material berhasil ditambahkan.');
+        return $this->renderForm();
     }
 
-    public function update(Request $request, string $id): RedirectResponse
+    public function edit(Request $request, string $id): Response
     {
+        abort_unless($request->user()?->can('master-material.update') || $request->user()?->can('master-material.manage'), 403);
+        $material = BarangMaterial::query()->with('unitConversions')->findOrFail($id);
+        $this->abortIfLocked($material);
+
+        return $this->renderForm($material);
+    }
+
+    public function store(Request $request, ApprovalWorkflowService $approvalWorkflow, MaterialUnitConversionService $conversionService): RedirectResponse
+    {
+        abort_unless($request->user()?->can('master-material.create') || $request->user()?->can('master-material.manage'), 403);
+        $payload = $this->payload($request);
+        $submitAction = $request->input('submit_action', 'save');
+
+        return $approvalWorkflow->create('master-material', $payload, function (array $payload) use ($conversionService) {
+            DB::transaction(function () use ($payload, $conversionService) {
+                $material = BarangMaterial::query()->create([
+                    ...$payload,
+                    'kode_barang' => $this->nextCode(),
+                ]);
+
+                $this->recordPrice($material, (float) $payload['harga_hpp'], 'Harga awal material.');
+                $conversionService->sync($material, $payload['conversions'] ?? []);
+            });
+        }, function (bool $queued) use ($submitAction) {
+            $message = $queued ? 'Material dikirim ke daftar approval.' : 'Material berhasil ditambahkan.';
+
+            return $submitAction === 'add_another'
+                ? to_route('admin.master-material.create')->with('success', $message.' Silakan tambah item berikutnya.')
+                : to_route('admin.master-material.index')->with('success', $message);
+        });
+    }
+
+    public function update(Request $request, string $id, ApprovalWorkflowService $approvalWorkflow, MaterialUnitConversionService $conversionService): RedirectResponse
+    {
+        abort_unless($request->user()?->can('master-material.update') || $request->user()?->can('master-material.manage'), 403);
         $material = BarangMaterial::query()->findOrFail($id);
         $this->abortIfLocked($material);
         $payload = $this->payload($request);
         $oldPrice = (float) $material->harga_hpp;
 
-        DB::transaction(function () use ($material, $payload, $oldPrice) {
-            $material->update($payload);
+        $approvalWorkflow->update('master-material', $material, $payload, function (BarangMaterial $material, array $payload) use ($oldPrice, $conversionService) {
+            DB::transaction(function () use ($material, $payload, $oldPrice, $conversionService) {
+                $material->update($payload);
 
-            if ((float) $payload['harga_hpp'] !== $oldPrice) {
-                $this->recordPrice($material, (float) $payload['harga_hpp'], 'Update harga dari master material.');
-            }
+                if ((float) $payload['harga_hpp'] !== $oldPrice) {
+                    $this->recordPrice($material, (float) $payload['harga_hpp'], 'Update harga dari master material.');
+                }
+                $conversionService->sync($material, $payload['conversions'] ?? []);
+            });
         });
 
-        return back()->with('success', 'Material berhasil diperbarui.');
+        return to_route('admin.master-material.index')->with('success', 'Material berhasil diperbarui.');
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
         $material = BarangMaterial::query()->findOrFail($id);
         $this->abortIfLocked($material);
-        $material->delete();
+        abort_unless(auth()->user()?->can('master-material.delete') || auth()->user()?->can('master-material.manage'), 403);
 
-        return back()->with('success', 'Material berhasil dihapus.');
+        return $approvalWorkflow->delete('master-material', $material, fn (BarangMaterial $material) => $material->delete());
     }
 
     protected function payload(Request $request): array
     {
         $payload = $request->validate([
             'nama_barang' => ['required', 'string', 'max:255'],
-            'jenis_material' => ['nullable', 'string', 'max:255'],
-            'merk_material' => ['nullable', 'string', 'max:255'],
-            'satuan' => ['required', 'string', 'max:255'],
+            'material_type_id' => ['required', 'exists:material_types,id'],
+            'material_brand_id' => ['nullable', 'exists:material_brands,id'],
+            'base_unit_id' => ['required', 'exists:material_units,id'],
             'harga_hpp' => ['required', 'numeric', 'min:0'],
             'stok_minimum' => ['nullable', 'numeric', 'min:0'],
             'catatan' => ['nullable', 'string'],
             'status' => ['required', 'in:aktif,nonaktif'],
+            'conversions' => ['nullable', 'array'],
+            'conversions.*.unit_id' => ['required', 'distinct', 'exists:material_units,id'],
+            'conversions.*.factor' => ['required', 'numeric', 'gt:0'],
         ]);
 
-        $payload['kategori_material'] = $payload['jenis_material'] ?? null;
+        $type = MaterialType::query()->findOrFail($payload['material_type_id']);
+        $brand = filled($payload['material_brand_id'] ?? null) ? MaterialBrand::query()->findOrFail($payload['material_brand_id']) : null;
+        $unit = MaterialUnit::query()->findOrFail($payload['base_unit_id']);
+        $payload['jenis_material'] = $type->name;
+        $payload['kategori_material'] = $type->name;
+        $payload['merk_material'] = $brand?->name;
+        $payload['satuan'] = $unit->symbol;
 
         return $payload;
+    }
+
+    protected function renderForm(?BarangMaterial $material = null): Response
+    {
+        return Inertia::render('Admin/Logistik/MasterMaterial/Form', [
+            'title' => $material ? 'Edit Material' : 'Tambah Material',
+            'indexUrl' => route('admin.master-material.index', absolute: false),
+            'actionUrl' => $material ? route('admin.master-material.update', $material->id, false) : route('admin.master-material.store', absolute: false),
+            'method' => $material ? 'put' : 'post',
+            'material' => $material ? [
+                ...$material->only(['id', 'nama_barang', 'material_type_id', 'material_brand_id', 'base_unit_id', 'harga_hpp', 'stok_minimum', 'catatan', 'status']),
+                'conversions' => $material->unitConversions->map(fn ($row) => ['unit_id' => (string) $row->child_unit_id, 'factor' => $row->factor])->values(),
+            ] : null,
+            'options' => [
+                'types' => MaterialType::query()->finalized()->where('status', 'aktif')->orderBy('name')->get()->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->name])->values(),
+                'brands' => MaterialBrand::query()->finalized()->where('status', 'aktif')->orderBy('name')->get()->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->name])->values(),
+                'units' => MaterialUnit::query()->finalized()->where('status', 'aktif')->orderBy('name')->get()->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->name} ({$row->symbol})", 'symbol' => $row->symbol])->values(),
+                'status' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']],
+            ],
+        ]);
     }
 
     protected function nextCode(): string
@@ -192,7 +262,7 @@ class MasterMaterialController extends Controller
     {
         $user = auth()->user();
 
-        $query = Gudang::query()->where('status', 'aktif');
+        $query = Gudang::query()->finalized()->where('status', 'aktif');
 
         if ($user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])) {
             $assignedIds = $this->assignedGudangIds($user);

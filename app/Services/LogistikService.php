@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\BarangMaterial;
 use App\Models\DetailRumah;
-use App\Models\Perumahan;
 use App\Models\StokMaterial;
 use App\Models\TransaksiLogistik;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +11,8 @@ use Illuminate\Validation\ValidationException;
 
 class LogistikService
 {
+    public function __construct(private readonly MaterialUnitConversionService $conversions) {}
+
     public function simpanTransaksi(array $payload): TransaksiLogistik
     {
         return DB::transaction(function () use ($payload) {
@@ -24,7 +25,7 @@ class LogistikService
             }
 
             $detailRumah = ! empty($payload['detail_rumah_id'])
-                ? DetailRumah::query()->findOrFail($payload['detail_rumah_id'])
+                ? DetailRumah::query()->finalized()->findOrFail($payload['detail_rumah_id'])
                 : null;
 
             $perumahanId = $detailRumah?->perumahan_id ?? $payload['perumahan_id'] ?? null;
@@ -53,10 +54,13 @@ class LogistikService
             ]);
 
             foreach ($items as $item) {
-                $barang = BarangMaterial::query()->findOrFail($item['barang_material_id']);
-                $qty = (float) $item['qty'];
-                $harga = (float) ($item['harga_satuan'] ?? $barang->harga_hpp);
-                $subtotal = $qty * $harga;
+                $barang = BarangMaterial::query()->finalized()->findOrFail($item['barang_material_id']);
+                $inputQty = (float) $item['qty'];
+                $inputPrice = (float) ($item['harga_satuan'] ?? $barang->harga_hpp);
+                $normalized = $this->conversions->normalize($barang, $item['material_unit_id'] ?? null, $inputQty, $inputPrice);
+                $qty = $normalized['quantity_base'];
+                $harga = $normalized['unit_price_base'];
+                $subtotal = $inputQty * $inputPrice;
                 $total += $subtotal;
 
                 $this->mutasiStok($barang->id, $payload['jenis'], $qty, $payload['gudang_id'] ?? null);
@@ -64,7 +68,11 @@ class LogistikService
                 $transaksi->details()->create([
                     'barang_material_id' => $barang->id,
                     'qty' => $qty,
-                    'satuan' => $item['satuan'] ?? $barang->satuan,
+                    'input_qty' => $inputQty,
+                    'input_unit_id' => $normalized['unit_id'],
+                    'input_satuan' => $normalized['unit_symbol'],
+                    'conversion_to_base' => $normalized['factor_to_base'],
+                    'satuan' => $barang->satuan,
                     'harga_satuan' => $harga,
                     'subtotal' => $subtotal,
                     'created_by' => auth()->id(),
@@ -95,6 +103,7 @@ class LogistikService
 
         if ($jenis === TransaksiLogistik::JENIS_MASUK) {
             $stok->increment('qty', $qty);
+
             return;
         }
 

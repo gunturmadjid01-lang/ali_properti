@@ -3,11 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Concerns\BuildsFieldOptions;
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\UsesApprovalSettings;
+use App\Http\Controllers\Controller;
 use App\Models\DetailRumah;
 use App\Models\FieldDefect;
 use App\Models\InternalHandover;
+use App\Models\OfficeAsset;
 use App\Models\ProgressPembangunan;
 use App\Models\QualityInspection;
 use App\Models\SafetyReport;
@@ -16,6 +17,7 @@ use App\Models\SiteSchedule;
 use App\Models\SpkKontraktor;
 use App\Models\TahapanPembangunan;
 use App\Models\WorkChangeRequest;
+use App\Services\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -152,7 +154,7 @@ class FieldSupervisionController extends Controller
         DB::transaction(function () use ($request, $section, $config, $row, $validated): void {
             $payload = $this->normalizePayload($request, $section, $validated, $row);
             if ($config['approval']) {
-                $approvalRequired = $this->requiresApprovalFor('field-supervision');
+                $approvalRequired = $this->requiresApprovalFor('field-supervision', 'update');
                 $payload['approval_status'] = $approvalRequired ? 'menunggu_approval_manager' : 'approved';
                 $payload['approved_by'] = $approvalRequired ? null : auth()->id();
                 $payload['approved_at'] = $approvalRequired ? null : now();
@@ -223,14 +225,26 @@ class FieldSupervisionController extends Controller
         $this->authorizeFieldSupervision('update');
         $row = $this->findRow($section, $id);
         $row->update(['record_status' => 'locked', 'locked_at' => now(), 'locked_by' => auth()->id()]);
+        $key = match ($section) {
+            'defect' => 'field-defect',
+            'perubahan-pekerjaan' => 'field-work-change',
+            'tenaga-kerja-alat' => 'field-manpower',
+            'k3' => 'field-safety',
+            'serah-terima-internal' => 'field-handover',
+            default => abort(404),
+        };
+        $approval = app(ApprovalWorkflowService::class)->submitLocked($row, $key);
 
-        return back()->with('success', 'Data berhasil dikunci.');
+        return back()->with('success', $approval->status === 'approved'
+            ? 'Data dikunci dan disetujui otomatis.'
+            : "Data dikunci dan masuk approval tahap 1 dari {$approval->total_steps}.");
     }
 
     public function unlock(string $section, string $id): RedirectResponse
     {
         abort_unless($this->canManageFieldLock(), 403, 'Hanya user yang diberi akses yang dapat membuka lock.');
         $row = $this->findRow($section, $id);
+        app(ApprovalWorkflowService::class)->cancelPendingLock($row);
         $row->update(['record_status' => 'draft', 'locked_at' => null, 'locked_by' => null]);
 
         return back()->with('success', 'Data berhasil dibuka.');
@@ -535,7 +549,7 @@ class FieldSupervisionController extends Controller
         $options['manpowerSources'] = $this->simpleOptions(['kontraktor', 'tukang_owner', 'mandor_internal', 'harian_lepas']);
         $options['wageTypes'] = $this->simpleOptions(['harian', 'borongan', 'mingguan', 'bulanan']);
         $options['equipmentSources'] = $this->simpleOptions(['tidak_ada', 'aset_kantor', 'aset_luar', 'kombinasi']);
-        $options['officeAssets'] = \App\Models\OfficeAsset::query()
+        $options['officeAssets'] = OfficeAsset::query()
             ->with('item:id,name')
             ->whereNotIn('status', ['damaged', 'lost'])
             ->orderBy('kode_aset')

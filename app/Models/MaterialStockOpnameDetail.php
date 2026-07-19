@@ -15,6 +15,7 @@ class MaterialStockOpnameDetail extends Model
         'barang_material_id',
         'stok_sistem',
         'fisik',
+        'physical_unit_counts',
         'masuk',
         'keluar',
         'selisih',
@@ -24,6 +25,7 @@ class MaterialStockOpnameDetail extends Model
     protected $casts = [
         'stok_sistem' => 'float',
         'fisik' => 'float',
+        'physical_unit_counts' => 'array',
         'masuk' => 'float',
         'keluar' => 'float',
         'selisih' => 'float',

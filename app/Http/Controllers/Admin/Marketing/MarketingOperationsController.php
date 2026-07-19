@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers\Admin\Marketing;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\ChecksMarketingAccess;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
+use App\Http\Controllers\Controller;
 use App\Models\BerkasCostumer;
 use App\Models\Costumer;
 use App\Models\CostumerFollowUp;
+use App\Models\CustomerReceipt;
 use App\Models\KprSubmission;
 use App\Models\MarketingCampaign;
 use App\Models\MarketingCommission;
@@ -17,10 +18,11 @@ use App\Models\MarketingReminder;
 use App\Models\MarketingSurveySchedule;
 use App\Models\MarketingTarget;
 use App\Models\MarketingTemplate;
+use App\Models\PaymentSchedule;
 use App\Models\Spr;
 use App\Models\SprBerkasCostumer;
-use App\Models\SprPayment;
 use App\Models\User;
+use App\Services\ApprovalWorkflowService;
 use App\Services\Marketing\MarketingLeadStatusService;
 use App\Services\Marketing\MarketingOperationsService;
 use App\Support\CodeGenerator;
@@ -49,9 +51,6 @@ class MarketingOperationsController extends Controller
         }
 
         $service->syncAutomaticReminders($request->user()?->id);
-        if ($section === 'piutang') {
-            Spr::query()->where('status', Spr::STATUS_DISETUJUI)->with('payments')->get()->each(fn (Spr $spr) => $service->syncBillingSchedules($spr));
-        }
 
         return Inertia::render('Admin/Marketing/Operations/Index', [
             'title' => $this->title($section),
@@ -137,8 +136,12 @@ class MarketingOperationsController extends Controller
             'locked_at' => now(),
             'locked_by' => auth()->id(),
         ])->save();
+        $approval = app(ApprovalWorkflowService::class)
+            ->submitLocked($model, 'marketing-'.$section);
 
-        return back()->with('success', 'Data berhasil di-lock.');
+        return back()->with('success', $approval->status === 'approved'
+            ? 'Data di-lock dan disetujui otomatis.'
+            : "Data di-lock dan masuk approval tahap 1 dari {$approval->total_steps}.");
     }
 
     public function unlock(string $section, string $id): RedirectResponse
@@ -147,6 +150,7 @@ class MarketingOperationsController extends Controller
         abort_unless(($permissions['canUnlock'] ?? false) === true, 403, 'Hanya user yang diberi akses yang dapat membuka lock data.');
 
         $model = $this->lockableModel($section, $id);
+        app(ApprovalWorkflowService::class)->cancelPendingLock($model);
         $model->forceFill([
             'record_status' => 'draft',
             'locked_at' => null,
@@ -185,31 +189,24 @@ class MarketingOperationsController extends Controller
         return back()->with('success', 'Status validasi berkas berhasil diperbarui.');
     }
 
-    public function expireBookings(MarketingOperationsService $service): RedirectResponse
-    {
-        $total = $service->expireBookings();
-
-        return back()->with('success', "{$total} booking kedaluwarsa berhasil dilepas.");
-    }
-
     public function receipt(Request $request, string $id): Response
     {
-        $payment = SprPayment::query()
-            ->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id', 'masterBank:id,nama_bank,nomor_rekening,nama_rekening'])
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+        $payment = CustomerReceipt::query()
+            ->with(['salesTransaction.customer', 'salesTransaction.spr', 'bankAccount'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('marketing_user_id', $request->user()?->id)))
             ->findOrFail($id);
 
         return Inertia::render('Admin/Marketing/Receipt/Show', [
-            'title' => 'Kwitansi '.$payment->spr?->kode_spr,
+            'title' => 'Kwitansi '.$payment->receipt_no,
             'receipt' => [
-                'number' => 'KWT-'.str_pad((string) $payment->id, 7, '0', STR_PAD_LEFT),
-                'date' => optional($payment->tanggal_pembayaran)->format('d/m/Y'),
-                'customer' => $payment->spr?->costumer?->nama ?? '-',
-                'type' => ucwords(str_replace('_', ' ', $payment->jenis_pembayaran)),
-                'spr' => $payment->spr?->kode_spr ?? '-',
-                'bank' => trim(($payment->masterBank?->nama_bank ?? '-').' - '.($payment->masterBank?->nomor_rekening ?? '-').' - '.($payment->masterBank?->nama_rekening ?? '-')),
-                'note' => $payment->keterangan,
-                'amount' => (float) $payment->nominal,
+                'number' => $payment->receipt_no,
+                'date' => optional($payment->payment_date)->format('d/m/Y'),
+                'customer' => $payment->salesTransaction?->customer?->nama ?? '-',
+                'type' => ucwords(str_replace('_', ' ', $payment->receipt_purpose)),
+                'spr' => $payment->salesTransaction?->spr?->kode_spr ?? '-',
+                'bank' => trim(($payment->bankAccount?->nama_bank ?? '-').' - '.($payment->bankAccount?->nomor_rekening ?? '-').' - '.($payment->bankAccount?->nama_rekening ?? '-')),
+                'note' => $payment->notes,
+                'amount' => (float) $payment->amount,
             ],
         ]);
     }
@@ -240,9 +237,8 @@ class MarketingOperationsController extends Controller
                 'spr_month' => $this->sprQueryFor($request)->whereMonth('tanggal_spr', $month)->whereYear('tanggal_spr', $year)->count(),
                 'kpr_active' => $this->kprQueryFor($request)->whereNotIn('status', ['ditolak', 'serah_terima_selesai'])->count(),
                 'booking_expiring' => $this->sprQueryFor($request)->where('status', Spr::STATUS_DISETUJUI)->whereBetween('booking_expires_at', [now(), now()->addDays(7)])->count(),
-                'overdue' => \App\Models\SprBillingSchedule::query()
-                    ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
-                    ->whereIn('status', ['jatuh_tempo', 'sebagian'])
+                'overdue' => PaymentSchedule::query()->where('record_status', 'locked')->whereDate('due_date', '<', today())->whereColumn('paid_amount', '<', 'amount')
+                    ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('marketing_user_id', $request->user()?->id)))
                     ->count(),
             ],
             'performance' => User::query()
@@ -316,12 +312,12 @@ class MarketingOperationsController extends Controller
                 ->latest('id')
                 ->get()
                 ->map(fn (MarketingCampaign $row) => [
-                ...$row->only(['id', 'kode_campaign', 'nama_campaign', 'kanal', 'anggaran', 'realisasi_biaya', 'target_lead', 'status', 'keterangan', 'record_status']),
-                'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
-                'tanggal_mulai' => optional($row->tanggal_mulai)->format('Y-m-d'),
-                'tanggal_selesai' => optional($row->tanggal_selesai)->format('Y-m-d'),
-                'lead_count' => $row->customers_count,
-            ]),
+                    ...$row->only(['id', 'kode_campaign', 'nama_campaign', 'kanal', 'anggaran', 'realisasi_biaya', 'target_lead', 'status', 'keterangan', 'record_status']),
+                    'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
+                    'tanggal_mulai' => optional($row->tanggal_mulai)->format('Y-m-d'),
+                    'tanggal_selesai' => optional($row->tanggal_selesai)->format('Y-m-d'),
+                    'lead_count' => $row->customers_count,
+                ]),
         ];
     }
 
@@ -363,48 +359,48 @@ class MarketingOperationsController extends Controller
 
     protected function receivableData(Request $request): array
     {
-        $schedules = \App\Models\SprBillingSchedule::query()
-            ->with(['spr.costumer:id,nama', 'spr.detailRumah.perumahan:id,nama_perusahaan'])
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
-            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
-            ->orderBy('tanggal_jatuh_tempo')
+        $schedules = PaymentSchedule::query()->where('record_status', 'locked')
+            ->with(['salesTransaction.customer', 'salesTransaction.spr', 'salesTransaction.housingUnit'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('marketing_user_id', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanId($request))))
+            ->orderBy('due_date')
             ->get();
-        $payments = SprPayment::query()
-            ->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id,created_by', 'masterBank:id,nama_bank,nomor_rekening'])
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
-            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
-            ->latest('tanggal_pembayaran')
+        $payments = CustomerReceipt::query()->where('status', 'posted')
+            ->with(['salesTransaction.customer', 'salesTransaction.spr', 'bankAccount'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('marketing_user_id', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanId($request))))
+            ->latest('payment_date')
             ->limit(100)
             ->get();
 
         return [
             'summary' => [
-                'tagihan' => (float) $schedules->sum('nominal_tagihan'),
-                'dibayar' => (float) $schedules->sum('nominal_dibayar'),
-                'sisa' => (float) $schedules->sum(fn ($row) => max(0, $row->nominal_tagihan - $row->nominal_dibayar)),
-                'jatuh_tempo' => $schedules->whereIn('status', ['jatuh_tempo', 'sebagian'])->count(),
+                'tagihan' => (float) $schedules->sum('amount'),
+                'dibayar' => (float) $schedules->sum('paid_amount'),
+                'sisa' => (float) $schedules->sum(fn ($row) => max(0, $row->amount - $row->paid_amount)),
+                'jatuh_tempo' => $schedules->filter(fn ($row) => $row->due_date?->isPast() && (float) $row->paid_amount < (float) $row->amount)->count(),
             ],
             'schedules' => $schedules->map(fn ($row) => [
                 'id' => $row->id,
-                'kode_spr' => $row->spr?->kode_spr ?? '-',
-                'customer' => $row->spr?->costumer?->nama ?? '-',
-                'jenis' => $row->jenis_tagihan,
-                'termin_ke' => $row->termin_ke,
-                'tanggal_jatuh_tempo' => optional($row->tanggal_jatuh_tempo)->format('d/m/Y'),
-                'nominal_tagihan' => $row->nominal_tagihan,
-                'nominal_dibayar' => $row->nominal_dibayar,
-                'sisa' => max(0, $row->nominal_tagihan - $row->nominal_dibayar),
+                'kode_spr' => $row->salesTransaction?->transaction_no ?? '-',
+                'customer' => $row->salesTransaction?->customer?->nama ?? '-',
+                'jenis' => $row->description,
+                'termin_ke' => $row->sequence,
+                'tanggal_jatuh_tempo' => optional($row->due_date)->format('d/m/Y'),
+                'nominal_tagihan' => $row->amount,
+                'nominal_dibayar' => $row->paid_amount,
+                'sisa' => max(0, $row->amount - $row->paid_amount),
                 'status' => $row->status,
             ]),
-            'receipts' => $payments->map(fn (SprPayment $row) => [
+            'receipts' => $payments->map(fn (CustomerReceipt $row) => [
                 'id' => $row->id,
-                'nomor' => 'KWT-'.str_pad((string) $row->id, 7, '0', STR_PAD_LEFT),
-                'kode_spr' => $row->spr?->kode_spr ?? '-',
-                'customer' => $row->spr?->costumer?->nama ?? '-',
-                'tanggal' => optional($row->tanggal_pembayaran)->format('d/m/Y'),
-                'jenis' => $row->jenis_pembayaran,
-                'nominal' => $row->nominal,
-                'bank' => trim(($row->masterBank?->nama_bank ?? '-').' '.($row->masterBank?->nomor_rekening ?? '')),
+                'nomor' => $row->receipt_no,
+                'kode_spr' => $row->salesTransaction?->transaction_no ?? '-',
+                'customer' => $row->salesTransaction?->customer?->nama ?? '-',
+                'tanggal' => optional($row->payment_date)->format('d/m/Y'),
+                'jenis' => $row->receipt_purpose,
+                'nominal' => $row->amount,
+                'bank' => trim(($row->bankAccount?->nama_bank ?? '-').' '.($row->bankAccount?->nomor_rekening ?? '')),
                 'print_url' => route('admin.marketing.kwitansi.show', $row->id, absolute: false),
             ]),
         ];
@@ -421,11 +417,11 @@ class MarketingOperationsController extends Controller
                 ->latest('bulan')
                 ->get()
                 ->map(fn ($row) => [
-                ...$row->only(['id', 'user_id', 'tahun', 'bulan', 'target_lead', 'target_survey', 'target_spr', 'target_closing', 'target_nilai_penjualan', 'catatan', 'record_status']),
-                'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
-                'user' => $row->user?->name ?? '-',
-                'type' => 'target',
-            ]),
+                    ...$row->only(['id', 'user_id', 'tahun', 'bulan', 'target_lead', 'target_survey', 'target_spr', 'target_closing', 'target_nilai_penjualan', 'catatan', 'record_status']),
+                    'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
+                    'user' => $row->user?->name ?? '-',
+                    'type' => 'target',
+                ]),
             'commissions' => MarketingCommission::query()
                 ->with(['user:id,name', 'spr:id,kode_spr,created_by,detail_rumah_id', 'spr.detailRumah.perumahan:id,nama_perusahaan'])
                 ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
@@ -433,14 +429,14 @@ class MarketingOperationsController extends Controller
                 ->latest('id')
                 ->get()
                 ->map(fn ($row) => [
-                ...$row->only(['id', 'spr_id', 'user_id', 'dasar_perhitungan', 'persentase', 'nominal', 'status', 'catatan', 'record_status']),
-                'perumahan' => $row->spr?->detailRumah?->perumahan?->nama_perusahaan ?? '-',
-                'user' => $row->user?->name ?? '-',
-                'spr' => $row->spr?->kode_spr ?? '-',
-                'tanggal_jatuh_tempo' => optional($row->tanggal_jatuh_tempo)->format('Y-m-d'),
-                'tanggal_dibayar' => optional($row->tanggal_dibayar)->format('Y-m-d'),
-                'type' => 'commission',
-            ]),
+                    ...$row->only(['id', 'spr_id', 'user_id', 'dasar_perhitungan', 'persentase', 'nominal', 'status', 'catatan', 'record_status']),
+                    'perumahan' => $row->spr?->detailRumah?->perumahan?->nama_perusahaan ?? '-',
+                    'user' => $row->user?->name ?? '-',
+                    'spr' => $row->spr?->kode_spr ?? '-',
+                    'tanggal_jatuh_tempo' => optional($row->tanggal_jatuh_tempo)->format('Y-m-d'),
+                    'tanggal_dibayar' => optional($row->tanggal_dibayar)->format('Y-m-d'),
+                    'type' => 'commission',
+                ]),
         ];
     }
 
@@ -605,6 +601,7 @@ class MarketingOperationsController extends Controller
                 'kode_komisi' => CodeGenerator::next(MarketingCommission::class, 'kode_komisi', 'KMS'),
                 'nominal' => (float) $data['dasar_perhitungan'] * ((float) $data['persentase'] / 100),
             ]);
+
             return;
         }
 
@@ -630,6 +627,7 @@ class MarketingOperationsController extends Controller
                 ...$data,
                 'nominal' => (float) $data['dasar_perhitungan'] * ((float) $data['persentase'] / 100),
             ]);
+
             return;
         }
 

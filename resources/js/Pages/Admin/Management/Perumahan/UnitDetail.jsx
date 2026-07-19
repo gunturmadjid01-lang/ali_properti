@@ -156,7 +156,7 @@ export default function UnitDetail({
                         items: [
                             ["Status Bangun", rumah.status_pembangunan ?? "-"],
                             [
-                                "Progress Terakhir",
+                                "Kemajuan Terakhir",
                                 `${rumah.progress_terakhir ?? 0}%`,
                             ],
                             ["Status Penjualan", rumah.status_penjualan ?? "-"],
@@ -242,7 +242,7 @@ export default function UnitDetail({
     };
 
     const progressAccordion = {
-        title: "Detail Progress Pembangunan",
+        title: "Detail Kemajuan Pembangunan",
         content: (
             <div className="grid gap-4">
                 {tahapanSummary.length === 0 ? (
@@ -507,7 +507,7 @@ export default function UnitDetail({
                     >
                         <Input
                             className="md:max-w-md"
-                            label="Search"
+                            label="Pencarian"
                             value={search}
                             placeholder="Cari tahapan, keterangan, permintaan, atau logistik..."
                             onChange={(event) => setSearch(event.target.value)}

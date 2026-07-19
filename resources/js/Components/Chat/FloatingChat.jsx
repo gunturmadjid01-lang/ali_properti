@@ -508,9 +508,19 @@ export default function FloatingChat() {
         } else {
             setOnlineIds(new Set([Number(user.id)]));
         }
-        const polling = window.setInterval(refresh, key ? 30000 : 10000);
+        const pollWhenVisible = () => {
+            if (document.visibilityState === "visible") refresh();
+        };
+        // Pusher menjadi jalur utama. Polling hanya fallback berkala agar
+        // php artisan serve tidak terus dipenuhi request chat di background.
+        const polling = window.setInterval(
+            pollWhenVisible,
+            key ? 300000 : 60000,
+        );
+        document.addEventListener("visibilitychange", pollWhenVisible);
         return () => {
             window.clearInterval(polling);
+            document.removeEventListener("visibilitychange", pollWhenVisible);
             echo?.disconnect();
         };
     }, [user?.id]);

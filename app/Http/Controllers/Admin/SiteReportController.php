@@ -127,7 +127,7 @@ class SiteReportController extends Controller
             'lampiran' => ['nullable', 'file', 'max:6144'],
         ]);
 
-        $approvalRequired = $this->requiresApprovalFor('site-report');
+        $approvalRequired = $this->requiresApprovalFor('site-report', 'create');
 
         SiteReport::query()->create([
             ...$this->normalizePayload(collect($validated)->except('lampiran')->all()),
@@ -189,7 +189,7 @@ class SiteReportController extends Controller
             $lampiran = $request->file('lampiran')->store('laporan-lapangan', 'public');
         }
 
-        $approvalRequired = $this->requiresApprovalFor('site-report');
+        $approvalRequired = $this->requiresApprovalFor('site-report', 'update');
 
         $row->update([
             ...$this->normalizePayload(collect($validated)->except('lampiran')->all()),

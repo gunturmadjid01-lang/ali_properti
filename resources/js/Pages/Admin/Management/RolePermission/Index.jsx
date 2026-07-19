@@ -17,10 +17,10 @@ const actionOrder = [
 const actionLabels = {
     view: 'Buka',
     create: 'Tambah',
-    update: 'Edit',
+    update: 'Ubah',
     delete: 'Hapus',
     manage: 'Manage',
-    unlock: 'Unlock',
+    unlock: 'Buka Kunci',
 };
 
 export default function Index({ title, description, baseUrl, options = {} }) {
@@ -118,14 +118,14 @@ export default function Index({ title, description, baseUrl, options = {} }) {
                 <form className="grid gap-4 rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8" onSubmit={submit}>
                     <div className="grid gap-4 lg:grid-cols-[320px_1fr_auto]">
                         <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Role</span>
-                            <Dropdown label="Pilih Role" value={selectedRoleId} options={roles} onChange={selectRole} />
+                            <span className="text-sm font-extrabold">Peran</span>
+                            <Dropdown label="Pilih Peran" value={selectedRoleId} options={roles} onChange={selectRole} />
                         </div>
                         <Input label="Cari Modul" value={search} onChange={(event) => setSearch(event.target.value)} icon={<Search size={16} />} />
                         {pagePermissions.canUpdate && (
                             <div className="flex items-end">
                                 <Button type="submit" disabled={!selectedRole || form.processing}>
-                                    <Save size={17} /> {form.processing ? 'Menyimpan...' : 'Simpan Permission'}
+                                    <Save size={17} /> {form.processing ? 'Menyimpan...' : 'Simpan Hak Akses'}
                                 </Button>
                             </div>
                         )}
@@ -217,4 +217,4 @@ export default function Index({ title, description, baseUrl, options = {} }) {
     );
 }
 
-Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Role Permission'}>{page}</AdminLayout>;
+Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Peran Hak Akses'}>{page}</AdminLayout>;

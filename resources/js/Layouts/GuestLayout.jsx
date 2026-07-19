@@ -6,8 +6,8 @@ export default function GuestLayout({ children }) {
     const { url } = usePage();
 
     return (
-        <div className="min-h-screen overflow-x-hidden">
-            <header className="sticky top-0 z-50 border-b border-white/70 bg-silver-soft/85 shadow-[0_10px_32px_rgba(31,37,43,0.05)] backdrop-blur-xl">
+        <div className="guest-theme-scope min-h-screen overflow-x-hidden">
+            <header className="sticky top-0 z-50 border-b border-ink/30 bg-silver-soft/90 backdrop-blur-xl">
                 <div className="mx-auto flex min-h-20 w-[min(1180px,calc(100%-32px))] flex-col gap-4 py-4 lg:flex-row lg:items-center lg:justify-between lg:gap-6 lg:py-0">
                     <Link href="/" className="flex items-center gap-3">
                         <img className="h-12 w-12 rounded-lg border border-gold/50 bg-white object-cover" src={assets.logo} alt="Logo Sidratul Muntaha" />
@@ -32,7 +32,7 @@ export default function GuestLayout({ children }) {
                     </nav>
 
                     <Link
-                        className="hidden min-h-11 items-center justify-center gap-2 rounded-lg bg-gradient-to-br from-champagne via-gold to-gold-deep px-5 text-sm font-extrabold text-[#241a08] shadow-[0_14px_30px_rgba(155,118,47,0.15)] transition hover:-translate-y-0.5 lg:inline-flex"
+                        className="hidden min-h-11 items-center justify-center gap-2 rounded-lg border border-gold-deep bg-gradient-to-br from-champagne via-gold to-gold-deep px-5 text-sm font-extrabold text-[#241a08] transition hover:-translate-y-0.5 lg:inline-flex"
                         href="/kontak"
                     >
                         <Phone size={17} /> Hubungi Marketing

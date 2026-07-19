@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
@@ -15,6 +16,9 @@ class BarangMaterial extends Model
     protected $fillable = [
         'kode_barang',
         'nama_barang',
+        'material_type_id',
+        'material_brand_id',
+        'base_unit_id',
         'kategori_material',
         'jenis_material',
         'merk_material',
@@ -49,6 +53,31 @@ class BarangMaterial extends Model
     public function priceHistories(): HasMany
     {
         return $this->hasMany(MaterialPriceHistory::class);
+    }
+
+    public function materialType(): BelongsTo
+    {
+        return $this->belongsTo(MaterialType::class);
+    }
+
+    public function materialBrand(): BelongsTo
+    {
+        return $this->belongsTo(MaterialBrand::class);
+    }
+
+    public function baseUnit(): BelongsTo
+    {
+        return $this->belongsTo(MaterialUnit::class, 'base_unit_id');
+    }
+
+    public function unitConversions(): HasMany
+    {
+        return $this->hasMany(MaterialUnitConversion::class)->orderBy('level');
+    }
+
+    public function materialGroupItems(): HasMany
+    {
+        return $this->hasMany(MaterialGroupItem::class);
     }
 
     public static function nextKodeBarang(): string

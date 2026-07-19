@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Concerns;
 
 use App\Models\DetailRumah;
 use App\Models\Perumahan;
-use App\Models\TahapanPembangunan;
 use App\Services\TahapanOptionService;
 
 trait BuildsFieldOptions
@@ -12,9 +11,9 @@ trait BuildsFieldOptions
     protected function fieldOptions(): array
     {
         return [
-            'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])
+            'perumahans' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])
                 ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
-            'detailRumahs' => DetailRumah::query()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->orderBy('nomor_rumah')
+            'detailRumahs' => DetailRumah::query()->finalized()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->orderBy('nomor_rumah')
                 ->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])
                 ->map(fn ($row) => [
                     'value' => (string) $row->id,

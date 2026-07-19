@@ -2,7 +2,7 @@ import { Head, router, useForm } from '@inertiajs/react';
 import { CheckCircle2, Edit3, Eye, FileText, Lock, Search, Trash2, Unlock, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import Pagination from '../../../Components/Pagination';
-import { Button, CurrencyInput, Dropdown, Form, Input, Modal, Textarea } from '../../../Components/UI';
+import { Button, CurrencyInput, Dropdown, Form, Input, Modal, TableActions, Textarea } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
 import { scopedTahapanOptions } from '../../../Utils/tahapanOptions';
 
@@ -356,7 +356,7 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
                     <div className="overflow-x-auto">
                         <table className="min-w-full text-sm">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-wider text-ink-soft">
-                                <tr>{['Tanggal', 'Kode', 'Lokasi', 'Ringkasan', 'Status', 'Approval', 'Audit', 'Aksi'].map((label) => <th className="px-5 py-4" key={label}>{label}</th>)}</tr>
+                                <tr>{['Tanggal', 'Kode', 'Lokasi', 'Ringkasan', 'Status', 'Persetujuan', 'Audit', 'Aksi'].map((label) => <th className="px-5 py-4" key={label}>{label}</th>)}</tr>
                             </thead>
                             <tbody className="divide-y divide-silver-deep/50">
                                 {rows.data.map((row) => (
@@ -367,17 +367,17 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
                                         <td className="max-w-md px-5 py-4">{row.summary}<br /><span className="text-xs text-ink-soft">{row.spk !== '-' ? `SPK: ${row.spk}` : ''} {row.progress !== '-' ? `Progress: ${row.progress}` : ''} {row.qc !== '-' ? `QC: ${row.qc}` : ''}</span></td>
                                         <td className="px-5 py-4 font-bold">{row.status}</td>
                                         <td className="px-5 py-4 font-bold">{config.approval ? row.approval_status : '-'}</td>
-                                        <td className="min-w-44 px-5 py-4 text-xs"><span className="font-bold">Dibuat:</span> {row.created_by_name}<br /><span className="font-bold">Diubah:</span> {row.updated_by_name}<br /><span className="font-bold">Approve:</span> {row.approved_by_name}</td>
+                                        <td className="min-w-44 px-5 py-4 text-xs"><span className="font-bold">Dibuat:</span> {row.created_by_name}<br /><span className="font-bold">Diubah:</span> {row.updated_by_name}<br /><span className="font-bold">Setujui:</span> {row.approved_by_name}</td>
                                         <td className="px-5 py-4">
-                                            <div className="flex flex-wrap gap-2">
+                                            <TableActions>
                                                 <Button type="button" size="sm" variant="outline" onClick={() => setDetail(row)}><Eye size={14} /> Detail</Button>
                                                 {row.foto_url && <Button as="a" href={row.foto_url} target="_blank" size="sm" variant="outline">Foto</Button>}
-                                                {canUpdate && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Edit</Button>}
+                                                {canUpdate && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Ubah</Button>}
                                                 {canApprove && row.can_approve && row.approval_status !== 'approved' && <Button type="button" size="sm" onClick={() => router.post(`${baseUrl}/${row.id}/approve`, {}, { preserveScroll: true })}><CheckCircle2 size={14} /></Button>}
                                                 {canDelete && row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus data ini?') && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>}
-                                                {canLock && row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={14} /> Lock</Button>}
+                                                {canLock && row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={14} /> Kunci</Button>}
                                                 {canUnlock && row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={14} /> Unlock</Button>}
-                                            </div>
+                                            </TableActions>
                                         </td>
                                     </tr>
                                 ))}

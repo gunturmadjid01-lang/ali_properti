@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers\Admin\Management\TipePost;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\RendersSeparatedManagementForm;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\TipePost\StoreTipePostRequest;
 use App\Http\Requests\Admin\TipePost\UpdateTipePostRequest;
 use App\Models\ChartOfAccount;
 use App\Models\TipePost;
+use App\Services\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -57,11 +58,9 @@ class TipePostController extends Controller
         ]);
     }
 
-    public function store(StoreTipePostRequest $request): RedirectResponse
+    public function store(StoreTipePostRequest $request, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
-        TipePost::create($request->validated());
-
-        return to_route($this->routeName().'.index')->with('success', $this->title().' berhasil ditambahkan.');
+        return $approvalWorkflow->create('tipe-post', $request->validated(), fn (array $data) => TipePost::create($data));
     }
 
     public function update(UpdateTipePostRequest $request, string $id): RedirectResponse

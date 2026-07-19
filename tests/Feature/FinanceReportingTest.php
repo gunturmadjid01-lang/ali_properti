@@ -118,7 +118,7 @@ test('jurnal balance tampil pada neraca saldo dan laba rugi', function () {
             ->where('data.ending_balance', 1000000));
 });
 
-test('input modal owner membuat transaksi kas dan jurnal otomatis', function () {
+test('input setoran modal awal membuat transaksi kas dan jurnal otomatis', function () {
     [$user, $property] = financeContext();
     $bank = MasterBank::query()->create([
         'perumahan_id' => $property->id,
@@ -128,7 +128,7 @@ test('input modal owner membuat transaksi kas dan jurnal otomatis', function () 
         'nama_rekening' => 'Kas Proyek',
         'status' => 'aktif',
     ]);
-    $post = TipePost::query()->where('nama_post', 'Setoran Modal Owner')->firstOrFail();
+    $post = TipePost::query()->where('nama_post', 'Setoran Modal Awal')->firstOrFail();
 
     $this->actingAs($user)
         ->post('/admin/keuangan/transaksi-kas-bank', [
@@ -138,7 +138,7 @@ test('input modal owner membuat transaksi kas dan jurnal otomatis', function () 
             'tanggal' => now()->toDateString(),
             'nominal' => 250000000,
             'nomor_referensi' => 'MODAL-001',
-            'keterangan' => 'Setoran modal awal owner',
+            'keterangan' => 'Setoran modal awal perusahaan',
         ])
         ->assertRedirect();
 

@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\CabangPerusahaan;
+use App\Models\DetailRumah;
+use App\Models\Perumahan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -55,4 +58,77 @@ test('filter dashboard mendukung hari bulan dan tahun dengan titik chart yang se
                 ->has('charts.0.labels', $points)
                 ->has('charts.1.labels', $points));
     }
+});
+
+test('dashboard non owner mengikuti perumahan aktif sedangkan owner tetap konsolidasi', function () {
+    $branch = CabangPerusahaan::create([
+        'kode_cabang' => 'DASH',
+        'nama_cabang' => 'Cabang Dashboard',
+        'address' => '-',
+        'phone' => '-',
+        'emaiil' => 'dashboard@test.local',
+        'manager_name' => 'Manager',
+        'status' => 'aktif',
+        'record_status' => 'locked',
+    ]);
+    $housingA = Perumahan::create([
+        'cabang_id' => $branch->id,
+        'nama_perusahaan' => 'Dashboard A',
+        'alamat' => '-',
+        'luas_lahan' => 1000,
+        'jumlah_unit' => 1,
+        'tanggal_mulai' => '2026-01-01',
+        'status' => 'aktif',
+        'record_status' => 'locked',
+    ]);
+    $housingB = Perumahan::create([
+        'cabang_id' => $branch->id,
+        'nama_perusahaan' => 'Dashboard B',
+        'alamat' => '-',
+        'luas_lahan' => 1000,
+        'jumlah_unit' => 1,
+        'tanggal_mulai' => '2026-01-01',
+        'status' => 'aktif',
+        'record_status' => 'locked',
+    ]);
+    foreach ([$housingA, $housingB] as $index => $housing) {
+        DetailRumah::create([
+            'perumahan_id' => $housing->id,
+            'kode_nlok' => chr(65 + $index),
+            'nomor_rumah' => '01',
+            'tipe_rumah' => '36',
+            'luas_tanah' => 72,
+            'status' => 'aktif',
+            'status_penjualan' => 'tersedia',
+            'record_status' => 'locked',
+        ]);
+    }
+
+    $propertyRole = Role::findOrCreate('role_property_scoped', 'web');
+    $propertyRole->givePermissionTo(Permission::findOrCreate('detail-rumah.view', 'web'));
+    $scopedUser = User::factory()->create(['phone' => '081277700004']);
+    $scopedUser->assignRole($propertyRole);
+    $scopedUser->perumahans()->attach([$housingA->id, $housingB->id]);
+
+    $this->actingAs($scopedUser)
+        ->withSession(['active_perumahan_id' => $housingA->id])
+        ->get(route('admin.dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('context.active_perumahan_id', $housingA->id)
+            ->where('sections.0.stats.1.value', 1));
+
+    $owner = User::factory()->create(['phone' => '081277700005']);
+    $owner->assignRole(Role::findOrCreate('owner', 'web'));
+    $owner->givePermissionTo(Permission::findOrCreate('detail-rumah.view', 'web'));
+
+    $this->actingAs($owner)
+        ->withSession(['active_perumahan_id' => $housingA->id])
+        ->get(route('admin.dashboard'))
+        ->assertOk()
+        ->assertSessionMissing('active_perumahan_id')
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('context.active_perumahan_id', null)
+            ->where('sections.0.stats.1.value', 2)
+            ->where('auth.active_perumahan', null));
 });

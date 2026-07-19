@@ -1,4 +1,4 @@
-import { Head, useForm } from "@inertiajs/react";
+import { Head, router, useForm } from "@inertiajs/react";
 import { PlusCircle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "../../../../Components/UI";
@@ -44,6 +44,7 @@ function ManagementPageContent({
     TableComponent,
     FormComponent,
     requestService,
+    separateFormPages = false,
 }) {
     const defaults = useMemo(() => defaultValues(fields), [fields]);
     const form = useForm(defaults);
@@ -71,6 +72,7 @@ function ManagementPageContent({
             return;
         }
 
+        if (separateFormPages) { router.visit(`${baseUrl}/create`); return; }
         resetForm();
         setFormOpen(true);
     };
@@ -85,6 +87,7 @@ function ManagementPageContent({
             return;
         }
 
+        if (separateFormPages) { router.visit(`${baseUrl}/${row.id}/edit`); return; }
         setSelected(row);
         form.clearErrors();
         form.setData(valuesFromRow(fields, row));
@@ -113,7 +116,7 @@ function ManagementPageContent({
         <>
             <Head title={title} />
             <div className="grid gap-6">
-                <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
+                <section className="admin-page-hero rounded-xl border p-5 md:p-6">
                     <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                         <div>
                             <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-soft">
@@ -143,6 +146,7 @@ function ManagementPageContent({
                     options={options}
                     permissions={permissions}
                     onEdit={editRow}
+                    onDetail={separateFormPages ? (row) => router.visit(`${baseUrl}/${row.id}`) : undefined}
                     onDelete={(row) =>
                         permissions.canDelete &&
                         requestService.destroy({ baseUrl, row })
@@ -157,7 +161,7 @@ function ManagementPageContent({
                     }
                 />
 
-                {(permissions.canCreate || permissions.canUpdate) && (
+                {!separateFormPages && (permissions.canCreate || permissions.canUpdate) && (
                     <FormComponent
                         open={formOpen}
                         title={title}

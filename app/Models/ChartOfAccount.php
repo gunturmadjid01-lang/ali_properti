@@ -26,6 +26,8 @@ class ChartOfAccount extends Model
     public const PENDAPATAN_ADMIN = '4-2000';
     public const BEBAN_OPERASIONAL = '6-3000';
 
+    public const BEBAN_GAJI = '6-1000';
+
     protected $fillable = [
         'kode_akun',
         'nama_akun',

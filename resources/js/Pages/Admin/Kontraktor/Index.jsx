@@ -1,7 +1,7 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import { Edit3, LoaderCircle, Lock, PlusCircle, Save, Search, Trash2, Unlock, X } from 'lucide-react';
 import { useState } from 'react';
-import { Button, Dropdown, Form, Input, Textarea } from '../../../Components/UI';
+import { Button, Dropdown, Form, Input, TableActions, Textarea } from '../../../Components/UI';
 import AuditCell from '../../../Components/UI/AuditCell';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
@@ -89,12 +89,12 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
 
                 <Form
                     collapsible
-                    title={editing ? 'Edit Kontraktor' : 'Tambah Kontraktor'}
+                    title={editing ? 'Ubah Kontraktor' : 'Tambah Kontraktor'}
                     description="Daftar kontraktor yang bisa dipilih ketika membuat SPK pembangunan rumah, jalan, atau pembukaan lahan."
                     onSubmit={submit}
                     actions={(
                         <>
-                            {editing && <Button type="button" variant="outline" onClick={resetForm}><X size={17} /> Batal Edit</Button>}
+                            {editing && <Button type="button" variant="outline" onClick={resetForm}><X size={17} /> Batal Ubah</Button>}
                             <Button type="submit" disabled={form.processing}>
                                 {form.processing ? <LoaderCircle className="animate-spin" size={17} /> : <Save size={17} />}
                                 {editing ? 'Simpan Perubahan' : 'Tambah Kontraktor'}
@@ -126,13 +126,13 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form className="flex flex-col gap-3 p-5 md:flex-row md:items-end md:justify-between" onSubmit={(event) => { event.preventDefault(); router.get(baseUrl, { search }, { preserveScroll: true, preserveState: true, replace: true }); }}>
-                        <Input className="md:max-w-md" label="Search" value={search} placeholder="Cari kode, nama, bidang, PIC..." onChange={(event) => setSearch(event.target.value)} />
+                        <Input className="md:max-w-md" label="Pencarian" value={search} placeholder="Cari kode, nama, bidang, PIC..." onChange={(event) => setSearch(event.target.value)} />
                         <Button type="submit"><Search size={17} /> Cari</Button>
                     </form>
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-silver-deep/60 text-sm dark:divide-white/10">
                             <thead className="bg-silver-soft/80 text-left text-xs uppercase tracking-[0.12em] text-ink-soft dark:bg-white/5 dark:text-white/50">
-                                <tr>{['Kode', 'Nama', 'Bidang', 'PIC', 'Kontak', 'Lock', 'Status', 'Audit', 'Aksi'].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
+                                <tr>{['Kode', 'Nama', 'Bidang', 'PIC', 'Kontak', 'Kunci', 'Status', 'Audit', 'Aksi'].map((column) => <th className="px-5 py-4 font-extrabold" key={column}>{column}</th>)}</tr>
                             </thead>
                             <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
                                 {rows.data.map((row) => (
@@ -146,17 +146,17 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
                                         <td className="px-5 py-4 font-bold">{row.status}</td>
                                         <td className="px-5 py-4"><AuditCell createdBy={row.created_by} updatedBy={row.updated_by} /></td>
                                         <td className="px-5 py-4">
-                                            <div className="flex flex-wrap gap-2">
+                                            <TableActions>
                                                 {row.record_status === 'locked' ? (
                                                     <Button type="button" size="sm" variant="outline" onClick={() => unlockRow(row)}><Unlock size={15} /> Unlock</Button>
                                                 ) : (
                                                     <>
-                                                        <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}><Lock size={15} /> Lock</Button>
-                                                        <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Edit</Button>
+                                                        <Button type="button" size="sm" variant="outline" onClick={() => lockRow(row)}><Lock size={15} /> Kunci</Button>
+                                                        <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={15} /> Ubah</Button>
                                                         <Button type="button" size="sm" variant="outline" onClick={() => destroyRow(row)}><Trash2 size={15} /> Hapus</Button>
                                                     </>
                                                 )}
-                                            </div>
+                                            </TableActions>
                                         </td>
                                     </tr>
                                 ))}
@@ -170,4 +170,4 @@ export default function Index({ title, description, baseUrl, rows, filters = {},
     );
 }
 
-Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Management Kontraktor'}>{page}</AdminLayout>;
+Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Manajemen Kontraktor'}>{page}</AdminLayout>;

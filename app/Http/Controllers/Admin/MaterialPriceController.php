@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
 use App\Models\MaterialPriceHistory;
 use Illuminate\Database\Eloquent\Builder;
@@ -21,7 +21,7 @@ class MaterialPriceController extends Controller
     {
         $search = trim((string) $request->query('search', ''));
         $tanggalBerlaku = $request->query('tanggal_berlaku') ?: now()->toDateString();
-        $materials = BarangMaterial::query()
+        $materials = BarangMaterial::query()->finalized()
             ->where('status', 'aktif')
             ->when($search !== '', fn (Builder $query) => $query->where(function (Builder $query) use ($search): void {
                 $query->where('kode_barang', 'like', "%{$search}%")

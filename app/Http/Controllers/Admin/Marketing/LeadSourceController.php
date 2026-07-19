@@ -98,6 +98,35 @@ class LeadSourceController extends Controller
         });
     }
 
+    public function create(Request $request): Response
+    {
+        $this->abortUnlessMarketingAccess($request, ['manajer_pimpro', 'supervisor_marketing'], 'marketing.lead-source.manage');
+
+        return $this->formResponse(null);
+    }
+
+    public function edit(Request $request, string $id): Response
+    {
+        $this->abortUnlessMarketingAccess($request, ['manajer_pimpro', 'supervisor_marketing'], 'marketing.lead-source.manage');
+        $row = MarketingLeadSource::findOrFail($id);
+        $this->abortIfLocked($row);
+
+        return $this->formResponse($row);
+    }
+
+    public function show(Request $request, string $id): Response
+    {
+        $this->abortUnlessMarketingAccess($request, ['manajer_pimpro', 'supervisor_marketing'], 'marketing.lead-source.manage');
+        $row = MarketingLeadSource::withCount('costumers')->findOrFail($id);
+
+        return Inertia::render('Admin/Marketing/LeadSource/Show', ['title' => 'Detail Sumber Lead '.$row->kode_sumber, 'baseUrl' => route('admin.marketing.sumber-lead.index', absolute: false), 'row' => [...$row->only(['id', 'kode_sumber', 'nama_sumber', 'kategori', 'keterangan', 'status', 'record_status']), 'jumlah_customer' => $row->costumers_count, 'can_edit' => ($row->record_status ?? 'draft') !== 'locked']]);
+    }
+
+    private function formResponse(?MarketingLeadSource $row): Response
+    {
+        return Inertia::render('Admin/Marketing/LeadSource/FormPage', ['title' => $row ? 'Edit Sumber Lead '.$row->kode_sumber : 'Tambah Sumber Lead', 'baseUrl' => route('admin.marketing.sumber-lead.index', absolute: false), 'actionUrl' => $row ? route('admin.marketing.sumber-lead.update', $row->id, false) : route('admin.marketing.sumber-lead.store', absolute: false), 'method' => $row ? 'put' : 'post', 'row' => $row?->only(['nama_sumber', 'kategori', 'keterangan', 'status']), 'options' => ['kategoriOptions' => $this->kategoriOptions(), 'statusOptions' => $this->statusOptions()]]);
+    }
+
     public function update(Request $request, string $id, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
         $this->abortUnlessMarketingAccess($request, ['manajer_pimpro', 'supervisor_marketing'], 'marketing.lead-source.manage');

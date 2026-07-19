@@ -1,23 +1,379 @@
 import { Head, Link, useForm } from "@inertiajs/react";
-import { ArrowLeft, Banknote, CalendarClock, Info, Save, WalletCards } from "lucide-react";
-import { useMemo } from "react";
-import { Button, CurrencyInput, Dropdown, FieldLabel, Input, Textarea } from "../../../Components/UI";
+import { ArrowLeft, Plus, Save, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+    Button,
+    CurrencyInput,
+    Dropdown,
+    Input,
+    Textarea,
+} from "../../../Components/UI";
 import AdminLayout from "../../../Layouts/AdminLayout";
-
-export default function FormPage({ title, baseUrl, actionUrl, method, initialData, employees }) {
-    const form = useForm(initialData);
-    const employeeOptions = useMemo(() => employees.map((employee) => ({ value: employee.value, label: `${employee.label}${employee.job_title ? ` · ${employee.job_title}` : ""}${employee.branch ? ` · ${employee.branch}` : ""}` })), [employees]);
-    const submit = (event) => { event.preventDefault(); method === "put" ? form.put(actionUrl) : form.post(actionUrl); };
-    return <><Head title={title} /><div className="mx-auto grid max-w-5xl gap-5 pb-8">
-        <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-ink via-graphite to-[#27323b] px-6 py-5 text-white shadow-lg"><div className="absolute -right-12 -top-20 h-52 w-52 rounded-full bg-gold/15 blur-2xl" /><div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-champagne"><WalletCards size={15} /> Penggajian Pegawai</p><h1 className="mt-2 text-2xl font-black md:text-3xl">{title}</h1><p className="mt-2 text-sm text-white/65">Atur nominal dan tanggal efektif. Periode sebelumnya akan disesuaikan otomatis.</p></div><Button as={Link} href={baseUrl} variant="outline" className="border-white/20 bg-white/10 text-white hover:bg-white/20"><ArrowLeft size={17} /> Kembali</Button></div></section>
-        {Object.keys(form.errors).length > 0 && <div className="flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-700"><Info size={18} /> Periksa kembali kolom yang ditandai merah.</div>}
-        <form className="grid gap-4" onSubmit={submit}><section className="overflow-hidden rounded-2xl border border-silver-deep/60 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.04]"><header className="border-b bg-silver-soft/55 px-5 py-4 dark:border-white/10 dark:bg-white/[0.03]"><h2 className="flex items-center gap-2 text-sm font-black"><Banknote size={18} /> Informasi Periode Gaji</h2><p className="mt-1 text-xs text-ink-soft">Kolom bertanda * wajib diisi.</p></header><div className="grid gap-5 p-5 md:grid-cols-2">
-            <div className="grid gap-2 md:col-span-2"><FieldLabel required>Pegawai</FieldLabel><Dropdown value={form.data.user_id} options={employeeOptions} label="Pilih pegawai" onChange={(value) => form.setData("user_id", value)} />{form.errors.user_id && <span className="text-xs font-bold text-red-600">{form.errors.user_id}</span>}</div>
-            <CurrencyInput label="Gaji Pokok" required value={form.data.basic_salary} error={form.errors.basic_salary} onChange={(value) => form.setData("basic_salary", value)} /><CurrencyInput label="Tunjangan Tetap" value={form.data.fixed_allowance} error={form.errors.fixed_allowance} onChange={(value) => form.setData("fixed_allowance", value)} />
-            <Input label="Mulai Berlaku" required type="date" icon={<CalendarClock size={17} />} value={form.data.effective_from} error={form.errors.effective_from} onChange={(event) => form.setData("effective_from", event.target.value)} />
-            <label className="flex min-h-12 items-center gap-3 self-end rounded-lg border border-silver-deep/70 px-4 text-sm font-extrabold dark:border-white/10"><input type="checkbox" checked={form.data.is_active} onChange={(event) => form.setData("is_active", event.target.checked)} /> Periode gaji aktif</label>
-            <div className="md:col-span-2"><Textarea label="Catatan" value={form.data.notes} error={form.errors.notes} onChange={(event) => form.setData("notes", event.target.value)} /></div>
-        </div></section><div className="flex justify-end gap-3 rounded-xl border bg-white/90 p-4 dark:border-white/10 dark:bg-graphite"><Button as={Link} href={baseUrl} variant="outline">Batal</Button><Button type="submit" disabled={form.processing}><Save size={17} /> {form.processing ? "Menyimpan..." : "Simpan Gaji"}</Button></div></form>
-    </div></>;
+const blank = {
+    user_id: "",
+    basic_salary: 0,
+    fixed_allowance: 0,
+    other_allowance: 0,
+    deductions: 0,
+    advance_deduction: 0,
+    notes: "",
+};
+const rp = (v) =>
+    new Intl.NumberFormat("id-ID", {
+        style: "currency",
+        currency: "IDR",
+        maximumFractionDigits: 0,
+    }).format(Number(v || 0));
+export default function FormPage({
+    title,
+    baseUrl,
+    actionUrl,
+    method,
+    initialData,
+    employees,
+    salaryLookupUrl,
+    perumahans = [],
+    banks = [],
+}) {
+    const f = useForm(initialData);
+    const add = () => f.setData("items", [...f.data.items, { ...blank }]);
+    const set = (i, k, v) =>
+        f.setData(
+            "items",
+            f.data.items.map((x, n) => (n === i ? { ...x, [k]: v } : x)),
+        );
+    const remove = (i) =>
+        f.setData(
+            "items",
+            f.data.items.filter((_, n) => n !== i),
+        );
+    const [salaryStatus, setSalaryStatus] = useState("");
+    useEffect(() => {
+        const ids = f.data.items.map((x) => x.user_id).filter(Boolean);
+        if (!ids.length || !f.data.period || !f.data.perumahan_id) return;
+        const controller = new AbortController();
+        const params = new URLSearchParams({
+            period: f.data.period,
+            perumahan_id: f.data.perumahan_id,
+        });
+        ids.forEach((id) => params.append("user_ids[]", id));
+        setSalaryStatus("Memuat gaji aktif...");
+        fetch(`${salaryLookupUrl}?${params}`, {
+            headers: { Accept: "application/json" },
+            signal: controller.signal,
+        })
+            .then((r) => {
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                return r.json();
+            })
+            .then(({ salaries }) => {
+                f.setData(
+                    "items",
+                    f.data.items.map((x) =>
+                        salaries[String(x.user_id)]
+                            ? { ...x, ...salaries[String(x.user_id)] }
+                            : x,
+                    ),
+                );
+                setSalaryStatus("Gaji aktif sesuai periode sudah dimuat.");
+            })
+            .catch((e) => {
+                if (e.name !== "AbortError")
+                    setSalaryStatus("Gagal memuat daftar gaji aktif.");
+            });
+        return () => controller.abort();
+    }, [
+        f.data.period,
+        f.data.perumahan_id,
+        f.data.items.map((x) => x.user_id).join(","),
+    ]);
+    const choose = (i, id) => {
+        const e = employees.find((x) => String(x.value) === String(id));
+        set(i, "user_id", id);
+        if (e) {
+            const next = f.data.items.map((x, n) =>
+                n === i
+                    ? {
+                          ...x,
+                          user_id: id,
+                          basic_salary: e.basic_salary,
+                          fixed_allowance: e.fixed_allowance,
+                      }
+                    : x,
+            );
+            f.setData("items", next);
+        }
+    };
+    const total = f.data.items.reduce(
+        (s, x) =>
+            s +
+            Number(x.basic_salary || 0) +
+            Number(x.fixed_allowance || 0) +
+            Number(x.other_allowance || 0) -
+            Number(x.deductions || 0) -
+            Number(x.advance_deduction || 0),
+        0,
+    );
+    const submit = (e) => {
+        e.preventDefault();
+        method === "put" ? f.put(actionUrl) : f.post(actionUrl);
+    };
+    return (
+        <>
+            <Head title={title} />
+            <div className="mx-auto grid max-w-7xl gap-5">
+                <section className="flex items-center justify-between rounded-2xl bg-ink p-6 text-white">
+                    <div>
+                        <p className="text-xs font-black uppercase tracking-widest text-champagne">
+                            Transaksi Batch
+                        </p>
+                        <h1 className="mt-2 text-3xl font-black">{title}</h1>
+                        <p className="mt-2 text-sm text-white/60">
+                            Hanya pegawai aktif yang sudah memiliki jabatan yang
+                            dapat dipilih.
+                        </p>
+                    </div>
+                    <Button as={Link} href={baseUrl} variant="outline">
+                        <ArrowLeft size={16} /> Kembali
+                    </Button>
+                </section>
+                <form onSubmit={submit} className="grid gap-5">
+                    <section className="grid gap-4 rounded-2xl border bg-white p-5 md:grid-cols-2 dark:border-white/10 dark:bg-white/5">
+                        <div>
+                            <span className="mb-2 block text-sm font-bold">
+                                Perumahan Pembebanan *
+                            </span>
+                            <Dropdown
+                                value={f.data.perumahan_id}
+                                onChange={(value) => {
+                                    f.setData("perumahan_id", value);
+                                    f.setData("master_bank_id", "");
+                                }}
+                                options={perumahans}
+                            />
+                            {f.errors.perumahan_id && (
+                                <p className="mt-1 text-xs text-red-600">
+                                    {f.errors.perumahan_id}
+                                </p>
+                            )}
+                        </div>
+                        <div>
+                            <span className="mb-2 block text-sm font-bold">
+                                Rekening Pembayaran Gaji *
+                            </span>
+                            <Dropdown
+                                value={f.data.master_bank_id}
+                                onChange={(value) =>
+                                    f.setData("master_bank_id", value)
+                                }
+                                options={banks.filter(
+                                    (bank) =>
+                                        String(bank.perumahan_id) ===
+                                        String(f.data.perumahan_id),
+                                )}
+                            />
+                            {f.errors.master_bank_id && (
+                                <p className="mt-1 text-xs text-red-600">
+                                    {f.errors.master_bank_id}
+                                </p>
+                            )}
+                        </div>
+                        <Input
+                            type="month"
+                            required
+                            label="Periode Gaji"
+                            value={f.data.period}
+                            error={f.errors.period}
+                            onChange={(e) =>
+                                f.setData("period", e.target.value)
+                            }
+                        />
+                        <Input
+                            type="date"
+                            required
+                            label="Tanggal Pembayaran"
+                            value={f.data.payment_date}
+                            error={f.errors.payment_date}
+                            onChange={(e) =>
+                                f.setData("payment_date", e.target.value)
+                            }
+                        />
+                        <p className="text-xs font-bold text-emerald-700 md:col-span-2">
+                            {salaryStatus}
+                        </p>
+                        <div className="md:col-span-2">
+                            <Textarea
+                                label="Catatan Transaksi"
+                                value={f.data.notes}
+                                onChange={(e) =>
+                                    f.setData("notes", e.target.value)
+                                }
+                            />
+                        </div>
+                    </section>
+                    <section className="overflow-hidden rounded-2xl border bg-white dark:border-white/10 dark:bg-white/5">
+                        <header className="flex items-center justify-between border-b p-5">
+                            <div>
+                                <h2 className="font-black">Daftar Slip Gaji</h2>
+                                <p className="text-xs text-ink-soft">
+                                    Tambahkan banyak pegawai dalam satu
+                                    transaksi.
+                                </p>
+                            </div>
+                            <Button type="button" onClick={add}>
+                                <Plus size={16} /> Tambah Pegawai
+                            </Button>
+                        </header>
+                        <div className="grid gap-4 p-5">
+                            {f.data.items.map((x, i) => {
+                                const emp = employees.find(
+                                    (e) =>
+                                        String(e.value) === String(x.user_id),
+                                );
+                                const net =
+                                    Number(x.basic_salary || 0) +
+                                    Number(x.fixed_allowance || 0) +
+                                    Number(x.other_allowance || 0) -
+                                    Number(x.deductions || 0);
+                                return (
+                                    <article
+                                        key={i}
+                                        className="rounded-xl border p-4"
+                                    >
+                                        <div className="mb-4 flex items-start justify-between">
+                                            <div className="min-w-0 flex-1">
+                                                <span className="mb-2 block text-sm font-extrabold">
+                                                    Pegawai *
+                                                </span>
+                                                <Dropdown
+                                                    value={x.user_id}
+                                                    onChange={(v) =>
+                                                        choose(i, v)
+                                                    }
+                                                    options={employees
+                                                        .filter(
+                                                            (e) =>
+                                                                !f.data.items.some(
+                                                                    (it, n) =>
+                                                                        n !==
+                                                                            i &&
+                                                                        String(
+                                                                            it.user_id,
+                                                                        ) ===
+                                                                            String(
+                                                                                e.value,
+                                                                            ),
+                                                                ),
+                                                        )
+                                                        .map((e) => ({
+                                                            value: e.value,
+                                                            label: `${e.employee_number ? e.employee_number + " · " : ""}${e.label} · ${e.job_position}`,
+                                                        }))}
+                                                />
+                                                {emp && (
+                                                    <p className="mt-2 text-xs text-ink-soft">
+                                                        {emp.job_position}
+                                                        {emp.branch
+                                                            ? ` · ${emp.branch}`
+                                                            : ""}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="danger"
+                                                size="sm"
+                                                className="ml-3"
+                                                onClick={() => remove(i)}
+                                            >
+                                                <Trash2 size={15} />
+                                            </Button>
+                                        </div>
+                                        <div className="grid gap-3 md:grid-cols-4">
+                                            <CurrencyInput
+                                                label="Gaji Pokok"
+                                                value={x.basic_salary}
+                                                onChange={(v) =>
+                                                    set(i, "basic_salary", v)
+                                                }
+                                            />
+                                            <CurrencyInput
+                                                label="Tunjangan Tetap"
+                                                value={x.fixed_allowance}
+                                                onChange={(v) =>
+                                                    set(i, "fixed_allowance", v)
+                                                }
+                                            />
+                                            <CurrencyInput
+                                                label="Tunjangan Lain"
+                                                value={x.other_allowance}
+                                                onChange={(v) =>
+                                                    set(i, "other_allowance", v)
+                                                }
+                                            />
+                                            <CurrencyInput
+                                                label="Potongan"
+                                                value={x.deductions}
+                                                onChange={(v) =>
+                                                    set(i, "deductions", v)
+                                                }
+                                            />
+                                        </div>
+                                        <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+                                            <Textarea
+                                                label="Catatan Slip"
+                                                value={x.notes}
+                                                onChange={(e) =>
+                                                    set(
+                                                        i,
+                                                        "notes",
+                                                        e.target.value,
+                                                    )
+                                                }
+                                            />
+                                            <div className="rounded-xl bg-emerald-50 px-5 py-4 text-right">
+                                                <p className="text-xs font-bold text-emerald-700">
+                                                    GAJI BERSIH
+                                                </p>
+                                                <p className="text-xl font-black text-emerald-800">
+                                                    {rp(Math.max(0, net))}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                            {!f.data.items.length && (
+                                <div className="rounded-xl border border-dashed p-10 text-center font-bold text-ink-soft">
+                                    Klik “Tambah Pegawai” untuk mengisi
+                                    transaksi.
+                                </div>
+                            )}
+                        </div>
+                    </section>
+                    <footer className="sticky bottom-3 flex items-center justify-between rounded-2xl border bg-white/95 p-4 shadow-lg dark:border-white/10 dark:bg-graphite">
+                        <div>
+                            <p className="text-xs font-bold uppercase text-ink-soft">
+                                Total bersih batch
+                            </p>
+                            <p className="text-2xl font-black text-emerald-700">
+                                {rp(Math.max(0, total))}
+                            </p>
+                        </div>
+                        <Button
+                            type="submit"
+                            disabled={f.processing || !f.data.items.length}
+                        >
+                            <Save size={17} /> Simpan Draft
+                        </Button>
+                    </footer>
+                </form>
+            </div>
+        </>
+    );
 }
-FormPage.layout = (page) => <AdminLayout title={page?.props?.title ?? "Form Gaji"}>{page}</AdminLayout>;
+FormPage.layout = (page) => (
+    <AdminLayout title={page?.props?.title ?? "Form Penggajian"}>
+        {page}
+    </AdminLayout>
+);

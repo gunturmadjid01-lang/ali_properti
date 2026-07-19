@@ -44,7 +44,7 @@ export default function Show({ title, indexUrl, progress = {}, siteReport = null
                 <section className="rounded-lg border border-white/80 bg-white/78 p-6 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div>
-                            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Detail Progress</p>
+                            <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Detail Kemajuan</p>
                             <h2 className="mt-2 font-display text-3xl font-extrabold">{progress.nama_progress || title}</h2>
                             <p className="mt-2 leading-7 text-ink-soft dark:text-white/60">
                                 {progress.perumahan} - {progress.unit}
@@ -57,23 +57,23 @@ export default function Show({ title, indexUrl, progress = {}, siteReport = null
                     </div>
                 </section>
 
-                <Section title="Progress Pembangunan">
+                <Section title="Kemajuan Pembangunan">
                     <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-4">
                         <Info label="Tanggal" value={progress.tanggal} />
                         <Info label="Jadwal Kerja" value={progress.jadwal} />
                         <Info label="Tahap Jadwal" value={progress.tahap_jadwal} />
                         <Info label="Item Pekerjaan" value={progress.item_pekerjaan} />
                         <Info label="Target Item" value={`${number(progress.target_item)}%`} />
-                        <Info label="Progress Input" value={`${number(progress.progress)}%`} />
+                        <Info label="Kemajuan Input" value={`${number(progress.progress)}%`} />
                         <Info label="Kontribusi Total" value={`${number(progress.kontribusi_total)}%`} />
-                        <Info label="Approval" value={progress.approval_label} />
-                        <Info label="Status Record" value={progress.record_status} />
+                        <Info label="Persetujuan" value={progress.approval_label} />
+                        <Info label="Status Data" value={progress.record_status} />
                         <Info label="Input Oleh" value={progress.input_oleh} />
                         <Info label="Dibuat Oleh" value={progress.created_by_name} />
                         <Info label="Disetujui Oleh" value={progress.approved_by} />
                     </div>
                     <div className="mt-5 grid gap-4 md:grid-cols-2">
-                        <TextBlock label="Keterangan Progress" value={progress.keterangan} />
+                        <TextBlock label="Keterangan Kemajuan" value={progress.keterangan} />
                         <div>
                             <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-ink-soft dark:text-white/45">Bukti Foto</p>
                             <div className="mt-2 rounded-lg border border-silver-deep/60 bg-white/70 p-4 dark:border-white/10 dark:bg-white/5">
@@ -182,4 +182,4 @@ export default function Show({ title, indexUrl, progress = {}, siteReport = null
     );
 }
 
-Show.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Detail Progress Pembangunan'}>{page}</AdminLayout>;
+Show.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Detail Kemajuan Pembangunan'}>{page}</AdminLayout>;

@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers\Admin\Management\DokumenCostumer;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\RendersSeparatedManagementForm;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\DokumenCostumer\StoreDokumenCostumerRequest;
 use App\Http\Requests\Admin\DokumenCostumer\UpdateDokumenCostumerRequest;
 use App\Models\DokumenCostumer;
+use App\Services\ApprovalWorkflowService;
 use App\Support\CodeGenerator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -70,14 +71,14 @@ class DokumenCostumerController extends Controller
         ]);
     }
 
-    public function store(StoreDokumenCostumerRequest $request): RedirectResponse
+    public function store(StoreDokumenCostumerRequest $request, ApprovalWorkflowService $approvalWorkflow): RedirectResponse
     {
-        DokumenCostumer::create([
+        $payload = [
             ...$request->validated(),
             'kode_dokumen' => CodeGenerator::next(DokumenCostumer::class, 'kode_dokumen', 'DOK'),
-        ]);
+        ];
 
-        return to_route('admin.management.master-dokumen-customer.index')->with('success', 'Master dokumen customer berhasil ditambahkan.');
+        return $approvalWorkflow->create('dokumen-customer', $payload, fn (array $data) => DokumenCostumer::create($data));
     }
 
     public function update(UpdateDokumenCostumerRequest $request, string $id): RedirectResponse
@@ -103,9 +104,20 @@ class DokumenCostumerController extends Controller
         return DokumenCostumer::class;
     }
 
-    protected function routeName(): string { return 'admin.management.master-dokumen-customer'; }
-    protected function title(): string { return 'Master Dokumen Pelanggan'; }
-    protected function description(): string { return 'Kelola persyaratan dokumen pelanggan untuk proses SPR, KPR, dan transaksi lainnya.'; }
+    protected function routeName(): string
+    {
+        return 'admin.management.master-dokumen-customer';
+    }
+
+    protected function title(): string
+    {
+        return 'Master Dokumen Pelanggan';
+    }
+
+    protected function description(): string
+    {
+        return 'Kelola dokumen dasar SPR dan dokumen tambahan untuk Cash Bertahap, KPR Bank, atau KPR Developer.';
+    }
 
     protected function fields(): array
     {
@@ -130,11 +142,10 @@ class DokumenCostumerController extends Controller
     protected function categoryOptions(): array
     {
         return [
-            ['value' => 'umum', 'label' => 'Umum'],
             ['value' => 'spr', 'label' => 'SPR'],
-            ['value' => 'kpr', 'label' => 'KPR'],
-            ['value' => 'cash', 'label' => 'Cash'],
-            ['value' => 'bertahap', 'label' => 'Bertahap'],
+            ['value' => 'cash_bertahap', 'label' => 'Cash Bertahap'],
+            ['value' => 'kpr_bank', 'label' => 'KPR Bank'],
+            ['value' => 'kpr_developer', 'label' => 'KPR Developer'],
         ];
     }
 

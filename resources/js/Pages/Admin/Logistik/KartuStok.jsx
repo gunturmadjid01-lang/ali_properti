@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Dropdown } from '../../../Components/UI';
 import AdminLayout from '../../../Layouts/AdminLayout';
 
-const number = (value) => Number(value ?? 0).toLocaleString('id-ID');
+const number = (value) => Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 6 });
 
 function ToolButton({ icon: Icon, children, onClick, disabled = false }) {
     return (
@@ -140,7 +140,7 @@ export default function KartuStok({ title, dataUrl, filters = {}, options = {}, 
                         <table className="w-full min-w-[1120px] divide-y divide-silver-deep/60 text-xs">
                             <thead className="sticky top-0 z-10 bg-silver-soft/95 text-left uppercase tracking-[0.12em] text-ink-soft backdrop-blur dark:bg-[#232930] dark:text-white">
                                 <tr>
-                                    {['No Transaksi', 'Kantor', 'Tanggal', 'Tipe', 'Keterangan', 'Masuk', 'Keluar', 'Saldo', 'Supplier/Pelanggan'].map((column) => (
+                                    {['No Transaksi', 'Kantor', 'Tanggal', 'Tipe', 'Keterangan', 'Input Asli', 'Masuk Level 1', 'Keluar Level 1', 'Saldo Level 1', 'Supplier/Pelanggan'].map((column) => (
                                         <th key={column} className="px-4 py-3 font-extrabold">{column}</th>
                                     ))}
                                 </tr>
@@ -153,6 +153,7 @@ export default function KartuStok({ title, dataUrl, filters = {}, options = {}, 
                                         <td className="px-4 py-3">{row.tanggal}</td>
                                         <td className="px-4 py-3 font-black uppercase">{row.jenis}</td>
                                         <td className="px-4 py-3">{row.keterangan}</td>
+                                        <td className="px-4 py-3 font-bold">{row.input ?? '-'}</td>
                                         <td className="px-4 py-3 text-right">{Number(row.masuk || 0) > 0 ? number(row.masuk) : '0,00'}</td>
                                         <td className="px-4 py-3 text-right">{Number(row.keluar || 0) > 0 ? number(row.keluar) : '0,00'}</td>
                                         <td className="px-4 py-3 text-right font-black">{number(row.saldo)}</td>

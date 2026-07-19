@@ -4,10 +4,14 @@ namespace App\Services;
 
 use App\Models\CabangPerusahaan;
 use App\Models\ChartOfAccount;
+use App\Models\EmployeeAdvance;
 use App\Models\HppRealisasi;
 use App\Models\Journal;
 use App\Models\KelompokHpp;
 use App\Models\MaterialPurchase;
+use App\Models\PaymentSchedule;
+use App\Models\PayrollBatch;
+use App\Models\PettyCashDeposit;
 use App\Models\PettyCashExpense;
 use App\Models\PettyCashFunding;
 use App\Models\SpkKontraktorPayment;
@@ -19,14 +23,78 @@ use Illuminate\Validation\ValidationException;
 
 class AccountingService
 {
+    public const CUSTOMER_INVOICE = 'customer_invoice';
+
+    public const CUSTOMER_RECEIPT = 'customer_receipt';
+
     public const CONTRACTOR_BILL = 'contractor_bill';
+
     public const CONTRACTOR_PAYMENT = 'contractor_payment';
+
     public const MATERIAL_CASH_PURCHASE = 'material_cash_purchase';
+
     public const SUPPLIER_BILL = 'supplier_bill';
+
     public const SUPPLIER_PAYMENT = 'supplier_payment';
+
     public const CASH_TRANSACTION = 'cash_transaction';
+
     public const PETTY_CASH_FUNDING = 'petty_cash_funding';
+
     public const PETTY_CASH_EXPENSE = 'petty_cash_expense';
+
+    public const PETTY_CASH_DEPOSIT = 'petty_cash_deposit';
+
+    public function recordPettyCashDeposit(PettyCashDeposit $deposit): Journal
+    {
+        return $this->postJournal($deposit, self::PETTY_CASH_DEPOSIT, $deposit->deposit_date->toDateString(), $deposit->masterBank?->perumahan_id, null, "Penyetoran Kas Kecil {$deposit->number} ke Kas Perusahaan", [
+            ['account' => ChartOfAccount::KAS_BANK, 'debit' => $deposit->amount, 'kredit' => 0],
+            ['account' => ChartOfAccount::KAS_KECIL, 'debit' => 0, 'kredit' => $deposit->amount],
+        ], $deposit->master_bank_id);
+    }
+
+    public const EMPLOYEE_PAYROLL = 'employee_payroll';
+
+    public const EMPLOYEE_ADVANCE = 'employee_advance';
+
+    public function recordEmployeePayroll(PayrollBatch $batch): Journal
+    {
+        $advance = (float) $batch->items()->sum('advance_deduction');
+        $other = max(0, (float) $batch->total_deductions - $advance);
+        $lines = [['account' => ChartOfAccount::BEBAN_GAJI, 'debit' => $batch->total_gross, 'kredit' => 0], ['account' => ChartOfAccount::KAS_BANK, 'debit' => 0, 'kredit' => $batch->total_net]];
+        if ($advance > 0) {
+            $lines[] = ['account' => '1-1200', 'debit' => 0, 'kredit' => $advance];
+        }
+        if ($other > 0) {
+            $lines[] = ['account' => '2-2300', 'debit' => 0, 'kredit' => $other];
+        }
+
+        return $this->postJournal(
+            source: $batch,
+            type: self::EMPLOYEE_PAYROLL,
+            tanggal: $batch->payment_date->toDateString(),
+            perumahanId: $batch->perumahan_id,
+            detailRumahId: null,
+            keterangan: "Penggajian pegawai {$batch->batch_number} periode {$batch->period}",
+            lines: $lines,
+            masterBankId: $batch->master_bank_id,
+        );
+    }
+
+    public function recordEmployeeAdvance(EmployeeAdvance $advance): Journal
+    {
+        return $this->postJournal($advance, self::EMPLOYEE_ADVANCE, $advance->advance_date->toDateString(), $advance->perumahan_id, null, "Panjar pegawai {$advance->advance_number}", [['account' => '1-1200', 'debit' => $advance->amount, 'kredit' => 0], ['account' => ChartOfAccount::KAS_BANK, 'debit' => 0, 'kredit' => $advance->amount]], $advance->master_bank_id);
+    }
+
+    public function recordCustomerInvoice(PaymentSchedule $invoice): Journal
+    {
+        $invoice->loadMissing(['salesTransaction', 'housingReservation.unit']);
+
+        return $this->postJournal($invoice, self::CUSTOMER_INVOICE, $invoice->issued_at?->toDateString() ?? now()->toDateString(), $invoice->salesTransaction?->perumahan_id ?? $invoice->housingReservation?->unit?->perumahan_id, $invoice->salesTransaction?->detail_rumah_id ?? $invoice->housingReservation?->detail_rumah_id, "Tagihan customer {$invoice->invoice_no}", [
+            ['account' => ChartOfAccount::PIUTANG_CUSTOMER, 'debit' => $invoice->amount, 'kredit' => 0],
+            ['account' => ChartOfAccount::UANG_MUKA_CUSTOMER, 'debit' => 0, 'kredit' => $invoice->amount],
+        ]);
+    }
 
     public function recordPettyCashFunding(PettyCashFunding $funding): Journal
     {
@@ -84,7 +152,7 @@ class AccountingService
             ]);
         }
 
-        $perumahanId = $transaction->perumahan_id ?: $transaction->masterBank?->perumahan_id;
+        $perumahanId = $transaction->perumahan_id;
         $journal = $this->postJournal(
             source: $transaction,
             type: self::CASH_TRANSACTION,
@@ -96,6 +164,7 @@ class AccountingService
                 ['account' => $post->debitAccount->kode_akun, 'debit' => $transaction->nominal, 'kredit' => 0],
                 ['account' => $post->creditAccount->kode_akun, 'debit' => 0, 'kredit' => $transaction->nominal],
             ],
+            masterBankId: $transaction->master_bank_id,
         );
 
         $transaction->forceFill([
@@ -182,7 +251,7 @@ class AccountingService
             'pembukaan_lahan' => 'Biaya Pematangan Lahan',
             default => 'Biaya Subkontraktor',
         };
-        $kelompokId = KelompokHpp::query()->where('nama_hpp', $kelompokName)->value('id');
+        $kelompokId = KelompokHpp::query()->finalized()->where('nama_hpp', $kelompokName)->value('id');
         $target = $spk->detailRumah ?: $spk->perumahan;
 
         if (! $target) {
@@ -228,6 +297,7 @@ class AccountingService
                 ['account' => ChartOfAccount::PERSEDIAAN_MATERIAL, 'debit' => $purchase->total_nominal, 'kredit' => 0],
                 ['account' => ChartOfAccount::KAS_BANK, 'debit' => 0, 'kredit' => $purchase->total_nominal],
             ],
+            masterBankId: $purchase->payment_master_bank_id,
         );
 
         $this->recordCashflow(
@@ -279,6 +349,7 @@ class AccountingService
                 ['account' => ChartOfAccount::HUTANG_SUPPLIER, 'debit' => $purchase->total_nominal, 'kredit' => 0],
                 ['account' => ChartOfAccount::KAS_BANK, 'debit' => 0, 'kredit' => $purchase->total_nominal],
             ],
+            masterBankId: $purchase->payment_master_bank_id,
         );
 
         $this->recordCashflow(
@@ -293,9 +364,9 @@ class AccountingService
         return $journal;
     }
 
-    public function postJournal(Model $source, string $type, string $tanggal, ?int $perumahanId, ?int $detailRumahId, string $keterangan, array $lines): Journal
+    public function postJournal(Model $source, string $type, string $tanggal, ?int $perumahanId, ?int $detailRumahId, string $keterangan, array $lines, ?int $masterBankId = null): Journal
     {
-        return DB::transaction(function () use ($source, $type, $tanggal, $perumahanId, $detailRumahId, $keterangan, $lines) {
+        return DB::transaction(function () use ($source, $type, $tanggal, $perumahanId, $detailRumahId, $keterangan, $lines, $masterBankId) {
             $existing = Journal::query()
                 ->where('source_type', $source::class)
                 ->where('source_id', $source->getKey())
@@ -303,6 +374,10 @@ class AccountingService
                 ->first();
 
             if ($existing) {
+                if ($masterBankId && ! $existing->master_bank_id) {
+                    $existing->update(['master_bank_id' => $masterBankId]);
+                }
+
                 return $existing;
             }
 
@@ -339,6 +414,7 @@ class AccountingService
                 'source_id' => $source->getKey(),
                 'perumahan_id' => $perumahanId,
                 'detail_rumah_id' => $detailRumahId,
+                'master_bank_id' => $masterBankId,
                 'total_debit' => $totalDebit,
                 'total_kredit' => $totalKredit,
                 'keterangan' => $keterangan,
@@ -358,10 +434,9 @@ class AccountingService
         string $keterangan,
         ?int $cabangId = null,
         ?int $masterBankId = null,
-    ): void
-    {
-        $tipePost = TipePost::query()->where('nama_post', $tipePostName)->first();
-        $cabangId = $cabangId ?: CabangPerusahaan::query()->value('id');
+    ): void {
+        $tipePost = TipePost::query()->finalized()->where('nama_post', $tipePostName)->first();
+        $cabangId = $cabangId ?: CabangPerusahaan::query()->finalized()->value('id');
         $userId = auth()->id();
 
         if (! $tipePost || ! $cabangId || ! $userId) {

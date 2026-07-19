@@ -4,13 +4,14 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\ChartOfAccount;
+use App\Models\CabangPerusahaan;
 use App\Models\Journal;
 use App\Models\JournalDetail;
-use App\Models\MaterialPurchase;
 use App\Models\MasterBank;
+use App\Models\MaterialPurchase;
+use App\Models\PaymentSchedule;
 use App\Models\Perumahan;
 use App\Models\SpkKontraktorPayment;
-use App\Models\SprBillingSchedule;
 use App\Models\TipePost;
 use App\Models\TransaksiKeuangan;
 use App\Services\AccountingService;
@@ -61,9 +62,11 @@ class FinanceController extends Controller
                 'date_from' => $from->toDateString(),
                 'date_to' => $to->toDateString(),
                 'perumahan_id' => $perumahanId ? (string) $perumahanId : '',
+                'cabang_id' => (string) ($this->cabangId($request) ?? ''),
                 'account_id' => (string) $request->query('account_id', ''),
             ],
             'options' => [
+                'branches' => $this->branchOptions($request),
                 'perumahans' => $this->perumahanOptions($request),
                 'accounts' => ChartOfAccount::query()
                     ->where('status', 'aktif')
@@ -157,7 +160,7 @@ class FinanceController extends Controller
     {
         $this->authorizeFinanceWrite($request);
         $validated = $request->validate([
-            'perumahan_id' => ['required', 'exists:perumahans,id'],
+            'cabang_id' => ['required', 'exists:cabang_perusahaans,id'],
             'master_bank_id' => ['required', 'exists:master_banks,id'],
             'tipe_post_id' => ['required', 'exists:tipe_posts,id'],
             'tanggal' => ['required', 'date'],
@@ -165,11 +168,11 @@ class FinanceController extends Controller
             'nomor_referensi' => ['nullable', 'string', 'max:100'],
             'keterangan' => ['required', 'string'],
         ]);
-        $this->ensurePerumahanAllowed($request, $validated['perumahan_id']);
+        $this->ensureCabangAllowed($request, $validated['cabang_id']);
 
         $bank = MasterBank::query()
             ->whereKey($validated['master_bank_id'])
-            ->where('perumahan_id', $validated['perumahan_id'])
+            ->where('cabang_id', $validated['cabang_id'])
             ->where('status', 'aktif')
             ->firstOrFail();
         $post = TipePost::query()
@@ -179,12 +182,10 @@ class FinanceController extends Controller
             ->whereNotNull('debit_account_id')
             ->whereNotNull('credit_account_id')
             ->firstOrFail();
-        $property = Perumahan::query()->findOrFail($validated['perumahan_id']);
-
-        DB::transaction(function () use ($request, $validated, $bank, $post, $property, $accounting): void {
+        DB::transaction(function () use ($request, $validated, $bank, $post, $accounting): void {
             $transaction = TransaksiKeuangan::query()->create([
-                'cabang_id' => $property->cabang_id,
-                'perumahan_id' => $property->id,
+                'cabang_id' => $validated['cabang_id'],
+                'perumahan_id' => null,
                 'master_bank_id' => $bank->id,
                 'tipe_post_id' => $post->id,
                 'tanggal' => $validated['tanggal'],
@@ -224,8 +225,8 @@ class FinanceController extends Controller
     {
         return match ($section) {
             'dashboard' => $this->dashboardData($from, $to, $perumahanId),
-            'pemasukan' => $this->manualTransactionData($from, $to, $perumahanId, 'pemasukan'),
-            'pengeluaran' => $this->manualTransactionData($from, $to, $perumahanId, 'pengeluaran'),
+            'pemasukan' => $this->manualTransactionData($request, $from, $to, 'pemasukan'),
+            'pengeluaran' => $this->manualTransactionData($request, $from, $to, 'pengeluaran'),
             'daftar-akun' => $this->accountData(),
             'jurnal-umum' => $this->journalData($from, $to, $perumahanId),
             'buku-besar' => $this->ledgerData($request, $from, $to, $perumahanId),
@@ -238,11 +239,15 @@ class FinanceController extends Controller
         };
     }
 
-    protected function manualTransactionData(Carbon $from, Carbon $to, ?int $perumahanId, ?string $type = null): array
+    protected function manualTransactionData(Request $request, Carbon $from, Carbon $to, ?string $type = null): array
     {
+        $allowedBranches = $this->allowedCabangIds($request);
+        $cabangId = $this->cabangId($request);
+
         return [
             'rows' => TransaksiKeuangan::query()
                 ->with([
+                    'cabang:id,nama_cabang',
                     'perumahan:id,nama_perusahaan',
                     'masterBank:id,nama_bank,nomor_rekening',
                     'tipePost:id,nama_post,jenis',
@@ -250,7 +255,8 @@ class FinanceController extends Controller
                 ])
                 ->whereBetween('tanggal', [$from, $to])
                 ->when($type, fn (Builder $query, string $type) => $query->whereHas('tipePost', fn (Builder $postQuery) => $postQuery->where('jenis', $type)))
-                ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))
+                ->when(! $request->user()?->hasAnyRole(['owner', 'super_admin']), fn (Builder $query) => $query->whereIn('cabang_id', $allowedBranches))
+                ->when($cabangId, fn (Builder $query, int $id) => $query->where('cabang_id', $id))
                 ->latest('tanggal')
                 ->latest('id')
                 ->limit(300)
@@ -259,6 +265,7 @@ class FinanceController extends Controller
                     'id' => $row->id,
                     'date' => optional($row->tanggal)->format('Y-m-d'),
                     'reference' => $row->nomor_referensi ?: '-',
+                    'company' => $row->cabang?->nama_cabang ?? '-',
                     'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
                     'bank' => trim(($row->masterBank?->nama_bank ?? '-').' '.($row->masterBank?->nomor_rekening ?? '')),
                     'post' => $row->tipePost?->nama_post ?? '-',
@@ -291,6 +298,12 @@ class FinanceController extends Controller
                 'in' => (float) $rows->sum('debit'),
                 'out' => (float) $rows->sum('kredit'),
             ])->sortKeys()->values();
+        $runningBalance = $this->cashFlowData($from->copy()->startOfMonth(), $from->copy()->subDay(), $perumahanId)['ending_balance'];
+        $monthly = $monthly->map(function (array $row) use (&$runningBalance) {
+            $runningBalance += $row['in'] - $row['out'];
+
+            return [...$row, 'label' => Carbon::createFromFormat('Y-m', $row['month'])->translatedFormat('M Y'), 'balance' => $runningBalance];
+        });
 
         return [
             'stats' => [
@@ -324,10 +337,19 @@ class FinanceController extends Controller
 
     protected function journalData(Carbon $from, Carbon $to, ?int $perumahanId): array
     {
+        $journals = $this->journalQuery($from, $to, $perumahanId)
+            ->with(['perumahan:id,nama_perusahaan', 'details.account:id,kode_akun,nama_akun'])
+            ->latest('tanggal')->latest('id')->limit(300)->get();
+
         return [
-            'rows' => $this->journalQuery($from, $to, $perumahanId)
-                ->with(['perumahan:id,nama_perusahaan', 'details.account:id,kode_akun,nama_akun'])
-                ->latest('tanggal')->latest('id')->limit(300)->get()
+            'trend' => $journals->groupBy(fn (Journal $row) => $row->tanggal?->format('Y-m-d'))
+                ->map(fn ($rows, string $date) => [
+                    'label' => Carbon::parse($date)->format('d M'),
+                    'date' => $date,
+                    'debit' => (float) $rows->sum(fn (Journal $row) => $row->details->sum('debit')),
+                    'credit' => (float) $rows->sum(fn (Journal $row) => $row->details->sum('kredit')),
+                ])->sortBy('date')->values()->take(-31)->values(),
+            'rows' => $journals
                 ->map(fn (Journal $row) => [
                     ...$this->journalRow($row),
                     'lines' => $row->details->map(fn (JournalDetail $line) => [
@@ -430,9 +452,32 @@ class FinanceController extends Controller
         $revenue = $rows->whereIn('category', ['pendapatan', 'pendapatan_lain'])->sum('amount');
         $cost = $rows->where('category', 'beban_hpp')->sum('amount');
         $operating = $rows->whereIn('category', ['beban_operasional', 'beban_lain'])->sum('amount');
+        $trend = JournalDetail::query()
+            ->with(['journal', 'account:id,kategori'])
+            ->whereIn('chart_of_account_id', $accounts->pluck('id'))
+            ->whereHas('journal', fn (Builder $query) => $query
+                ->whereBetween('tanggal', [$from, $to])
+                ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)))
+            ->get()
+            ->groupBy(fn (JournalDetail $row) => $row->journal?->tanggal?->format('Y-m'))
+            ->map(function ($lines, string $month) {
+                $revenue = (float) $lines->filter(fn (JournalDetail $line) => in_array($line->account?->kategori, ['pendapatan', 'pendapatan_lain'], true))
+                    ->sum(fn (JournalDetail $line) => $line->kredit - $line->debit);
+                $expense = (float) $lines->filter(fn (JournalDetail $line) => in_array($line->account?->kategori, ['beban_hpp', 'beban_operasional', 'beban_lain'], true))
+                    ->sum(fn (JournalDetail $line) => $line->debit - $line->kredit);
+
+                return [
+                    'month' => $month,
+                    'label' => Carbon::createFromFormat('Y-m', $month)->translatedFormat('M Y'),
+                    'revenue' => $revenue,
+                    'expense' => $expense,
+                    'profit' => $revenue - $expense,
+                ];
+            })->sortBy('month')->values();
 
         return [
             'rows' => $rows,
+            'trend' => $trend,
             'revenue' => (float) $revenue,
             'cost_of_sales' => (float) $cost,
             'gross_profit' => (float) ($revenue - $cost),
@@ -489,6 +534,21 @@ class FinanceController extends Controller
         $opening = (float) $openingRows->sum(fn (JournalDetail $row) => $row->debit - $row->kredit);
         $cashIn = (float) $periodRows->sum('debit');
         $cashOut = (float) $periodRows->sum('kredit');
+        $runningBalance = $opening;
+        $trend = $periodRows->groupBy(fn (JournalDetail $row) => $row->journal?->tanggal?->format('Y-m-d'))
+            ->map(function ($rows, string $date) use (&$runningBalance) {
+                $cashIn = (float) $rows->sum('debit');
+                $cashOut = (float) $rows->sum('kredit');
+                $runningBalance += $cashIn - $cashOut;
+
+                return [
+                    'date' => $date,
+                    'label' => Carbon::parse($date)->format('d M'),
+                    'in' => $cashIn,
+                    'out' => $cashOut,
+                    'balance' => $runningBalance,
+                ];
+            })->values();
 
         return [
             'opening_balance' => $opening,
@@ -496,6 +556,7 @@ class FinanceController extends Controller
             'cash_out' => $cashOut,
             'net_cash_flow' => $cashIn - $cashOut,
             'ending_balance' => $opening + $cashIn - $cashOut,
+            'trend' => $trend,
             'groups' => $periodRows->groupBy(fn (JournalDetail $row) => $row->journal?->type ?? 'Lainnya')
                 ->map(fn ($rows, string $name) => [
                     'name' => $name,
@@ -516,25 +577,26 @@ class FinanceController extends Controller
 
     protected function receivableData(?int $perumahanId): array
     {
-        $rows = SprBillingSchedule::query()
-            ->with(['spr.costumer:id,nama', 'spr.detailRumah.perumahan:id,nama_perusahaan'])
-            ->when($perumahanId, fn (Builder $query, int $id) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $query->where('perumahan_id', $id)))
-            ->orderBy('tanggal_jatuh_tempo')->get()
-            ->map(fn (SprBillingSchedule $row) => [
+        $rows = PaymentSchedule::query()
+            ->with(['salesTransaction.customer:id,nama', 'salesTransaction.housingProject:id,nama_perusahaan'])
+            ->where('record_status', 'locked')->when($perumahanId, fn (Builder $query, int $id) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('perumahan_id', $id)))
+            ->orderBy('due_date')->get()
+            ->map(fn (PaymentSchedule $row) => [
                 'id' => $row->id,
-                'reference' => $row->spr?->kode_spr,
-                'customer' => $row->spr?->costumer?->nama,
-                'perumahan' => $row->spr?->detailRumah?->perumahan?->nama_perusahaan ?? '-',
-                'type' => $row->jenis_tagihan,
-                'due_date' => optional($row->tanggal_jatuh_tempo)->format('Y-m-d'),
-                'bill' => (float) $row->nominal_tagihan,
-                'paid' => (float) $row->nominal_dibayar,
-                'remaining' => max(0, (float) $row->nominal_tagihan - (float) $row->nominal_dibayar),
+                'reference' => $row->salesTransaction?->transaction_no,
+                'customer' => $row->salesTransaction?->customer?->nama,
+                'perumahan' => $row->salesTransaction?->housingProject?->nama_perusahaan ?? '-',
+                'type' => $row->description,
+                'due_date' => optional($row->due_date)->format('Y-m-d'),
+                'bill' => (float) $row->amount,
+                'paid' => (float) $row->paid_amount,
+                'remaining' => max(0, (float) $row->amount - (float) $row->paid_amount),
                 'status' => $row->status,
             ]);
 
         return [
             'rows' => $rows,
+            'aging' => $this->agingBuckets($rows),
             'summary' => [
                 'bill' => $rows->sum('bill'),
                 'paid' => $rows->sum('paid'),
@@ -581,12 +643,39 @@ class FinanceController extends Controller
 
         return [
             'rows' => $rows,
+            'aging' => $this->agingBuckets($rows),
             'summary' => [
                 'bill' => $rows->sum('bill'),
                 'paid' => $rows->sum('paid'),
                 'remaining' => $rows->sum('remaining'),
             ],
         ];
+    }
+
+    protected function agingBuckets($rows): array
+    {
+        $today = now()->startOfDay();
+        $buckets = collect([
+            ['key' => 'current', 'label' => 'Belum jatuh tempo', 'value' => 0],
+            ['key' => '1-30', 'label' => 'Lewat 1–30 hari', 'value' => 0],
+            ['key' => '31-60', 'label' => 'Lewat 31–60 hari', 'value' => 0],
+            ['key' => '61-90', 'label' => 'Lewat 61–90 hari', 'value' => 0],
+            ['key' => '90+', 'label' => 'Lewat >90 hari', 'value' => 0],
+        ])->keyBy('key');
+
+        foreach ($rows as $row) {
+            if (($row['remaining'] ?? 0) <= 0) {
+                continue;
+            }
+            $due = filled($row['due_date'] ?? null) ? Carbon::parse($row['due_date'])->startOfDay() : $today;
+            $days = $due->lt($today) ? $due->diffInDays($today) : 0;
+            $key = $days === 0 ? 'current' : ($days <= 30 ? '1-30' : ($days <= 60 ? '31-60' : ($days <= 90 ? '61-90' : '90+')));
+            $bucket = $buckets->get($key);
+            $bucket['value'] += (float) $row['remaining'];
+            $buckets->put($key, $bucket);
+        }
+
+        return $buckets->values()->all();
     }
 
     protected function accountMovement(ChartOfAccount $account, ?Carbon $from, Carbon $to, ?int $perumahanId): array
@@ -672,20 +761,66 @@ class FinanceController extends Controller
     protected function bankOptions(Request $request): array
     {
         $query = MasterBank::query()
-            ->with('perumahan:id,nama_perusahaan')
+            ->with(['cabang:id,nama_cabang', 'perumahan:id,nama_perusahaan'])
+            ->finalized()
             ->where('status', 'aktif')
             ->orderBy('nama_bank');
 
         if (! $request->user()?->hasAnyRole(['owner', 'super_admin'])) {
-            $query->whereIn('perumahan_id', $request->user()?->perumahans()->pluck('perumahans.id') ?? []);
+            $query->whereIn('cabang_id', $this->allowedCabangIds($request));
         }
 
-        return $query->get(['id', 'perumahan_id', 'nama_bank', 'nomor_rekening', 'nama_rekening'])
+        return $query->get(['id', 'cabang_id', 'perumahan_id', 'nama_bank', 'nomor_rekening', 'nama_rekening'])
             ->map(fn (MasterBank $row) => [
                 'value' => (string) $row->id,
+                'cabang_id' => (string) $row->cabang_id,
                 'perumahan_id' => (string) $row->perumahan_id,
-                'label' => trim(($row->perumahan?->nama_perusahaan ?? '-').' - '.$row->nama_bank.' - '.$row->nomor_rekening),
+                'label' => trim(($row->cabang?->nama_cabang ?? '-').' - '.$row->nama_bank.' - '.$row->nomor_rekening),
             ])->all();
+    }
+
+    protected function branchOptions(Request $request): array
+    {
+        return CabangPerusahaan::query()
+            ->finalized()
+            ->when(! $request->user()?->hasAnyRole(['owner', 'super_admin']), fn (Builder $query) => $query->whereIn('id', $this->allowedCabangIds($request)))
+            ->orderBy('nama_cabang')
+            ->get(['id', 'nama_cabang'])
+            ->map(fn (CabangPerusahaan $row) => ['value' => (string) $row->id, 'label' => $row->nama_cabang])
+            ->values()
+            ->all();
+    }
+
+    protected function cabangId(Request $request): ?int
+    {
+        $requested = $request->integer('cabang_id');
+        $allowed = $this->allowedCabangIds($request);
+
+        if ($request->user()?->hasAnyRole(['owner', 'super_admin'])) {
+            return $requested ?: null;
+        }
+
+        return $requested && in_array($requested, $allowed, true) ? $requested : ($allowed[0] ?? null);
+    }
+
+    protected function allowedCabangIds(Request $request): array
+    {
+        return collect([$request->user()?->kantor_cabang_id])
+            ->merge($request->user()?->perumahans()->pluck('perumahans.cabang_id') ?? [])
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    protected function ensureCabangAllowed(Request $request, mixed $cabangId): void
+    {
+        if ($request->user()?->hasAnyRole(['owner', 'super_admin'])) {
+            return;
+        }
+
+        abort_unless(in_array((int) $cabangId, $this->allowedCabangIds($request), true), 403);
     }
 
     protected function ensurePerumahanAllowed(Request $request, mixed $perumahanId): void

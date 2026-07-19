@@ -79,7 +79,9 @@ export default function FieldRenderer({
         );
     }
 
-    if (field.type === "select" || field.type === "creatable-select") {
+    const isRelationalChoice = /_id$/.test(field.name) && fieldOptions.length > 0;
+
+    if (field.type === "select" || field.type === "creatable-select" || isRelationalChoice) {
         return (
             <div className="grid gap-2">
                 <FieldLabel

@@ -79,7 +79,7 @@ function Login({ title = 'Login Area Internal' }) {
                 </label>
 
                 <Button className="mt-1 w-full" type="submit" disabled={form.processing}>
-                    Masuk ke Dashboard
+                    Masuk ke Dasbor
                     <ArrowRight size={18} />
                 </Button>
 

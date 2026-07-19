@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers\Admin\Marketing;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\ChecksMarketingAccess;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
+use App\Http\Controllers\Controller;
 use App\Models\Costumer;
+use App\Models\CostumerFollowUp;
 use App\Models\MarketingLeadActivity;
+use App\Models\MarketingSurveySchedule;
+use App\Models\SalesTransaction;
+use App\Models\Spr;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -46,6 +50,37 @@ class LeadReportController extends Controller
             ->groupBy('status_lead')
             ->pluck('total', 'status_lead')
             ->all();
+
+        $customerScope = fn (Builder $query) => $query
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request));
+        $sprScope = fn (Builder $query) => $query
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)));
+
+        $leadDates = $customerScope(Costumer::query())->whereBetween('created_at', [$from, $to])->pluck('created_at');
+        $followUpDates = CostumerFollowUp::query()->whereBetween('tanggal_follow_up', [$from, $to])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
+            ->pluck('tanggal_follow_up');
+        $surveyDates = MarketingSurveySchedule::query()->whereBetween('tanggal_survey', [$from, $to])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanId($request)))
+            ->pluck('tanggal_survey');
+        $sprDates = $sprScope(Spr::query())->whereBetween('tanggal_spr', [$from, $to])->pluck('tanggal_spr');
+        $approvedSpr = $sprScope(Spr::query())->where('status', Spr::STATUS_DISETUJUI)->whereBetween('tanggal_spr', [$from, $to]);
+        $failedSales = SalesTransaction::query()->where('status', 'closed_lost')->whereBetween('closed_at', [$from, $to])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_user_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanId($request)))
+            ->count();
+
+        $operationalDaily = collect(Carbon::parse($dateFrom)->daysUntil(Carbon::parse($dateTo)->addDay()))
+            ->map(function (Carbon $date) use ($leadDates, $followUpDates, $surveyDates, $sprDates): array {
+                $key = $date->toDateString();
+                $count = fn ($dates) => $dates->filter(fn ($value) => Carbon::parse($value)->toDateString() === $key)->count();
+
+                return ['date' => $date->format('d M'), 'lead' => $count($leadDates), 'follow_up' => $count($followUpDates), 'survey' => $count($surveyDates), 'spr' => $count($sprDates)];
+            })->values();
 
         $sourceRows = Costumer::query()
             ->with('leadSource:id,nama_sumber')
@@ -95,9 +130,16 @@ class LeadReportController extends Controller
                     ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
                     ->count(),
                 'activities' => $activities->count(),
-                'closing_period' => $periodStats[MarketingLeadStatusService::CLOSING]['total'] ?? 0,
                 'booking_period' => $periodStats[MarketingLeadStatusService::BOOKING_FEE]['total'] ?? 0,
+                'lead_period' => $leadDates->count(),
+                'follow_up_period' => $followUpDates->count(),
+                'survey_period' => $surveyDates->count(),
+                'spr_period' => $sprDates->count(),
+                'closing_period' => (clone $approvedSpr)->count(),
+                'sales_value_period' => (float) (clone $approvedSpr)->sum('nilai_pengajuan_akhir'),
+                'failed_period' => $failedSales,
             ],
+            'operationalDaily' => $operationalDaily,
             'currentStatus' => collect($statusOptions)->map(fn (array $option) => [
                 'value' => $option['value'],
                 'label' => $option['label'],

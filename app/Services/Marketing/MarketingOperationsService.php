@@ -3,45 +3,16 @@
 namespace App\Services\Marketing;
 
 use App\Models\CostumerFollowUp;
-use App\Models\DetailRumah;
 use App\Models\KprStageHistory;
 use App\Models\KprSubmission;
 use App\Models\MarketingReminder;
 use App\Models\MarketingSurveySchedule;
 use App\Models\Spr;
-use App\Models\SprBillingSchedule;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class MarketingOperationsService
 {
-    public function syncBillingSchedules(Spr $spr): void
-    {
-        $spr->loadMissing('payments');
-
-        DB::transaction(function () use ($spr): void {
-            $this->upsertSchedule($spr, 'booking_fee', null, $spr->tanggal_pembayaran_booking_fee ?? $spr->tanggal_spr, (float) $spr->booking_fee);
-
-            $dpParts = max(1, (int) ($spr->uang_muka_jumlah_pembayaran ?: 1));
-            $dpNominal = $dpParts > 0 ? (float) $spr->uang_muka / $dpParts : 0;
-            $dpDate = Carbon::parse($spr->tanggal_jatuh_tempo_dp ?? $spr->tanggal_spr ?? now());
-            for ($i = 1; $i <= $dpParts; $i++) {
-                $this->upsertSchedule($spr, 'uang_muka', $i, $dpDate->copy()->addMonths($i - 1), $dpNominal);
-            }
-
-            if ($spr->metode_pembayaran === 'bertahap') {
-                $parts = max(1, (int) ($spr->jumlah_termin ?: 1));
-                $nominal = (float) ($spr->nominal_termin ?: (($spr->nilai_pengajuan_akhir ?: $spr->harga_jual) / $parts));
-                $date = Carbon::parse($spr->tanggal_jatuh_tempo_termin ?? $spr->tanggal_jatuh_tempo_angsuran ?? $spr->tanggal_spr ?? now());
-                for ($i = 1; $i <= $parts; $i++) {
-                    $this->upsertSchedule($spr, 'termin', $i, $date->copy()->addMonths($i - 1), $nominal);
-                }
-            }
-
-            $this->allocatePayments($spr);
-        });
-    }
-
     public function syncAutomaticReminders(?int $userId = null): void
     {
         CostumerFollowUp::query()
@@ -99,12 +70,12 @@ class MarketingOperationsService
     public function expireBookings(): int
     {
         $expired = Spr::query()
-            ->with(['payments', 'detailRumah'])
+            ->with(['salesTransaction.customerReceipts', 'detailRumah'])
             ->where('status', Spr::STATUS_DISETUJUI)
             ->whereNotNull('booking_expires_at')
             ->where('booking_expires_at', '<', now())
             ->get()
-            ->filter(fn (Spr $spr) => (float) $spr->payments->where('jenis_pembayaran', 'booking_fee')->sum('nominal') < (float) $spr->booking_fee);
+            ->filter(fn (Spr $spr) => (float) ($spr->salesTransaction?->customerReceipts->where('receipt_purpose', 'booking_fee')->where('status', 'posted')->sum('amount') ?? 0) < (float) $spr->booking_fee);
 
         foreach ($expired as $spr) {
             DB::transaction(function () use ($spr): void {
@@ -133,44 +104,6 @@ class MarketingOperationsService
             'catatan' => $note,
             'user_id' => $userId,
         ]);
-    }
-
-    protected function upsertSchedule(Spr $spr, string $type, ?int $part, mixed $date, float $amount): void
-    {
-        if ($amount <= 0 || blank($date)) {
-            return;
-        }
-
-        SprBillingSchedule::query()->updateOrCreate(
-            ['spr_id' => $spr->id, 'jenis_tagihan' => $type, 'termin_ke' => $part],
-            [
-                'tanggal_jatuh_tempo' => Carbon::parse($date)->toDateString(),
-                'nominal_tagihan' => round($amount, 2),
-                'keterangan' => $part ? ucfirst(str_replace('_', ' ', $type))." ke-{$part}" : ucfirst(str_replace('_', ' ', $type)),
-            ],
-        );
-    }
-
-    protected function allocatePayments(Spr $spr): void
-    {
-        foreach (['booking_fee', 'uang_muka', 'termin'] as $type) {
-            $paymentType = $type === 'termin' ? 'lainnya' : $type;
-            $remaining = (float) $spr->payments
-                ->where('jenis_pembayaran', $paymentType)
-                ->where('status', 'dikonfirmasi')
-                ->sum('nominal');
-
-            foreach ($spr->billingSchedules()->where('jenis_tagihan', $type)->orderBy('termin_ke')->orderBy('id')->get() as $schedule) {
-                $paid = min($remaining, (float) $schedule->nominal_tagihan);
-                $remaining -= $paid;
-                $schedule->update([
-                    'nominal_dibayar' => $paid,
-                    'status' => $paid >= (float) $schedule->nominal_tagihan
-                        ? 'lunas'
-                        : ($paid > 0 ? 'sebagian' : ($schedule->tanggal_jatuh_tempo->isPast() ? 'jatuh_tempo' : 'belum_bayar')),
-                ]);
-            }
-        }
     }
 
     protected function kprStage(string $status): string

@@ -25,8 +25,13 @@ import {
     Input,
     Modal,
     Textarea,
+    TableActions,
 } from "../../../Components/UI";
 import AdminLayout from "../../../Layouts/AdminLayout";
+import {
+    FinanceChart,
+    FinanceTrendChart,
+} from "../../../Components/Finance/FinanceChart";
 
 const money = (value) =>
     new Intl.NumberFormat("id-ID", {
@@ -64,9 +69,60 @@ function FilterBar({ baseUrl, filters, options, showAccount = false }) {
             { preserveScroll: true, preserveState: true, replace: true },
         );
     };
+    const quickPeriod = (period) => {
+        const today = new Date();
+        const iso = (date) => date.toISOString().slice(0, 10);
+        let start = new Date(today);
+        if (period === "month")
+            start = new Date(today.getFullYear(), today.getMonth(), 1);
+        if (period === "year") start = new Date(today.getFullYear(), 0, 1);
+        const nextFrom = iso(start);
+        const nextTo = iso(today);
+        setDateFrom(nextFrom);
+        setDateTo(nextTo);
+        router.get(
+            baseUrl,
+            {
+                date_from: nextFrom,
+                date_to: nextTo,
+                perumahan_id: perumahanId,
+                account_id: accountId,
+            },
+            { preserveScroll: true, preserveState: true, replace: true },
+        );
+    };
 
     return (
         <Card className="p-4">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+                <span className="mr-1 text-xs font-black uppercase text-ink-soft">
+                    Periode cepat
+                </span>
+                <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => quickPeriod("day")}
+                >
+                    Hari ini
+                </Button>
+                <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => quickPeriod("month")}
+                >
+                    Bulan ini
+                </Button>
+                <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => quickPeriod("year")}
+                >
+                    Tahun ini
+                </Button>
+                <span className="text-xs text-ink-soft">
+                    atau tentukan rentang tanggal sendiri di bawah.
+                </span>
+            </div>
             <form
                 className={`grid gap-3 ${showAccount ? "xl:grid-cols-[210px_210px_240px_minmax(260px,1fr)_auto]" : "lg:grid-cols-[210px_210px_minmax(260px,1fr)_auto]"} items-end`}
                 onSubmit={submit}
@@ -153,14 +209,16 @@ function Table({ columns, rows = [], detailTitle = "Detail" }) {
                                         </td>
                                     ))}
                                     <td className="px-4 py-3 text-right">
-                                        <Button
-                                            size="sm"
-                                            type="button"
-                                            variant="outline"
-                                            onClick={() => setDetail(row)}
-                                        >
-                                            <Eye size={14} /> Detail
-                                        </Button>
+                                        <TableActions>
+                                            <Button
+                                                size="sm"
+                                                type="button"
+                                                variant="outline"
+                                                onClick={() => setDetail(row)}
+                                            >
+                                                <Eye size={14} /> Detail
+                                            </Button>
+                                        </TableActions>
                                     </td>
                                 </tr>
                             ))}
@@ -232,27 +290,21 @@ function Dashboard({ data }) {
                     ],
                 ]}
             />
-            <Card className="p-5">
-                <h2 className="text-lg font-extrabold">
-                    Pergerakan Kas Bulanan
-                </h2>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    {(data.monthly ?? []).map((row) => (
-                        <div
-                            className="rounded-lg border border-silver-deep/60 p-4 dark:border-white/10"
-                            key={row.month}
-                        >
-                            <strong>{row.month}</strong>
-                            <p className="mt-2 text-sm text-emerald-600">
-                                Masuk {money(row.in)}
-                            </p>
-                            <p className="text-sm text-red-600">
-                                Keluar {money(row.out)}
-                            </p>
-                        </div>
-                    ))}
-                </div>
-            </Card>
+            <FinanceTrendChart
+                title="Tren Saldo Kas & Bank"
+                subtitle="Garis biru menunjukkan saldo kumulatif; pemasukan dan pengeluaran tetap terlihat sebagai pembanding."
+                items={data.monthly ?? []}
+                series={[
+                    {
+                        key: "balance",
+                        label: "Saldo kumulatif",
+                        color: "#2563eb",
+                        area: true,
+                    },
+                    { key: "in", label: "Pemasukan", color: "#10b981" },
+                    { key: "out", label: "Pengeluaran", color: "#ef4444" },
+                ]}
+            />
             <Table
                 detailTitle="Detail Jurnal"
                 rows={data.recent_journals ?? []}
@@ -291,10 +343,10 @@ function SelectField({
 
 function CashTransaction({ data, options, canCreate, type }) {
     const income = type === "pemasukan";
-    const initialProperty =
-        options.perumahans?.find((row) => row.value)?.value ?? "";
+    const initialBranch =
+        options.branches?.find((row) => row.value)?.value ?? "";
     const form = useForm({
-        perumahan_id: initialProperty,
+        cabang_id: initialBranch,
         master_bank_id: "",
         tipe_post_id: "",
         tanggal: new Date().toISOString().slice(0, 10),
@@ -306,7 +358,7 @@ function CashTransaction({ data, options, canCreate, type }) {
         (row) => String(row.value) === String(form.data.tipe_post_id),
     );
     const bankOptions = (options.banks ?? []).filter(
-        (row) => String(row.perumahan_id) === String(form.data.perumahan_id),
+        (row) => String(row.cabang_id) === String(form.data.cabang_id),
     );
     const submit = (event) => {
         event.preventDefault();
@@ -372,22 +424,22 @@ function CashTransaction({ data, options, canCreate, type }) {
                                             Sumber dan Klasifikasi
                                         </h3>
                                         <p className="text-xs text-ink-soft">
-                                            Tentukan proyek, rekening, dan jenis
-                                            transaksi.
+                                            Tentukan perusahaan, rekening, dan
+                                            jenis transaksi.
                                         </p>
                                     </div>
                                 </div>
                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                     <SelectField
-                                        label="Perumahan"
+                                        label="Perusahaan / Cabang"
                                         required
-                                        value={form.data.perumahan_id}
-                                        options={options.perumahans ?? []}
-                                        error={form.errors.perumahan_id}
+                                        value={form.data.cabang_id}
+                                        options={options.branches ?? []}
+                                        error={form.errors.cabang_id}
                                         onChange={(value) =>
                                             form.setData({
                                                 ...form.data,
-                                                perumahan_id: value,
+                                                cabang_id: value,
                                                 master_bank_id: "",
                                             })
                                         }
@@ -548,7 +600,7 @@ function CashTransaction({ data, options, canCreate, type }) {
                 columns={[
                     { key: "date", label: "Tanggal" },
                     { key: "reference", label: "Referensi" },
-                    { key: "perumahan", label: "Perumahan" },
+                    { key: "company", label: "Perusahaan / Cabang" },
                     { key: "bank", label: "Kas / Bank" },
                     { key: "post", label: "Tipe Post" },
                     {
@@ -658,7 +710,7 @@ function AccountList({ data, canWrite }) {
                 <Modal
                     open={open}
                     onClose={() => setOpen(false)}
-                    title={editing ? "Edit Akun" : "Tambah Akun"}
+                    title={editing ? "Ubah Akun" : "Tambah Akun"}
                     size="md"
                 >
                     <form className="grid gap-4" onSubmit={submit}>
@@ -769,6 +821,20 @@ function JournalList({ data, options, canCreate }) {
                     </Button>
                 </div>
             )}
+            <FinanceTrendChart
+                title="Total Debit dan Kredit per Hari"
+                subtitle="Data jurnal diringkas per tanggal (maksimal 31 titik), sehingga grafik tidak memanjang saat jurnal bertambah."
+                items={data.trend ?? []}
+                series={[
+                    {
+                        key: "debit",
+                        label: "Debit",
+                        color: "#10b981",
+                        area: true,
+                    },
+                    { key: "credit", label: "Kredit", color: "#f59e0b" },
+                ]}
+            />
             <Table
                 detailTitle="Detail Jurnal"
                 rows={data.rows ?? []}
@@ -906,6 +972,22 @@ function Ledger({ data }) {
                         : "-"}
                 </h2>
             </Card>
+            <FinanceTrendChart
+                title="Pergerakan Saldo"
+                subtitle="Saldo berjalan dari baris buku besar pada periode yang dipilih."
+                items={(data.rows ?? []).map((row) => ({
+                    label: row.date,
+                    balance: row.balance,
+                }))}
+                series={[
+                    {
+                        key: "balance",
+                        label: "Saldo berjalan",
+                        color: "#2563eb",
+                        area: true,
+                    },
+                ]}
+            />
             <Table
                 rows={data.rows ?? []}
                 columns={[
@@ -947,6 +1029,17 @@ function TrialBalance({ data }) {
                         data.balanced ? "text-emerald-600" : "text-red-600",
                     ],
                 ]}
+            />
+            <FinanceChart
+                title="Mutasi Debit dan Kredit per Akun"
+                subtitle="Perbandingan maksimal 12 akun dengan mutasi terbesar; rincian semua akun ada pada tabel."
+                primaryLabel="Debit"
+                secondaryLabel="Kredit"
+                items={(data.rows ?? []).map((row) => ({
+                    label: `${row.code} - ${row.name}`,
+                    value: row.debit,
+                    secondary: row.credit,
+                }))}
             />
             <Table
                 rows={data.rows ?? []}
@@ -1002,6 +1095,46 @@ function ProfitLoss({ data }) {
                     ],
                 ]}
             />
+            <FinanceChart
+                title="Komposisi Laba Rugi"
+                subtitle="Batang membandingkan komponen laporan pada periode aktif."
+                items={[
+                    { label: "Pendapatan", value: data.revenue },
+                    {
+                        label: "HPP",
+                        value: data.cost_of_sales,
+                        tone: "bg-amber-500",
+                    },
+                    {
+                        label: "Beban Operasional",
+                        value: data.operating_expense,
+                        tone: "bg-red-500",
+                    },
+                    {
+                        label: "Laba Bersih",
+                        value: Math.abs(Number(data.net_profit)),
+                        tone:
+                            Number(data.net_profit) < 0
+                                ? "bg-red-500"
+                                : "bg-blue-500",
+                    },
+                ]}
+            />
+            <FinanceTrendChart
+                title="Tren Laba Bersih"
+                subtitle="Pendapatan dan beban dibandingkan per bulan; garis biru menunjukkan laba/rugi bersih."
+                items={data.trend ?? []}
+                series={[
+                    {
+                        key: "profit",
+                        label: "Laba/rugi bersih",
+                        color: "#2563eb",
+                        area: true,
+                    },
+                    { key: "revenue", label: "Pendapatan", color: "#10b981" },
+                    { key: "expense", label: "Beban", color: "#ef4444" },
+                ]}
+            />
             <Table
                 rows={data.rows ?? []}
                 columns={[
@@ -1035,6 +1168,23 @@ function BalanceSheet({ data }) {
                     ],
                 ]}
             />
+            <FinanceChart
+                title="Struktur Neraca"
+                subtitle="Perbandingan aset, liabilitas, dan ekuitas pada tanggal laporan."
+                items={[
+                    { label: "Aset", value: data.assets },
+                    {
+                        label: "Liabilitas",
+                        value: data.liabilities,
+                        tone: "bg-amber-500",
+                    },
+                    {
+                        label: "Ekuitas",
+                        value: data.equity,
+                        tone: "bg-blue-500",
+                    },
+                ]}
+            />
             <Table
                 rows={data.rows ?? []}
                 columns={[
@@ -1062,6 +1212,21 @@ function CashFlow({ data }) {
                     ["Kas Keluar", money(data.cash_out), "text-red-600"],
                     ["Arus Kas Bersih", money(data.net_cash_flow)],
                     ["Saldo Akhir", money(data.ending_balance)],
+                ]}
+            />
+            <FinanceTrendChart
+                title="Arus Kas dan Saldo Kumulatif"
+                subtitle="Saldo kumulatif mengikuti kas masuk dan kas keluar pada setiap tanggal transaksi."
+                items={data.trend ?? []}
+                series={[
+                    {
+                        key: "balance",
+                        label: "Saldo kumulatif",
+                        color: "#2563eb",
+                        area: true,
+                    },
+                    { key: "in", label: "Kas masuk", color: "#10b981" },
+                    { key: "out", label: "Kas keluar", color: "#ef4444" },
                 ]}
             />
             <Table
@@ -1098,11 +1263,17 @@ function Receivable({ data }) {
                     ],
                 ]}
             />
+            <FinanceChart
+                title="Aging Piutang Pelanggan"
+                subtitle="Sisa piutang dikelompokkan menurut umur keterlambatan."
+                primaryLabel="Sisa piutang"
+                items={data.aging ?? []}
+            />
             <Table
                 rows={data.rows ?? []}
                 columns={[
                     { key: "reference", label: "SPR" },
-                    { key: "customer", label: "Customer" },
+                    { key: "customer", label: "Pelanggan" },
                     { key: "perumahan", label: "Perumahan" },
                     { key: "type", label: "Tagihan" },
                     { key: "due_date", label: "Jatuh Tempo" },
@@ -1141,6 +1312,12 @@ function Payable({ data }) {
                         "text-red-600",
                     ],
                 ]}
+            />
+            <FinanceChart
+                title="Aging Hutang Supplier & Kontraktor"
+                subtitle="Sisa hutang dikelompokkan menurut umur keterlambatan."
+                primaryLabel="Sisa hutang"
+                items={data.aging ?? []}
             />
             <Table
                 rows={data.rows ?? []}
@@ -1231,7 +1408,9 @@ export default function Index({
         piutang: <Receivable data={data} />,
         hutang: <Payable data={data} />,
     }[section];
-    const filterable = !["daftar-akun"].includes(section);
+    const filterable = !["daftar-akun", "pemasukan", "pengeluaran"].includes(
+        section,
+    );
 
     return (
         <>

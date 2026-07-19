@@ -16,7 +16,7 @@ export default function Modal({ open, onClose, title, children, footer, size = '
 
     return (
         <div className={`fixed inset-0 z-[80] grid bg-graphite/55 backdrop-blur-sm ${size === 'full' ? 'place-items-stretch p-0' : 'place-items-center p-4'}`}>
-            <div className={`${size === 'full' ? 'h-screen max-h-none overflow-hidden' : 'max-h-[92vh] overflow-hidden'} w-full ${sizes[size] ?? sizes.md} border border-white/80 bg-white shadow-soft dark:border-white/10 dark:bg-graphite`}>
+            <div className={`${size === 'full' ? 'h-screen max-h-none overflow-hidden' : 'max-h-[92vh] overflow-hidden'} w-full ${sizes[size] ?? sizes.md} border border-ink/80 bg-white dark:border-white/45 dark:bg-graphite`}>
                 <div className="flex min-h-14 items-center justify-between border-b border-silver-deep/60 px-5 dark:border-white/10">
                     <h2 className="text-lg font-extrabold text-ink dark:text-white">{title}</h2>
                     <Button variant="ghost" size="sm" type="button" onClick={onClose} aria-label="Tutup modal">

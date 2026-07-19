@@ -5,4 +5,4 @@ export default function Index(props) {
     return <SeparatedManagementIndex {...props} />;
 }
 
-Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Master Dokumen Customer'}>{page}</AdminLayout>;
+Index.layout = (page) => <AdminLayout title={page?.props?.title ?? 'Master Dokumen Pelanggan'}>{page}</AdminLayout>;

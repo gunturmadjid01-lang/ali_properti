@@ -4,11 +4,11 @@ namespace App\Services;
 
 use App\Models\BarangMaterial;
 use App\Models\Gudang;
+use App\Models\MaterialPriceHistory;
 use App\Models\MaterialPurchase;
 use App\Models\MaterialPurchaseDetail;
 use App\Models\MaterialPurchaseRequest;
 use App\Models\MaterialRequest;
-use App\Models\MaterialPriceHistory;
 use App\Models\OperationalSetting;
 use App\Models\Supplier;
 use App\Models\TransaksiLogistik;
@@ -22,16 +22,14 @@ class MaterialPurchaseService
         private AccountingService $accounting,
         private LogistikService $logistik,
         private MaterialWorkflowService $materialWorkflow,
-    )
-    {
-    }
+        private MaterialUnitConversionService $unitConversions,
+    ) {}
 
     public function createPurchase(
         array $payload,
         ?MaterialRequest $request = null,
         ?MaterialPurchaseRequest $purchaseRequest = null,
-    ): MaterialPurchase
-    {
+    ): MaterialPurchase {
         return DB::transaction(function () use ($payload, $request, $purchaseRequest) {
             $items = collect($payload['items'] ?? [])->filter(fn ($item) => (float) ($item['qty'] ?? 0) > 0)->values();
             $transactionDiscount = max(0, (float) ($payload['diskon_transaksi'] ?? 0));
@@ -41,11 +39,11 @@ class MaterialPurchaseService
             }
 
             $supplier = ! empty($payload['supplier_id'])
-                ? Supplier::query()->find($payload['supplier_id'])
+                ? Supplier::query()->finalized()->find($payload['supplier_id'])
                 : null;
             $gudang = $purchaseRequest?->gudang
                 ?? ($request?->gudang ?? null)
-                ?? (filled($payload['gudang_id'] ?? null) ? Gudang::query()->find($payload['gudang_id']) : null);
+                ?? (filled($payload['gudang_id'] ?? null) ? Gudang::query()->finalized()->find($payload['gudang_id']) : null);
             $purchaseCode = $payload['kode_pembelian'] ?? $this->nextPurchaseCode();
 
             if (MaterialPurchase::withTrashed()->where('kode_pembelian', $purchaseCode)->exists()) {
@@ -74,9 +72,10 @@ class MaterialPurchaseService
 
             $subtotal = 0;
             foreach ($items as $item) {
-                $barang = BarangMaterial::query()->findOrFail($item['barang_material_id']);
+                $barang = BarangMaterial::query()->finalized()->findOrFail($item['barang_material_id']);
                 $qty = (float) $item['qty'];
                 $harga = (float) ($item['harga_satuan'] ?? $barang->harga_hpp);
+                $normalized = $this->unitConversions->normalize($barang, $item['material_unit_id'] ?? null, $qty, $harga);
                 $diskon = min(max(0, (float) ($item['diskon'] ?? 0)), $qty * $harga);
                 $lineSubtotal = max(0, ($qty * $harga) - $diskon);
                 $subtotal += $lineSubtotal;
@@ -84,9 +83,14 @@ class MaterialPurchaseService
                 $purchase->details()->create([
                     'barang_material_id' => $barang->id,
                     'qty' => $qty,
+                    'qty_base' => $normalized['quantity_base'],
                     'qty_diterima' => 0,
-                    'satuan' => $item['satuan'] ?? $barang->satuan,
+                    'qty_diterima_base' => 0,
+                    'material_unit_id' => $normalized['unit_id'],
+                    'satuan' => $normalized['unit_symbol'],
+                    'conversion_to_base' => $normalized['factor_to_base'],
                     'harga_satuan' => $harga,
+                    'harga_satuan_base' => $normalized['unit_price_base'],
                     'diskon' => $diskon,
                     'subtotal' => $lineSubtotal,
                 ]);
@@ -134,10 +138,10 @@ class MaterialPurchaseService
             }
 
             $supplier = ! empty($payload['supplier_id'])
-                ? Supplier::query()->find($payload['supplier_id'])
+                ? Supplier::query()->finalized()->find($payload['supplier_id'])
                 : null;
             $gudang = filled($payload['gudang_id'] ?? null)
-                ? Gudang::query()->find($payload['gudang_id'])
+                ? Gudang::query()->finalized()->find($payload['gudang_id'])
                 : $purchase->gudang;
 
             $purchase->update([
@@ -155,9 +159,10 @@ class MaterialPurchaseService
             $purchase->details()->delete();
             $subtotal = 0;
             foreach ($items as $item) {
-                $barang = BarangMaterial::query()->findOrFail($item['barang_material_id']);
+                $barang = BarangMaterial::query()->finalized()->findOrFail($item['barang_material_id']);
                 $qty = (float) $item['qty'];
                 $harga = (float) ($item['harga_satuan'] ?? $barang->harga_hpp);
+                $normalized = $this->unitConversions->normalize($barang, $item['material_unit_id'] ?? null, $qty, $harga);
                 $diskon = min(max(0, (float) ($item['diskon'] ?? 0)), $qty * $harga);
                 $lineSubtotal = max(0, ($qty * $harga) - $diskon);
                 $subtotal += $lineSubtotal;
@@ -165,9 +170,14 @@ class MaterialPurchaseService
                 $purchase->details()->create([
                     'barang_material_id' => $barang->id,
                     'qty' => $qty,
+                    'qty_base' => $normalized['quantity_base'],
                     'qty_diterima' => 0,
-                    'satuan' => $item['satuan'] ?? $barang->satuan,
+                    'qty_diterima_base' => 0,
+                    'material_unit_id' => $normalized['unit_id'],
+                    'satuan' => $normalized['unit_symbol'],
+                    'conversion_to_base' => $normalized['factor_to_base'],
                     'harga_satuan' => $harga,
+                    'harga_satuan_base' => $normalized['unit_price_base'],
                     'diskon' => $diskon,
                     'subtotal' => $lineSubtotal,
                     'inspection_status' => 'pending',
@@ -307,7 +317,8 @@ class MaterialPurchaseService
             $baseNet = max(0, $gross - $diskon);
             $txnShare = $grossTotal > 0 ? round(($gross / $grossTotal) * $transactionDiscount, 2) : 0;
             $effective = max(0, $baseNet - $txnShare);
-            $effectivePrice = round($effective / $qty, 2);
+            $normalized = $this->unitConversions->normalize($barang, $item['material_unit_id'] ?? null, $qty, $effective / $qty);
+            $effectivePrice = round($normalized['unit_price_base'], 2);
 
             if (abs((float) $barang->harga_hpp - $effectivePrice) < 0.0001) {
                 continue;
@@ -386,6 +397,7 @@ class MaterialPurchaseService
 
             $lockedDetail->update([
                 'qty_diterima' => $qtyDiterima,
+                'qty_diterima_base' => $qtyDiterima / max(1e-9, (float) $lockedDetail->conversion_to_base),
                 'inspection_status' => $inspectionStatus,
                 'inspection_note' => $payload['catatan'] ?? null,
                 'checked_by' => auth()->id(),
@@ -407,6 +419,7 @@ class MaterialPurchaseService
                     'items' => [[
                         'barang_material_id' => $lockedDetail->barang_material_id,
                         'qty' => $qtyDiterima,
+                        'material_unit_id' => $lockedDetail->material_unit_id,
                         'satuan' => $lockedDetail->satuan,
                         'harga_satuan' => $lockedDetail->harga_satuan,
                     ]],
@@ -449,11 +462,15 @@ class MaterialPurchaseService
                     throw ValidationException::withMessages(['items' => 'Qty diterima tidak valid.']);
                 }
 
-                $detail->update(['qty_diterima' => $qtyDiterima]);
+                $detail->update([
+                    'qty_diterima' => $qtyDiterima,
+                    'qty_diterima_base' => $qtyDiterima / max(1e-9, (float) $detail->conversion_to_base),
+                ]);
                 if ($qtyDiterima > 0) {
                     $items[] = [
                         'barang_material_id' => $detail->barang_material_id,
                         'qty' => $qtyDiterima,
+                        'material_unit_id' => $detail->material_unit_id,
                         'satuan' => $detail->satuan,
                         'harga_satuan' => $detail->harga_satuan,
                     ];

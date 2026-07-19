@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
 use App\Models\Gudang;
 use App\Models\MaterialOpeningBalance;
+use App\Models\MaterialPurchase;
+use App\Models\MaterialRequest;
+use App\Models\MaterialReturn;
 use App\Models\MaterialStockOpname;
 use App\Models\StokMaterial;
 use App\Models\TransaksiLogistik;
@@ -169,7 +172,7 @@ class StokMaterialController extends Controller
 
         $selectedMaterial = null;
         if ($materialId !== '') {
-            $selectedMaterial = BarangMaterial::query()->where('status', 'aktif')->find($materialId);
+            $selectedMaterial = BarangMaterial::query()->finalized()->where('status', 'aktif')->find($materialId);
         }
 
         if (! $selectedMaterial && $kodeItem !== '') {
@@ -280,6 +283,8 @@ class StokMaterialController extends Controller
                 'transaksi_logistik_details.id as detail_id',
                 'transaksi_logistik_details.qty as detail_qty',
                 'transaksi_logistik_details.satuan as detail_satuan',
+                'transaksi_logistik_details.input_qty',
+                'transaksi_logistik_details.input_satuan',
                 't.id as transaksi_id',
                 't.kode_transaksi',
                 't.tanggal as transaksi_tanggal',
@@ -334,6 +339,7 @@ class StokMaterialController extends Controller
                 'keluar' => $keluar,
                 'saldo' => 0,
                 'sumber' => $this->sourceLabel($entry->source_type),
+                'input' => filled($entry->input_qty) ? ((float) $entry->input_qty).' '.($entry->input_satuan ?: $entry->detail_satuan) : null,
                 '_order' => 2,
             ];
         }
@@ -352,6 +358,7 @@ class StokMaterialController extends Controller
                 $rows[$index]['masuk'] = 0;
                 $rows[$index]['keluar'] = 0;
                 $rows[$index]['saldo'] = $runningSaldo;
+
                 continue;
             }
 
@@ -381,9 +388,9 @@ class StokMaterialController extends Controller
     protected function sourceLabel(?string $sourceType): string
     {
         return match ($sourceType) {
-            \App\Models\MaterialRequest::class => 'Permintaan material disetujui',
-            \App\Models\MaterialReturn::class => 'Pengembalian dari lokasi',
-            \App\Models\MaterialPurchase::class => 'Penerimaan pembelian',
+            MaterialRequest::class => 'Permintaan material disetujui',
+            MaterialReturn::class => 'Pengembalian dari lokasi',
+            MaterialPurchase::class => 'Penerimaan pembelian',
             MaterialStockOpname::class => 'Stock Opname',
             null => 'Transaksi lama/manual',
             default => class_basename($sourceType),
@@ -393,10 +400,10 @@ class StokMaterialController extends Controller
     protected function transactionTypeCode(?string $sourceType, ?string $jenis): string
     {
         return match ($sourceType) {
-            \App\Models\MaterialPurchase::class => 'PL',
+            MaterialPurchase::class => 'PL',
             MaterialStockOpname::class => 'SO',
-            \App\Models\MaterialRequest::class => 'PT',
-            \App\Models\MaterialReturn::class => 'PT',
+            MaterialRequest::class => 'PT',
+            MaterialReturn::class => 'PT',
             default => match ($jenis) {
                 TransaksiLogistik::JENIS_MASUK => 'PL',
                 TransaksiLogistik::JENIS_KELUAR => 'PT',
@@ -422,7 +429,7 @@ class StokMaterialController extends Controller
     {
         $user = auth()->user();
 
-        $query = Gudang::query()->where('status', 'aktif');
+        $query = Gudang::query()->finalized()->where('status', 'aktif');
 
         if ($user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])) {
             $assignedIds = $this->assignedGudangIds($user);

@@ -68,7 +68,7 @@ class ConstructionProgressReportController extends Controller
         }
 
         $unitIds = collect($validated['unit_ids'] ?? [])->map(fn ($id) => (int) $id)->values();
-        $units = DetailRumah::query()
+        $units = DetailRumah::query()->finalized()
             ->with('perumahan:id,nama_perusahaan')
             ->whereIn('id', $unitIds)
             ->get()
@@ -99,7 +99,7 @@ class ConstructionProgressReportController extends Controller
                 ['value' => 'range', 'label' => 'Mingguan / Rentang Tanggal'],
                 ['value' => 'monthly', 'label' => 'Bulanan'],
             ],
-            'units' => DetailRumah::query()
+            'units' => DetailRumah::query()->finalized()
                 ->with('perumahan:id,nama_perusahaan')
                 ->orderBy('perumahan_id')
                 ->orderBy('kode_nlok')

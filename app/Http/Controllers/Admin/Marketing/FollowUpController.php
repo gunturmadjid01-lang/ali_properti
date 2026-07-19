@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Admin\Marketing;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
+use App\Http\Controllers\Controller;
 use App\Models\Costumer;
 use App\Models\CostumerFollowUp;
 use App\Services\Marketing\MarketingLeadStatusService;
@@ -85,6 +85,38 @@ class FollowUpController extends Controller
                 'progressOptions' => $this->progressOptions(),
                 'statusOptions' => $this->statusOptions(),
             ],
+        ]);
+    }
+
+    public function create(Request $request): Response
+    {
+        return $this->renderForm(null, (string) $request->query('costumer_id', ''));
+    }
+
+    public function edit(Request $request, string $id): Response
+    {
+        $row = CostumerFollowUp::query()->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $q) => $q->where('user_id', $request->user()?->id))->when($this->shouldScopeToActivePerumahan($request), fn (Builder $q) => $q->whereHas('costumer', fn (Builder $q) => $this->scopeToActivePerumahan($q, $request)))->findOrFail($id);
+        $this->abortIfLocked($row);
+
+        return $this->renderForm($row);
+    }
+
+    public function show(Request $request, string $id): Response
+    {
+        $row = CostumerFollowUp::query()->with(['costumer:id,kode_costumer,nama', 'user:id,name'])->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $q) => $q->where('user_id', $request->user()?->id))->when($this->shouldScopeToActivePerumahan($request), fn (Builder $q) => $q->whereHas('costumer', fn (Builder $q) => $this->scopeToActivePerumahan($q, $request)))->findOrFail($id);
+
+        return Inertia::render('Admin/Marketing/FollowUp/Show', ['title' => 'Detail Follow Up '.$row->costumer?->nama, 'baseUrl' => route('admin.marketing.jejak-follow-up.index', absolute: false), 'row' => [
+            'id' => $row->id, 'customer' => $row->costumer?->nama ?? '-', 'kode_costumer' => $row->costumer?->kode_costumer ?? '-', 'tanggal_follow_up' => optional($row->tanggal_follow_up)->format('d/m/Y'), 'metode_follow_up' => $this->labelFromOptions($row->metode_follow_up, $this->methodOptions()), 'status_serius' => $row->status_serius ? 'Serius' : 'Belum Serius', 'progress_kemampuan' => $this->labelFromOptions($row->progress_kemampuan, $this->progressOptions()), 'status_label' => $this->labelFromOptions($row->status, $this->statusOptions()), 'rencana_follow_up_at' => optional($row->rencana_follow_up_at)->format('d/m/Y'), 'input_oleh' => $row->user?->name ?? '-', 'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft', 'catatan' => $row->catatan, 'can_edit' => ($row->record_status ?? 'draft') !== 'locked',
+        ]]);
+    }
+
+    private function renderForm(?CostumerFollowUp $row, string $customerId = ''): Response
+    {
+        return Inertia::render('Admin/Marketing/FollowUp/FormPage', [
+            'title' => $row ? 'Edit Follow Up' : 'Tambah Follow Up', 'baseUrl' => route('admin.marketing.jejak-follow-up.index', absolute: false),
+            'actionUrl' => $row ? route('admin.marketing.jejak-follow-up.update', $row->id, false) : route('admin.marketing.jejak-follow-up.store', absolute: false), 'method' => $row ? 'put' : 'post',
+            'customers' => $this->customerOptions(), 'options' => ['methodOptions' => $this->methodOptions(), 'seriousOptions' => $this->seriousOptions(), 'progressOptions' => $this->progressOptions(), 'statusOptions' => $this->statusOptions()],
+            'row' => $row ? ['costumer_id' => (string) $row->costumer_id, 'tanggal_follow_up' => optional($row->tanggal_follow_up)->format('Y-m-d'), 'metode_follow_up' => $row->metode_follow_up, 'status_serius' => $row->status_serius ? '1' : '0', 'progress_kemampuan' => $row->progress_kemampuan, 'status' => $row->status, 'catatan' => $row->catatan, 'rencana_follow_up_at' => optional($row->rencana_follow_up_at)->format('Y-m-d')] : ['costumer_id' => $customerId],
         ]);
     }
 

@@ -28,11 +28,11 @@ class ActivePerumahanController extends Controller
         $user = $request->user();
 
         if (! $user) {
-            return Perumahan::query()->pluck('id')->map(fn ($id) => (int) $id)->all();
+            return Perumahan::query()->finalized()->pluck('id')->map(fn ($id) => (int) $id)->all();
         }
 
         if ($user->hasAnyRole(['owner', 'super_admin'])) {
-            return Perumahan::query()->pluck('id')->map(fn ($id) => (int) $id)->all();
+            return Perumahan::query()->finalized()->pluck('id')->map(fn ($id) => (int) $id)->all();
         }
 
         return $user->perumahans()->pluck('perumahans.id')->map(fn ($id) => (int) $id)->all();

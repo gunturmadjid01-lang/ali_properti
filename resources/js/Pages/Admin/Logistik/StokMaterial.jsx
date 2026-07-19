@@ -2,9 +2,10 @@ import { Head, router } from '@inertiajs/react';
 import { ArrowDownAZ, ArrowUpAZ, FileText, PackagePlus, RefreshCw, Search, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import AdminLayout from '../../../Layouts/AdminLayout';
+import { Dropdown } from '../../../Components/UI';
 
 const money = (value) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(Number(value ?? 0));
-const number = (value) => Number(value ?? 0).toLocaleString('id-ID');
+const number = (value) => Number(value ?? 0).toLocaleString('id-ID', { maximumFractionDigits: 6 });
 
 function ToolbarButton({ icon: Icon, label, disabled = false, onClick }) {
     return (
@@ -21,17 +22,7 @@ function ToolbarButton({ icon: Icon, label, disabled = false, onClick }) {
 }
 
 function DesktopSelect({ value, onChange, options = [], className = '' }) {
-    return (
-        <select
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            className={`h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-3 text-xs font-bold text-ink outline-none focus:border-ink/30 dark:border-white/10 dark:bg-white/8 dark:text-white ${className}`}
-        >
-            {options.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-        </select>
-    );
+    return <Dropdown value={String(value)} options={options} onChange={onChange} className={className} buttonClassName="min-h-9 h-9 px-3 text-xs" />;
 }
 
 export default function StokMaterial({ title, dataUrl, cardUrl, masterMaterialUrl, rows = { data: [], links: [] }, filters = {}, options = {}, selectedGudang = null, assignmentWarning = null }) {

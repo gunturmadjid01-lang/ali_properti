@@ -17,6 +17,7 @@ import {
     Input,
     Modal,
     Textarea,
+    TableActions,
 } from "../../../Components/UI";
 import AdminLayout from "../../../Layouts/AdminLayout";
 
@@ -248,7 +249,7 @@ export default function Index({
                         onSubmit={submitFilters}
                     >
                         <Input
-                            label="Search"
+                            label="Pencarian"
                             value={search}
                             placeholder="Cari pemilik, NIK, dokumen, proyek, atau unit..."
                             onChange={(event) => setSearch(event.target.value)}
@@ -300,7 +301,7 @@ export default function Index({
                             variant="outline"
                             onClick={() => router.get(baseUrl)}
                         >
-                            <RotateCcw size={17} /> Reset
+                            <RotateCcw size={17} /> Atur Ulang
                         </Button>
                     </form>
 
@@ -398,7 +399,7 @@ export default function Index({
                                             <p className="mt-2 text-xs font-bold text-ink-soft">
                                                 {row.record_status === "locked"
                                                     ? "Locked"
-                                                    : "Draft"}
+                                                    : "Draf"}
                                             </p>
                                         </td>
                                         <td className="px-4 py-4 text-xs">
@@ -408,7 +409,7 @@ export default function Index({
                                             </p>
                                         </td>
                                         <td className="px-4 py-4">
-                                            <div className="flex flex-wrap gap-2">
+                                            <TableActions>
                                                 {row.can_edit && (
                                                     <Button
                                                         type="button"
@@ -458,11 +459,11 @@ export default function Index({
                                                             )}
                                                             {row.record_status ===
                                                             "locked"
-                                                                ? "Unlock"
-                                                                : "Lock"}
+                                                                ? "Buka Kunci"
+                                                                : "Kunci"}
                                                         </Button>
                                                     )}
-                                            </div>
+                                            </TableActions>
                                         </td>
                                     </tr>
                                 ))}
@@ -488,7 +489,7 @@ export default function Index({
                 open={modalOpen}
                 title={
                     editing
-                        ? "Edit Data Pemilik Lama"
+                        ? "Ubah Data Pemilik Lama"
                         : "Input Pemilik Unit Lama"
                 }
                 onClose={() => setModalOpen(false)}
@@ -522,15 +523,15 @@ export default function Index({
                             )}
                         <label className="grid gap-2 text-sm font-extrabold md:col-span-2">
                             <span>
-                                Pilih Customer yang Sudah Ada (Opsional)
+                                Pilih Pelanggan yang Sudah Ada (Opsional)
                             </span>
                             <Dropdown
-                                label="Kosongkan untuk membuat customer otomatis"
+                                label="Kosongkan untuk membuat pelanggan otomatis"
                                 value={form.data.costumer_id}
                                 options={[
                                     {
                                         value: "",
-                                        label: "Buat customer baru dari data di bawah",
+                                        label: "Buat pelanggan baru dari data di bawah",
                                     },
                                     ...options.customers,
                                 ]}

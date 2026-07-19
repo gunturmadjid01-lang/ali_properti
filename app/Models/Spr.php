@@ -7,26 +7,44 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Spr extends Model
 {
     use HasFactory, SoftDeletes;
 
+    public const STATUS_DRAFT = 'draft';
+
+    public const STATUS_MENUNGGU_APPROVAL = 'menunggu_approval';
+
     public const STATUS_MENUNGGU_MANAGER = 'menunggu_manager';
+
     public const STATUS_MENUNGGU_OWNER = 'menunggu_owner';
+
     public const STATUS_DISETUJUI = 'disetujui';
+
     public const STATUS_DITOLAK = 'ditolak';
 
     protected $fillable = [
+        'housing_reservation_id',
         'kode_spr',
+        'revision_no',
+        'revision_status',
+        'superseded_by_spr_id',
         'costumer_id',
         'detail_rumah_id',
         'created_by',
+        'updated_by',
         'tanggal_spr',
         'booking_expires_at',
         'metode_pembayaran',
         'bank_kredit_id',
+        'bank_branch_id',
+        'bank_credit_product_id',
+        'cash_installment_scheme_id',
+        'developer_kpr_product_id',
+        'payment_configuration_snapshot',
         'kpr_tenor_bulan',
         'kpr_bunga_tahunan',
         'skema_bertahap',
@@ -69,6 +87,8 @@ class Spr extends Model
         'catatan',
     ];
 
+    public function housingReservation(): BelongsTo { return $this->belongsTo(HousingReservation::class); }
+
     protected $casts = [
         'tanggal_spr' => 'date',
         'booking_expires_at' => 'datetime',
@@ -98,6 +118,7 @@ class Spr extends Model
         'refund_manager_approved_at' => 'datetime',
         'refund_owner_approved_at' => 'datetime',
         'refund_rejected_at' => 'datetime',
+        'payment_configuration_snapshot' => 'array',
     ];
 
     public function costumer(): BelongsTo
@@ -115,9 +136,39 @@ class Spr extends Model
         return $this->belongsTo(User::class, 'created_by');
     }
 
+    public function updater(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'updated_by');
+    }
+
     public function bankKredit(): BelongsTo
     {
         return $this->belongsTo(BankKredit::class, 'bank_kredit_id');
+    }
+
+    public function bankBranch(): BelongsTo
+    {
+        return $this->belongsTo(BankBranch::class);
+    }
+
+    public function bankCreditProduct(): BelongsTo
+    {
+        return $this->belongsTo(BankCreditProduct::class);
+    }
+
+    public function cashInstallmentScheme(): BelongsTo
+    {
+        return $this->belongsTo(CashInstallmentScheme::class);
+    }
+
+    public function developerKprProduct(): BelongsTo
+    {
+        return $this->belongsTo(DeveloperKprProduct::class);
+    }
+
+    public function salesTransaction(): HasOne
+    {
+        return $this->hasOne(SalesTransaction::class);
     }
 
     public function refundMasterBank(): BelongsTo
@@ -135,6 +186,11 @@ class Spr extends Model
         return $this->hasMany(SprApproval::class);
     }
 
+    public function approvalRequests(): MorphMany
+    {
+        return $this->morphMany(ApprovalRequest::class, 'model')->latest('id');
+    }
+
     public function kprSubmission(): HasOne
     {
         return $this->hasOne(KprSubmission::class);
@@ -148,16 +204,6 @@ class Spr extends Model
     public function berkasCostumers(): HasMany
     {
         return $this->hasMany(SprBerkasCostumer::class);
-    }
-
-    public function payments(): HasMany
-    {
-        return $this->hasMany(SprPayment::class);
-    }
-
-    public function billingSchedules(): HasMany
-    {
-        return $this->hasMany(SprBillingSchedule::class);
     }
 
     public function commissions(): HasMany

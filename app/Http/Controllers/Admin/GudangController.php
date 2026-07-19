@@ -2,15 +2,15 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Models\CabangPerusahaan;
 use App\Models\Gudang;
 use App\Models\MaterialRequest;
 use App\Models\MaterialReturn;
-use App\Models\SiteMaterialStock;
-use App\Models\Perumahan;
 use App\Models\MaterialUsage;
+use App\Models\Perumahan;
+use App\Models\SiteMaterialStock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -117,8 +117,8 @@ class GudangController extends Controller
     protected function options(): array
     {
         return [
-            'cabangs' => CabangPerusahaan::query()->orderBy('nama_cabang')->get(['id', 'nama_cabang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_cabang])->values(),
-            'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
+            'cabangs' => CabangPerusahaan::query()->finalized()->orderBy('nama_cabang')->get(['id', 'nama_cabang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_cabang])->values(),
+            'perumahans' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
             'status' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']],
         ];
     }

@@ -2,17 +2,18 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
 use App\Models\Gudang;
+use App\Models\MasterBank;
 use App\Models\MaterialPurchase;
 use App\Models\MaterialPurchaseDetail;
 use App\Models\MaterialPurchaseRequest;
 use App\Models\MaterialRequest;
-use App\Models\MasterBank;
 use App\Models\Supplier;
 use App\Services\MaterialPurchaseService;
+use App\Services\MaterialUnitConversionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,14 +47,14 @@ class MaterialPurchaseController extends Controller
             ],
             'rows' => MaterialPurchase::query()
                 ->with([
-                'gudang:id,nama_gudang',
-                'details.barangMaterial:id,kode_barang,nama_barang',
-                'materialRequest:id,kode_request',
-                'materialPurchaseRequest.gudang:id,nama_gudang,perumahan_id',
-                'materialPurchaseRequest.gudang.perumahan:id,nama_perusahaan',
-                'plannedMasterBank:id,nama_bank,nomor_rekening',
-                'paymentMasterBank:id,nama_bank,nomor_rekening',
-                'supplierData:id,kode_supplier,nama_supplier',
+                    'gudang:id,nama_gudang',
+                    'details.barangMaterial:id,kode_barang,nama_barang',
+                    'materialRequest:id,kode_request',
+                    'materialPurchaseRequest.gudang:id,nama_gudang,perumahan_id',
+                    'materialPurchaseRequest.gudang.perumahan:id,nama_perusahaan',
+                    'plannedMasterBank:id,nama_bank,nomor_rekening',
+                    'paymentMasterBank:id,nama_bank,nomor_rekening',
+                    'supplierData:id,kode_supplier,nama_supplier',
                     'creator:id,name',
                     'updater:id,name',
                     'approvedBy:id,name',
@@ -343,7 +344,7 @@ class MaterialPurchaseController extends Controller
                 'gudang_id' => $gudangId,
             ],
             'options' => [
-                'gudangs' => Gudang::query()
+                'gudangs' => Gudang::query()->finalized()
                     ->where('status', 'aktif')
                     ->orderBy('nama_gudang')
                     ->get(['id', 'nama_gudang'])
@@ -401,6 +402,7 @@ class MaterialPurchaseController extends Controller
             'update_material_prices' => ['nullable', 'boolean'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.barang_material_id' => ['required', 'exists:barang_materials,id'],
+            'items.*.material_unit_id' => ['nullable', 'exists:material_units,id'],
             'items.*.qty' => ['required', 'numeric', 'min:0.01'],
             'items.*.satuan' => ['nullable', 'string'],
             'items.*.harga_satuan' => ['required', 'numeric', 'min:0'],
@@ -411,10 +413,11 @@ class MaterialPurchaseController extends Controller
     protected function options(): array
     {
         return [
-            'gudangs' => Gudang::query()->where('status', 'aktif')->orderBy('nama_gudang')->get(['id', 'nama_gudang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])->values(),
-            'barangMaterials' => BarangMaterial::query()
+            'gudangs' => Gudang::query()->finalized()->where('status', 'aktif')->orderBy('nama_gudang')->get(['id', 'nama_gudang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])->values(),
+            'barangMaterials' => BarangMaterial::query()->finalized()
+                ->with(['baseUnit:id,name,symbol', 'unitConversions.childUnit:id,name,symbol'])
                 ->orderBy('kode_barang')
-                ->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'harga_hpp'])
+                ->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'harga_hpp', 'base_unit_id'])
                 ->map(fn ($row) => [
                     'value' => (string) $row->id,
                     'label' => "{$row->kode_barang} - {$row->nama_barang}",
@@ -422,9 +425,11 @@ class MaterialPurchaseController extends Controller
                     'nama_barang' => $row->nama_barang,
                     'satuan' => $row->satuan,
                     'harga_hpp' => $row->harga_hpp,
+                    'base_unit_id' => (string) $row->base_unit_id,
+                    'unit_options' => app(MaterialUnitConversionService::class)->options($row),
                 ])
                 ->values(),
-            'suppliers' => Supplier::query()
+            'suppliers' => Supplier::query()->finalized()
                 ->where('status', 'aktif')
                 ->orderBy('nama_supplier')
                 ->get(['id', 'kode_supplier', 'nama_supplier', 'phone'])
@@ -489,6 +494,7 @@ class MaterialPurchaseController extends Controller
             'keterangan' => $row->keterangan ?? '',
             'items' => $row->details->map(fn ($detail) => [
                 'barang_material_id' => (string) $detail->barang_material_id,
+                'material_unit_id' => (string) ($detail->barangMaterial?->base_unit_id ?? ''),
                 'qty' => $detail->qty,
                 'satuan' => $detail->satuan ?? $detail->barangMaterial?->satuan,
                 'harga_satuan' => $detail->barangMaterial?->harga_hpp ?? 0,
@@ -512,6 +518,7 @@ class MaterialPurchaseController extends Controller
             'material_purchase_request_id' => (string) ($purchase->material_purchase_request_id ?? ''),
             'items' => $purchase->details->map(fn (MaterialPurchaseDetail $detail) => [
                 'barang_material_id' => (string) $detail->barang_material_id,
+                'material_unit_id' => (string) ($detail->material_unit_id ?? $detail->barangMaterial?->base_unit_id ?? ''),
                 'qty' => $detail->qty,
                 'satuan' => $detail->satuan,
                 'harga_satuan' => $detail->harga_satuan,

@@ -2,17 +2,16 @@
 
 namespace App\Http\Controllers\Admin;
 
-use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Models\DetailRumah;
 use App\Models\DetailRumahHpp;
 use App\Models\Kontraktor;
 use App\Models\Perumahan;
 use App\Models\PerumahanHpp;
-use App\Models\SpkKontraktorItem;
 use App\Models\SpkKontraktor;
+use App\Models\SpkKontraktorItem;
 use App\Models\SpkKontraktorPayment;
-use App\Models\SiteSchedule;
 use App\Models\SpkWorkTemplate;
 use App\Models\TahapanPembangunan;
 use App\Services\AccountingService;
@@ -190,67 +189,67 @@ class SpkKontraktorController extends Controller
                 $hppPlan = $this->hppPlanStatus($row);
 
                 return [
-                'id' => $row->id,
-                'kontraktor_id' => (string) $row->kontraktor_id,
-                'perumahan_id' => (string) ($row->perumahan_id ?? ''),
-                'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
-                'nomor_spk' => $row->nomor_spk,
-                'judul_pekerjaan' => $row->judul_pekerjaan,
-                'jenis_pekerjaan' => $row->jenis_pekerjaan,
-                'tanggal_spk' => optional($row->tanggal_spk)->format('Y-m-d'),
-                'tanggal_mulai' => optional($row->tanggal_mulai)->format('Y-m-d'),
-                'tanggal_selesai' => optional($row->tanggal_selesai)->format('Y-m-d'),
-                'nilai_kontrak_dasar' => $row->nilai_kontrak_dasar,
-                'nilai_kontrak' => $row->nilai_kontrak,
-                'total_penambahan' => 0,
-                'metode_pembayaran' => $row->metode_pembayaran,
-                'approval_role' => $this->normalizeApprovalRole($row->approval_role),
-                'record_status' => $row->record_status ?? 'draft',
-                'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-                'lingkup_pekerjaan' => $row->lingkup_pekerjaan,
-                'catatan' => $row->catatan,
-                'status' => $row->status,
-                'approved_at' => optional($row->approved_at)->format('Y-m-d H:i'),
-                'sumber_tenaga_kerja' => $row->sumber_tenaga_kerja ?? 'tukang_owner',
-                'items' => $row->items->sortBy('urutan')->map(fn (SpkKontraktorItem $item) => [
-                    'id' => $item->id,
-                    'tahapan_pembangunan_id' => (string) ($item->tahapan_pembangunan_id ?? ''),
-                    'nama_tahap_pekerjaan' => $item->nama_tahap_pekerjaan,
-                    'nama_pekerjaan' => $item->nama_pekerjaan,
-                    'harga_satuan' => $item->harga_satuan,
-                    'total' => $item->total,
-                    'urutan' => $item->urutan,
-                ])->values(),
-                'items_text' => $row->items->sortBy('urutan')->map(fn (SpkKontraktorItem $item) => trim($item->nama_tahap_pekerjaan.' - '.$item->nama_pekerjaan))->join(', '),
-                'hpp_plan_exists' => $hppPlan['exists'],
-                'hpp_plan_total' => $hppPlan['total'],
-                'hpp_plan_label' => $hppPlan['label'],
-                'kontraktor' => $row->kontraktor?->nama_kontraktor
-                    ?? data_get(collect($this->workerSourceOptions())->firstWhere('value', $row->sumber_tenaga_kerja), 'label')
-                    ?? '-',
-                'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
-                'unit' => $row->detailRumah ? trim($row->detailRumah->kode_nlok.' '.$row->detailRumah->nomor_rumah) : '-',
-                'payments' => $row->payments->sortBy('termin_ke')->map(fn ($payment) => [
-                    'id' => $payment->id,
-                    'termin_ke' => $payment->termin_ke,
-                    'tanggal_jatuh_tempo' => optional($payment->tanggal_jatuh_tempo)->format('Y-m-d'),
-                    'tanggal_pembayaran' => optional($payment->tanggal_pembayaran)->format('Y-m-d'),
-                    'nominal' => $payment->nominal,
-                    'keterangan' => $payment->keterangan,
-                    'opname' => $payment->contractorOpname?->kode_opname,
-                    'status' => $payment->status,
-                    'status_label' => $this->paymentStatusLabel($payment->status),
-                ])->values(),
-                'can_edit' => $this->canManageSpk() && ($row->record_status ?? 'draft') !== 'locked',
-                'can_delete' => $this->canManageSpk() && ($row->record_status ?? 'draft') !== 'locked',
-                'can_cancel' => $this->canManageSpk()
-                    && $row->status !== 'batal'
-                    && blank($row->approved_at)
-                    && ! $row->siteSchedules()->exists()
-                    && ! $row->payments()->where('status', '!=', 'menunggu_pengajuan')->exists(),
-                'can_approve' => $this->canApproveSpk() && blank($row->approved_at),
-                'can_lock' => (bool) auth()->check() && ($row->record_status ?? 'draft') !== 'locked',
-                'can_unlock' => $this->canManageSpkLock() && ($row->record_status ?? 'draft') === 'locked',
+                    'id' => $row->id,
+                    'kontraktor_id' => (string) $row->kontraktor_id,
+                    'perumahan_id' => (string) ($row->perumahan_id ?? ''),
+                    'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
+                    'nomor_spk' => $row->nomor_spk,
+                    'judul_pekerjaan' => $row->judul_pekerjaan,
+                    'jenis_pekerjaan' => $row->jenis_pekerjaan,
+                    'tanggal_spk' => optional($row->tanggal_spk)->format('Y-m-d'),
+                    'tanggal_mulai' => optional($row->tanggal_mulai)->format('Y-m-d'),
+                    'tanggal_selesai' => optional($row->tanggal_selesai)->format('Y-m-d'),
+                    'nilai_kontrak_dasar' => $row->nilai_kontrak_dasar,
+                    'nilai_kontrak' => $row->nilai_kontrak,
+                    'total_penambahan' => 0,
+                    'metode_pembayaran' => $row->metode_pembayaran,
+                    'approval_role' => $this->normalizeApprovalRole($row->approval_role),
+                    'record_status' => $row->record_status ?? 'draft',
+                    'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
+                    'lingkup_pekerjaan' => $row->lingkup_pekerjaan,
+                    'catatan' => $row->catatan,
+                    'status' => $row->status,
+                    'approved_at' => optional($row->approved_at)->format('Y-m-d H:i'),
+                    'sumber_tenaga_kerja' => $row->sumber_tenaga_kerja ?? 'tukang_owner',
+                    'items' => $row->items->sortBy('urutan')->map(fn (SpkKontraktorItem $item) => [
+                        'id' => $item->id,
+                        'tahapan_pembangunan_id' => (string) ($item->tahapan_pembangunan_id ?? ''),
+                        'nama_tahap_pekerjaan' => $item->nama_tahap_pekerjaan,
+                        'nama_pekerjaan' => $item->nama_pekerjaan,
+                        'harga_satuan' => $item->harga_satuan,
+                        'total' => $item->total,
+                        'urutan' => $item->urutan,
+                    ])->values(),
+                    'items_text' => $row->items->sortBy('urutan')->map(fn (SpkKontraktorItem $item) => trim($item->nama_tahap_pekerjaan.' - '.$item->nama_pekerjaan))->join(', '),
+                    'hpp_plan_exists' => $hppPlan['exists'],
+                    'hpp_plan_total' => $hppPlan['total'],
+                    'hpp_plan_label' => $hppPlan['label'],
+                    'kontraktor' => $row->kontraktor?->nama_kontraktor
+                        ?? data_get(collect($this->workerSourceOptions())->firstWhere('value', $row->sumber_tenaga_kerja), 'label')
+                        ?? '-',
+                    'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
+                    'unit' => $row->detailRumah ? trim($row->detailRumah->kode_nlok.' '.$row->detailRumah->nomor_rumah) : '-',
+                    'payments' => $row->payments->sortBy('termin_ke')->map(fn ($payment) => [
+                        'id' => $payment->id,
+                        'termin_ke' => $payment->termin_ke,
+                        'tanggal_jatuh_tempo' => optional($payment->tanggal_jatuh_tempo)->format('Y-m-d'),
+                        'tanggal_pembayaran' => optional($payment->tanggal_pembayaran)->format('Y-m-d'),
+                        'nominal' => $payment->nominal,
+                        'keterangan' => $payment->keterangan,
+                        'opname' => $payment->contractorOpname?->kode_opname,
+                        'status' => $payment->status,
+                        'status_label' => $this->paymentStatusLabel($payment->status),
+                    ])->values(),
+                    'can_edit' => $this->canManageSpk() && ($row->record_status ?? 'draft') !== 'locked',
+                    'can_delete' => $this->canManageSpk() && ($row->record_status ?? 'draft') !== 'locked',
+                    'can_cancel' => $this->canManageSpk()
+                        && $row->status !== 'batal'
+                        && blank($row->approved_at)
+                        && ! $row->siteSchedules()->exists()
+                        && ! $row->payments()->where('status', '!=', 'menunggu_pengajuan')->exists(),
+                    'can_approve' => $this->canApproveSpk() && blank($row->approved_at),
+                    'can_lock' => (bool) auth()->check() && ($row->record_status ?? 'draft') !== 'locked',
+                    'can_unlock' => $this->canManageSpkLock() && ($row->record_status ?? 'draft') === 'locked',
                 ];
             });
 
@@ -804,8 +803,8 @@ class SpkKontraktorController extends Controller
                 ->get(['id', 'nama_kontraktor'])
                 ->map(fn (Kontraktor $row) => ['value' => (string) $row->id, 'label' => $row->nama_kontraktor])
                 ->values(),
-            'perumahans' => Perumahan::query()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn (Perumahan $row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
-            'detailRumahs' => DetailRumah::query()->where(fn (Builder $query) => $query->whereNull('status_pembangunan')->orWhere('status_pembangunan', '!=', 'selesai'))->orderBy('kode_nlok')->orderBy('nomor_rumah')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])->map(fn (DetailRumah $row) => [
+            'perumahans' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn (Perumahan $row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
+            'detailRumahs' => DetailRumah::query()->finalized()->where(fn (Builder $query) => $query->whereNull('status_pembangunan')->orWhere('status_pembangunan', '!=', 'selesai'))->orderBy('kode_nlok')->orderBy('nomor_rumah')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])->map(fn (DetailRumah $row) => [
                 'value' => (string) $row->id,
                 'label' => trim($row->kode_nlok.' '.$row->nomor_rumah),
                 'perumahan_id' => (string) $row->perumahan_id,
