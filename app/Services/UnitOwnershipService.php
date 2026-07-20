@@ -4,12 +4,31 @@ namespace App\Services;
 
 use App\Models\CashSale;
 use App\Models\Costumer;
+use App\Models\SalesProcessStep;
+use App\Models\SalesTransaction;
 use App\Models\UnitOwnership;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 
 class UnitOwnershipService
 {
+    public function syncSalesTransaction(SalesTransaction $transaction, ?SalesProcessStep $step = null): ?UnitOwnership
+    {
+        $transaction->loadMissing('customer');
+        $data = $step?->metadata['data'] ?? [];
+
+        return $this->activateFromTransaction(
+            $transaction->customer,
+            $transaction->detail_rumah_id,
+            $transaction->spr_id,
+            'sales_process',
+            $transaction,
+            $transaction->payment_method,
+            $step?->actual_date ?? now(),
+            $data['contract_number'] ?? $data['handover_number'] ?? $transaction->transaction_no,
+        );
+    }
+
     public function syncCashHandover(CashSale $sale): ?UnitOwnership
     {
         $sale->loadMissing('costumer', 'spr');

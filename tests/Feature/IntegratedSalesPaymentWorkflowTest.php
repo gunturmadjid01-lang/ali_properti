@@ -74,6 +74,18 @@ test('workflow kpr bank tetap membuat pengajuan bank yang terkait ke spr', funct
         ->and(SalesProcessStep::where('sales_transaction_id', $transaction->id)->where('code', 'move_in')->exists())->toBeTrue();
 });
 
+test('pembelian unit siap huni langsung membentuk data pemilik satu kali', function () {
+    $spr = approvedWorkflowSpr('kpr_bank');
+    $spr->detailRumah()->update(['status_pembangunan' => 'selesai', 'progress_terakhir' => 100]);
+
+    $service = app(SalesPaymentWorkflowService::class);
+    $transaction = $service->processApprovedSpr($spr);
+    $service->processApprovedSpr($spr->fresh());
+
+    expect(UnitOwnership::where('detail_rumah_id', $transaction->detail_rumah_id)->where('is_active', true)->count())->toBe(1)
+        ->and($transaction->housingUnit->fresh()->status_penjualan)->toBe('terjual');
+});
+
 test('approval spr membuat tagihan uang muka satu kali dan pokok cash bertahap tidak menghitung uang muka dua kali', function () {
     $spr = approvedWorkflowSpr('cash_bertahap');
     $transaction = app(SalesPaymentWorkflowService::class)->processApprovedSpr($spr);
@@ -120,6 +132,8 @@ test('tagihan cash bertahap baru dibuat setelah tahap penandatanganan kontrak di
 
     expect($count)->toBeGreaterThan(0)
         ->and(PaymentSchedule::where('sales_transaction_id', $transaction->id)->where('type', 'termin')->count())->toBe($count)
+        ->and(UnitOwnership::where('detail_rumah_id', $transaction->detail_rumah_id)->where('is_active', true)->count())->toBe(1)
+        ->and($transaction->housingUnit->fresh()->status_penjualan)->toBe('terjual')
         ->and((float) PaymentSchedule::where('sales_transaction_id', $transaction->id)->sum('amount'))->toBe(295000000.0);
 });
 
@@ -138,6 +152,12 @@ test('tagihan kpr developer dibuat saat persetujuan pembiayaan developer disetuj
 
     expect($count)->toBeGreaterThan(0)
         ->and(PaymentSchedule::where('sales_transaction_id', $transaction->id)->where('type', 'angsuran')->count())->toBe($count);
+
+    $contract = SalesProcessStep::where('sales_transaction_id', $transaction->id)->where('code', 'contract_signing')->firstOrFail();
+    app(SalesProcessService::class)->approve($contract);
+
+    expect($transaction->housingUnit->fresh()->status_penjualan)->toBe('terjual')
+        ->and(UnitOwnership::where('detail_rumah_id', $transaction->detail_rumah_id)->where('is_active', true)->count())->toBe(1);
 });
 
 test('tahap operasional tidak dapat difinalisasi sebelum field checklist dan dokumen wajib lengkap', function () {

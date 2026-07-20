@@ -71,13 +71,20 @@ function FilterBar({ baseUrl, filters, options, showAccount = false }) {
     };
     const quickPeriod = (period) => {
         const today = new Date();
-        const iso = (date) => date.toISOString().slice(0, 10);
+        const iso = (date) =>
+            `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
         let start = new Date(today);
         if (period === "month")
             start = new Date(today.getFullYear(), today.getMonth(), 1);
         if (period === "year") start = new Date(today.getFullYear(), 0, 1);
+        const end =
+            period === "month"
+                ? new Date(today.getFullYear(), today.getMonth() + 1, 0)
+                : period === "year"
+                  ? new Date(today.getFullYear(), 11, 31)
+                  : today;
         const nextFrom = iso(start);
-        const nextTo = iso(today);
+        const nextTo = iso(end);
         setDateFrom(nextFrom);
         setDateTo(nextTo);
         router.get(
@@ -399,8 +406,9 @@ function CashTransaction({ data, options, canCreate, type }) {
                                 & Bank
                             </h2>
                             <p className="mt-1 text-sm text-white/75">
-                                Transaksi akan langsung membentuk jurnal
-                                berdasarkan tipe transaksi yang dipilih.
+                                {income
+                                    ? "Hanya untuk pemasukan non-customer yang belum memiliki modul transaksi khusus."
+                                    : "Transaksi akan langsung membentuk jurnal berdasarkan tipe transaksi yang dipilih."}
                             </p>
                         </div>
                     </div>

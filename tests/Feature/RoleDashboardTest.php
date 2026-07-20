@@ -129,6 +129,20 @@ test('dashboard non owner mengikuti perumahan aktif sedangkan owner tetap konsol
         ->assertSessionMissing('active_perumahan_id')
         ->assertInertia(fn (Assert $page) => $page
             ->where('context.active_perumahan_id', null)
-            ->where('sections.0.stats.1.value', 2)
+            ->where('sections', fn ($sections) => collect($sections)
+                ->firstWhere('key', 'property')['stats'][1]['value'] === 2)
             ->where('auth.active_perumahan', null));
+});
+
+test('ringkasan keuangan diprioritaskan untuk role eksekutif', function () {
+    foreach (['owner', 'manager', 'admin', 'super_admin', 'keuangan'] as $index => $roleName) {
+        $user = User::factory()->create(['phone' => '081277701'.str_pad((string) $index, 3, '0', STR_PAD_LEFT)]);
+        $user->assignRole(Role::findOrCreate($roleName, 'web'));
+
+        $this->actingAs($user)->get(route('admin.dashboard'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('sections.0.key', 'finance')
+                ->where('charts.0.title', fn (string $title) => str_contains($title, 'Cash In vs Cash Out')));
+    }
 });

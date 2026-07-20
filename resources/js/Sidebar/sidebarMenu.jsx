@@ -190,6 +190,12 @@ const sidebarMenu = [
                         link: "/admin/pemilik-unit",
                         permission: "unit-ownership.view",
                     },
+                    {
+                        title: "Periode Tagihan Air",
+                        icon: CalendarClock,
+                        link: "/admin/periode-tagihan-air",
+                        permission: "water-billing-periods.view",
+                    },
                 ],
             },
             {
@@ -438,6 +444,12 @@ const sidebarMenu = [
                         icon: Banknote,
                         link: "/admin/keuangan/penerimaan-customer",
                         permission: "customer-receipts.view",
+                    },
+                    {
+                        title: "Pembayaran Air",
+                        icon: ReceiptText,
+                        link: "/admin/pembayaran-air",
+                        permission: "water-payments.view",
                     },
                 ],
             },

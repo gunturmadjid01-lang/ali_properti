@@ -160,6 +160,7 @@ function Dashboard({ data }) {
                     </Card>
                 ))}
             </div>
+            <MarketingTrendChart data={data.trend} />
             <div className="grid gap-6 xl:grid-cols-2">
                 <Card>
                     <h3 className="border-b border-silver-deep/60 px-5 py-4 text-lg font-extrabold dark:border-white/10">
@@ -210,6 +211,74 @@ function Dashboard({ data }) {
                 </Card>
             </div>
         </div>
+    );
+}
+
+function MarketingTrendChart({ data = {} }) {
+    const series = [
+        { key: "leads", label: "Lead baru", color: "#2563eb" },
+        { key: "spr", label: "SPR", color: "#d97706" },
+    ];
+    const maximum = Math.max(
+        1,
+        ...series.flatMap((item) => data[item.key] ?? []).map(Number),
+    );
+
+    return (
+        <Card className="p-5">
+            <div className="mb-5">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-ink-soft">
+                    Tren penjualan
+                </p>
+                <h3 className="mt-1 text-lg font-extrabold">
+                    Lead Baru vs SPR · 6 Bulan
+                </h3>
+            </div>
+            <div className="flex h-56 items-end gap-3 border-b border-silver-deep/60 pb-3 dark:border-white/10">
+                {(data.labels ?? []).map((label, index) => (
+                    <div
+                        className="flex h-full min-w-0 flex-1 flex-col justify-end"
+                        key={label}
+                    >
+                        <div className="flex h-44 items-end justify-center gap-2">
+                            {series.map((item) => {
+                                const value = Number(
+                                    data[item.key]?.[index] ?? 0,
+                                );
+                                return (
+                                    <div
+                                        className="w-full max-w-10 rounded-t-md"
+                                        key={item.key}
+                                        style={{
+                                            backgroundColor: item.color,
+                                            height: `${Math.max(value ? 6 : 1, (value / maximum) * 100)}%`,
+                                        }}
+                                        title={`${item.label}: ${value}`}
+                                    />
+                                );
+                            })}
+                        </div>
+                        <span className="mt-2 truncate text-center text-[10px] font-extrabold uppercase text-ink-soft">
+                            {label}
+                        </span>
+                    </div>
+                ))}
+            </div>
+            <div className="mt-4 flex gap-5">
+                {series.map((item) => (
+                    <span
+                        className="flex items-center gap-2 text-xs font-bold text-ink-soft"
+                        key={item.key}
+                    >
+                        <i
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: item.color }}
+                        />
+                        {item.label}
+                    </span>
+                ))}
+            </div>
+        </Card>
     );
 }
 

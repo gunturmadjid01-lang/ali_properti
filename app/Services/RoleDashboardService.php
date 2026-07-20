@@ -32,15 +32,17 @@ class RoleDashboardService
         $charts = [];
         $shortcuts = [];
 
-        if ($this->allowed($user, ['users.view', 'roles.view', 'roles.manage', 'payroll.view'])) {
-            $sections[] = $this->organizationStats();
-            if (SchemaMetadata::hasTable('attendance_records')) {
-                $sections[] = $this->attendanceStats();
-            }
+        $canSeeFinanceSummary = $user->hasAnyRole(['owner', 'manager', 'manajer_pimpro', 'admin', 'super_admin', 'keuangan'])
+            || $this->allowed($user, ['keuangan.view', 'bank-account-ledger.view', 'buku-besar.view', 'neraca-saldo.view', 'laba-rugi.view', 'neraca.view', 'arus-kas.view', 'piutang.view', 'hutang.view', 'petty-cash.view']);
+
+        if ($canSeeFinanceSummary) {
+            $sections[] = $this->financeStats();
+            $charts[] = $this->financeChart();
             $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
-                ['users.view', 'Data Pengguna', '/admin/management/user'],
-                ['roles.view', 'Role & Permission', '/admin/management/role-permission'],
-                ['payroll.view', 'Pengaturan Gaji', '/admin/gaji-pegawai'],
+                ['keuangan.view', 'Dashboard Keuangan', '/admin/keuangan/dashboard'],
+                ['bank-account-ledger.view', 'Mutasi Rekening', '/admin/rekening-bank'],
+                ['petty-cash.view', 'Kas Kecil', '/admin/kas-kecil/saldo'],
+                ['buku-besar.view', 'Buku Besar', '/admin/keuangan/buku-besar'],
             ])];
         }
 
@@ -113,17 +115,6 @@ class RoleDashboardService
             ])];
         }
 
-        if ($this->allowed($user, ['keuangan.view', 'bank-account-ledger.view', 'buku-besar.view', 'neraca-saldo.view', 'laba-rugi.view', 'neraca.view', 'arus-kas.view', 'piutang.view', 'hutang.view', 'petty-cash.view', 'laporan.view'])) {
-            $sections[] = $this->financeStats();
-            $charts[] = $this->financeChart();
-            $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
-                ['keuangan.view', 'Dashboard Keuangan', '/admin/keuangan/dashboard'],
-                ['bank-account-ledger.view', 'Mutasi Rekening', '/admin/rekening-bank'],
-                ['petty-cash.view', 'Kas Kecil', '/admin/kas-kecil/saldo'],
-                ['buku-besar.view', 'Buku Besar', '/admin/keuangan/buku-besar'],
-            ])];
-        }
-
         $charts = collect($charts)->filter(fn (array $chart) => count($chart['labels'] ?? []) > 0)->values()->all();
 
         return [
@@ -168,7 +159,6 @@ class RoleDashboardService
         return [
             'period_label' => $this->periodLabel,
             'items' => [
-                ['label' => 'Marketing Dipantau', 'value' => $marketing->count(), 'icon' => 'users', 'tone' => 'sky'],
                 ['label' => 'Lead Baru', 'value' => $lead, 'icon' => 'target', 'tone' => 'violet'],
                 ['label' => 'Tindak Lanjut', 'value' => $followUp, 'icon' => 'activity', 'tone' => 'emerald'],
                 ['label' => 'Survei', 'value' => $survey, 'icon' => 'eye', 'tone' => 'amber'],
@@ -178,44 +168,14 @@ class RoleDashboardService
         ];
     }
 
-    private function organizationStats(): array
-    {
-        return $this->section('Organisasi', 'users', [
-            $this->stat('Total Pegawai', $this->count('users'), 'number', 'users'),
-            $this->stat('Pegawai Aktif', $this->count('users', fn (Builder $q) => SchemaMetadata::hasColumn('users', 'employment_status') ? $q->where('employment_status', 'aktif') : $q), 'number', 'user-check'),
-            $this->stat('Memiliki Akses Login', $this->count('users', fn (Builder $q) => SchemaMetadata::hasColumn('users', 'has_login_access') ? $q->where('has_login_access', true) : $q), 'number', 'key'),
-            $this->stat('Pegawai Baru Periode', $this->countPeriod('users', 'join_date'), 'number', 'user-plus'),
-            $this->stat('Gaji Aktif', $this->count('employee_salaries', fn (Builder $q) => $q->where('is_active', true)), 'number', 'wallet'),
-            $this->stat('Role Sistem', $this->count('roles'), 'number', 'shield'),
-            $this->stat('Permission Aktif', $this->count('permissions'), 'number', 'key'),
-        ]);
-    }
-
-    private function attendanceStats(): array
-    {
-        $today = today()->toDateString();
-
-        return $this->section('Absensi Pegawai Hari Ini', 'attendance', [
-            $this->stat('Pegawai Sudah Masuk', $this->count('attendance_records', fn (Builder $q) => $q->whereDate('attendance_date', $today)->where('type', 'check_in')), 'number', 'user-check'),
-            $this->stat('Pegawai Sudah Pulang', $this->count('attendance_records', fn (Builder $q) => $q->whereDate('attendance_date', $today)->where('type', 'check_out')), 'number', 'check'),
-            $this->stat('Belum Absen Pulang', DB::table('attendance_records')->whereDate('attendance_date', $today)->where('type', 'check_in')->whereNotIn('user_id', DB::table('attendance_records')->whereDate('attendance_date', $today)->where('type', 'check_out')->select('user_id'))->count(), 'number', 'clock'),
-            $this->stat('Menunggu Approval', $this->count('attendance_records', fn (Builder $q) => $q->whereDate('attendance_date', $today)->where('record_status', 'locked')->whereExists(fn ($approval) => $approval->selectRaw('1')->from('approval_requests')->whereColumn('approval_requests.model_id', 'attendance_records.id')->where('approval_requests.module_key', 'attendance')->where('approval_requests.status', 'pending'))), 'number', 'clock'),
-        ]);
-    }
-
     private function propertyStats(): array
     {
         return $this->section('Properti & Pembangunan', 'property', [
-            $this->stat('Total Perumahan', $this->count('perumahans'), 'number', 'building'),
             $this->stat('Total Unit Rumah', $this->count('detail_rumahs'), 'number', 'home'),
             $this->stat('Unit Tersedia', $this->count('detail_rumahs', fn (Builder $q) => $q->where('status_penjualan', 'tersedia')), 'number', 'check'),
             $this->stat('Unit Terjual / Booking', $this->count('detail_rumahs', fn (Builder $q) => $q->whereIn('status_penjualan', ['terjual', 'sold', 'booking', 'terbooking'])), 'number', 'wallet'),
-            $this->stat('Unit Selesai / Ready', $this->count('detail_rumahs', fn (Builder $q) => $q->whereIn('status_pembangunan', ['selesai', 'ready'])), 'number', 'check'),
             $this->stat('Sedang Dibangun', $this->count('detail_rumahs', fn (Builder $q) => $q->where('status_pembangunan', 'sedang_dibangun')), 'number', 'hard-hat'),
             $this->stat('Rata-rata Progress Unit', $this->average('detail_rumahs', 'progress_terakhir'), 'percent', 'trending'),
-            $this->stat('Update Progress Periode', $this->countPeriod('progress_pembangunans', 'tanggal'), 'number', 'trending'),
-            $this->stat('Jadwal Belum Selesai', $this->count('site_schedules', fn (Builder $q) => $q->whereNotIn('status', ['selesai', 'completed'])), 'number', 'clock'),
-            $this->stat('SPK Aktif', $this->count('spk_kontraktors', fn (Builder $q) => $q->whereIn('status', ['aktif', 'approved', 'disetujui'])), 'number', 'file'),
             $this->stat('Nilai SPK Aktif', $this->sumFiltered('spk_kontraktors', 'nilai_kontrak', fn (Builder $q) => $q->whereIn('status', ['aktif', 'approved', 'disetujui'])), 'currency', 'wallet'),
         ]);
     }
@@ -224,22 +184,18 @@ class RoleDashboardService
     {
         return $this->section('Approval & Tugas Review', 'approval', [
             $this->stat('Antrean Approval', $this->count('approval_requests', fn (Builder $q) => $q->where('status', 'pending')), 'number', 'clock'),
-            $this->stat('SPK Menunggu Review', $this->count('spk_kontraktors', fn (Builder $q) => $q->whereIn('status', ['draft', 'menunggu_approval', 'menunggu_approval_manager', 'menunggu_approval_owner'])), 'number', 'file'),
             $this->stat('SPR Menunggu Review', $this->count('sprs', fn (Builder $q) => $q->whereIn('status', ['menunggu_manager', 'menunggu_owner'])), 'number', 'receipt'),
             $this->stat('Material Menunggu', $this->count('material_purchases', fn (Builder $q) => $q->whereIn('status', ['menunggu_approval_manager', 'menunggu_approval'])), 'number', 'cart'),
-            $this->stat('Approval Dibuat Periode', $this->countPeriod('approval_requests', 'created_at'), 'number', 'file'),
-            $this->stat('Stock Opname Draft', $this->count('inventory_stock_opnames', fn (Builder $q) => $q->where('status', 'draft')), 'number', 'boxes'),
+            $this->stat('Disetujui Periode', $this->countPeriod('approval_requests', 'updated_at', fn (Builder $q) => $q->where('status', 'approved')), 'number', 'check'),
+            $this->stat('Ditolak Periode', $this->countPeriod('approval_requests', 'updated_at', fn (Builder $q) => $q->where('status', 'rejected')), 'number', 'alert'),
         ]);
     }
 
     private function marketingStats(): array
     {
         return $this->section('Marketing & Penjualan', 'marketing', [
-            $this->stat('Total Prospek', $this->count('costumers'), 'number', 'users'),
             $this->stat('Prospek Periode', $this->countPeriod('costumers', 'created_at'), 'number', 'user-plus'),
-            $this->stat('Total SPR', $this->count('sprs'), 'number', 'file'),
             $this->stat('SPR Periode', $this->countPeriod('sprs', 'tanggal_spr'), 'number', 'file'),
-            $this->stat('SPR Disetujui', $this->count('sprs', fn (Builder $q) => $q->where('status', 'disetujui')), 'number', 'check'),
             $this->stat('Nilai SPR Periode', $this->sumPeriod('sprs', 'harga_jual', 'tanggal_spr'), 'currency', 'wallet'),
             $this->stat('Pembayaran Masuk Periode', $this->sumPeriod('customer_receipts', 'amount', 'payment_date'), 'currency', 'wallet'),
             $this->stat('Unit Terjual', $this->count('detail_rumahs', fn (Builder $q) => $q->whereIn('status_penjualan', ['terjual', 'sold'])), 'number', 'home'),
@@ -250,15 +206,12 @@ class RoleDashboardService
     private function warehouseStats(): array
     {
         return $this->section('Gudang & Logistik', 'warehouse', [
-            $this->stat('Jenis Material', $this->count('barang_materials'), 'number', 'boxes'),
             $this->stat('Total Stok Lokasi', $this->sum('site_material_stocks', 'qty_available'), 'decimal', 'warehouse'),
             $this->stat('Permintaan Menunggu', $this->count('material_requests', fn (Builder $q) => $q->whereNotIn('status', ['selesai', 'ditolak', 'approved'])), 'number', 'clock'),
-            $this->stat('Permintaan Periode', $this->countPeriod('material_requests', 'tanggal'), 'number', 'file'),
             $this->stat('Pembelian Periode', $this->countPeriod('material_purchases', 'tanggal'), 'number', 'cart'),
             $this->stat('Nilai Pembelian Periode', $this->sumPeriod('material_purchases', 'total_nominal', 'tanggal'), 'currency', 'wallet'),
             $this->stat('Pemakaian Periode', $this->countPeriod('material_usages', 'tanggal'), 'number', 'boxes'),
-            $this->stat('Stock Opname Periode', $this->countPeriod('material_stock_opnames', 'tanggal'), 'number', 'check'),
-            $this->stat('Supplier Aktif', $this->count('suppliers', fn (Builder $q) => SchemaMetadata::hasColumn('suppliers', 'status') ? $q->where('status', 'aktif') : $q), 'number', 'users'),
+            $this->stat('Stok Kosong', $this->count('site_material_stocks', fn (Builder $q) => $q->where('qty_available', '<=', 0)), 'number', 'alert'),
         ]);
     }
 
@@ -271,7 +224,6 @@ class RoleDashboardService
                 $this->stat('Stok Tersedia', $this->sum('inventory_items', 'available_stock'), 'number', 'check'),
                 $this->stat('Sedang Dipinjam', $this->sum('inventory_items', 'borrowed_stock'), 'number', 'clock'),
                 $this->stat('Rusak / Hilang', $this->sum('inventory_items', 'damaged_stock') + $this->sum('inventory_items', 'lost_stock'), 'number', 'alert'),
-                $this->stat('Peminjaman Periode', $this->countPeriod('inventory_loans', 'date'), 'number', 'file'),
                 $this->stat('Opname Belum Verifikasi', $this->count('inventory_stock_opnames', fn (Builder $q) => $q->where('status', 'draft')), 'number', 'clock'),
             ];
         }
@@ -280,7 +232,6 @@ class RoleDashboardService
                 $this->stat('Total Alat Berat', $this->count('heavy_equipments'), 'number', 'hard-hat'),
                 $this->stat('Alat Digunakan', $this->count('heavy_equipments', fn (Builder $q) => $q->where('status', 'in_use')), 'number', 'activity'),
                 $this->stat('Alat Servis / Rusak', $this->count('heavy_equipments', fn (Builder $q) => $q->whereIn('status', ['service', 'damaged'])), 'number', 'wrench'),
-                $this->stat('Penggunaan Periode', $this->countPeriod('heavy_equipment_usages', 'date'), 'number', 'activity'),
                 $this->stat('Biaya BBM Periode', $this->sumPeriod('heavy_equipment_fuelings', 'total_cost', 'date'), 'currency', 'wallet'),
                 $this->stat('Biaya Maintenance Periode', $this->sumPeriod('heavy_equipment_maintenances', 'cost', 'date'), 'currency', 'wrench'),
             ];
@@ -298,10 +249,7 @@ class RoleDashboardService
             $this->stat('Pemasukan Periode', $income, 'currency', 'trending'),
             $this->stat('Pengeluaran Periode', $expense, 'currency', 'wallet'),
             $this->stat('Arus Bersih Periode', $income - $expense, 'currency', 'activity'),
-            $this->stat('Transaksi Periode', $this->countPeriod('transaksi_keuangans', 'tanggal'), 'number', 'receipt'),
             $this->stat('Saldo Kas Kecil', $this->sum('petty_cash_accounts', 'balance'), 'currency', 'wallet'),
-            $this->stat('Pengeluaran Kas Kecil', $this->sumPeriod('petty_cash_expenses', 'amount', 'expense_date'), 'currency', 'wallet'),
-            $this->stat('Jurnal Periode', $this->countPeriod('journals', 'tanggal'), 'number', 'book'),
             $this->stat('Pembayaran Customer', $this->sumPeriod('customer_receipts', 'amount', 'payment_date'), 'currency', 'trending'),
         ]);
     }
@@ -486,13 +434,18 @@ class RoleDashboardService
         return round((float) $this->query($table)->avg($column), 2);
     }
 
-    private function countPeriod(string $table, string $column): int
+    private function countPeriod(string $table, string $column, ?callable $callback = null): int
     {
         if (! SchemaMetadata::hasTable($table) || ! SchemaMetadata::hasColumn($table, $column)) {
             return 0;
         }
 
-        return $this->query($table)->whereBetween($column, [$this->periodStart, $this->periodEnd])->count();
+        $query = $this->query($table)->whereBetween($column, [$this->periodStart, $this->periodEnd]);
+        if ($callback) {
+            $callback($query);
+        }
+
+        return $query->count();
     }
 
     private function sumPeriod(string $table, string $sumColumn, string $dateColumn): float

@@ -9,10 +9,12 @@ use App\Models\HousingReservation;
 use App\Models\MasterBank;
 use App\Models\PaymentSchedule;
 use App\Models\Perumahan;
+use App\Models\PettyCashAccount;
 use App\Models\ReceivableSetting;
 use App\Models\SalesTransaction;
 use App\Models\User;
 use App\Services\ApprovalWorkflowService;
+use App\Services\CustomerReceivableService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -20,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -36,14 +39,17 @@ class CustomerReceivableController extends Controller
         $this->allow($request, 'receivables.view');
         $search = trim((string) $request->query('search', ''));
         $status = $request->query('status');
-        $period = in_array($request->query('period'), ['daily', 'monthly', 'yearly'], true) ? $request->query('period') : 'monthly';
+        $period = 'monthly';
         $year = min(2100, max(2000, (int) $request->query('year', today()->year)));
         $month = min(12, max(1, (int) $request->query('month', today()->month)));
+        $selectedMonth = CarbonImmutable::create($year, $month, 1);
+        $monthStart = $selectedMonth->startOfMonth()->toDateString();
+        $monthEnd = $selectedMonth->endOfMonth()->toDateString();
         $rows = PaymentSchedule::query()->with(['salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'housingReservation.customer', 'housingReservation.unit.perumahan'])
-            ->where('record_status', 'locked')->when($search, fn (Builder $q) => $q->where(fn (Builder $q) => $q->where('invoice_no', 'like', "%{$search}%")->orWhereHas('salesTransaction.customer', fn (Builder $q) => $q->where('nama', 'like', "%{$search}%"))->orWhereHas('salesTransaction', fn (Builder $q) => $q->where('transaction_no', 'like', "%{$search}%"))))
+            ->where('record_status', 'locked')->whereBetween('due_date', [$monthStart, $monthEnd])->when($search, fn (Builder $q) => $q->where(fn (Builder $q) => $q->where('invoice_no', 'like', "%{$search}%")->orWhereHas('salesTransaction.customer', fn (Builder $q) => $q->where('nama', 'like', "%{$search}%"))->orWhereHas('salesTransaction', fn (Builder $q) => $q->where('transaction_no', 'like', "%{$search}%"))))
             ->when($status === 'overdue', fn (Builder $q) => $q->whereDate('due_date', '<', today())->whereColumn('paid_amount', '<', 'amount'))
             ->orderBy('due_date')->paginate(15)->withQueryString()->through(fn (PaymentSchedule $row) => $this->scheduleRow($row));
-        $base = PaymentSchedule::query()->where('record_status', 'locked');
+        $base = PaymentSchedule::query()->where('record_status', 'locked')->whereBetween('due_date', [$monthStart, $monthEnd]);
         // Portable for SQLite (local/testing) and MySQL/PostgreSQL (production).
         $remaining = 'CASE WHEN amount > paid_amount THEN amount - paid_amount ELSE 0 END';
 
@@ -53,43 +59,18 @@ class CustomerReceivableController extends Controller
     private function receivableStatistics(string $period, int $year, int $month): array
     {
         $selected = CarbonImmutable::create($year, $month, 1);
-        [$start, $end] = match ($period) {
-            'daily' => [$selected->startOfMonth(), $selected->endOfMonth()],
-            'yearly' => [$selected->subYears(4)->startOfYear(), $selected->endOfYear()],
-            default => [$selected->startOfYear(), $selected->endOfYear()],
-        };
-        $keyFormat = match ($period) {
-            'daily' => 'Y-m-d',
-            'yearly' => 'Y',
-            default => 'Y-m',
-        };
-        $values = PaymentSchedule::query()->where('record_status', 'locked')
-            ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
-            ->get(['due_date', 'amount', 'paid_amount'])
-            ->groupBy(fn (PaymentSchedule $row) => $row->due_date->format($keyFormat))
-            ->map(fn ($rows) => [
-                'bill' => (float) $rows->sum('amount'),
-                'paid' => (float) $rows->sum('paid_amount'),
-                'remaining' => (float) $rows->sum(fn ($row) => max(0, (float) $row->amount - (float) $row->paid_amount)),
-            ]);
-        $cursor = $start;
-        $buckets = [];
-        while ($cursor->lte($end)) {
-            $key = $cursor->format($keyFormat);
-            $label = match ($period) {
-                'daily' => $cursor->locale('id')->translatedFormat('l, d F Y'),
-                'yearly' => $cursor->format('Y'),
-                default => $cursor->locale('id')->translatedFormat('F Y'),
-            };
-            $buckets[] = ['key' => $key, 'label' => $label, ...($values->get($key) ?? ['bill' => 0.0, 'paid' => 0.0, 'remaining' => 0.0])];
-            $cursor = match ($period) {
-                'daily' => $cursor->addDay(),
-                'yearly' => $cursor->addYear(),
-                default => $cursor->addMonth(),
-            };
-        }
+        $rows = PaymentSchedule::query()->where('record_status', 'locked')
+            ->whereBetween('due_date', [$selected->startOfMonth()->toDateString(), $selected->endOfMonth()->toDateString()])
+            ->get(['amount', 'paid_amount']);
+        $buckets = [[
+            'key' => $selected->format('Y-m'),
+            'label' => $selected->locale('id')->translatedFormat('F Y'),
+            'bill' => (float) $rows->sum('amount'),
+            'paid' => (float) $rows->sum('paid_amount'),
+            'remaining' => (float) $rows->sum(fn ($row) => max(0, (float) $row->amount - (float) $row->paid_amount)),
+        ]];
 
-        return ['period' => $period, 'year' => $year, 'month' => $month, 'buckets' => $buckets];
+        return ['period' => 'monthly', 'year' => $year, 'month' => $month, 'buckets' => $buckets];
     }
 
     public function dueMonitor(Request $request): Response
@@ -212,29 +193,29 @@ class CustomerReceivableController extends Controller
                     : collect();
 
                 return [
-                'id' => $row->id,
-                'approval_id' => $row->latestApproval?->id,
-                'reservation_no' => $row->reservation_no,
-                'invoice_no' => $row->invoice_no,
-                'customer' => $row->customer?->nama,
-                'housing' => $row->unit?->perumahan?->nama_perusahaan,
-                'unit' => trim(($row->unit?->kode_nlok ?? '').' / '.($row->unit?->nomor_rumah ?? '')),
-                'date' => optional($row->payment_submitted_at)->format('Y-m-d'),
-                'amount' => (float) $row->booking_fee,
-                'method' => $row->payment_channel,
-                'sender_name' => $row->payment_sender_name,
-                'destination' => $row->payment_channel === 'cash'
-                    ? trim(($row->pettyCashAccount?->code ?? '').' - '.($row->pettyCashAccount?->name ?? ''), ' -')
-                    : trim(($row->fundBank?->nama_bank ?? '').' - '.($row->fundBank?->nomor_rekening ?? ''), ' -'),
-                'creator' => $row->creator?->name,
-                'approval_step' => $row->latestApproval?->current_step,
-                'approval_total' => $row->latestApproval?->total_steps,
-                'can_review' => $row->latestApproval ? $workflow->canReview($row->latestApproval) : false,
-                'reviewer_roles' => Role::query()->whereIn('id', $reviewerRoleIds)->orderBy('name')->pluck('name')->values(),
-                'requires_finance_verification' => $row->latestApproval?->current_step === 1,
-                'review_url' => route('admin.customer-receipts.reservation-review', $row, absolute: false),
-                'approve_url' => route('admin.approval.requests.approve', $row->latestApproval, absolute: false),
-                'reject_url' => route('admin.approval.requests.reject', $row->latestApproval, absolute: false),
+                    'id' => $row->id,
+                    'approval_id' => $row->latestApproval?->id,
+                    'reservation_no' => $row->reservation_no,
+                    'invoice_no' => $row->invoice_no,
+                    'customer' => $row->customer?->nama,
+                    'housing' => $row->unit?->perumahan?->nama_perusahaan,
+                    'unit' => trim(($row->unit?->kode_nlok ?? '').' / '.($row->unit?->nomor_rumah ?? '')),
+                    'date' => optional($row->payment_submitted_at)->format('Y-m-d'),
+                    'amount' => (float) $row->booking_fee,
+                    'method' => $row->payment_channel,
+                    'sender_name' => $row->payment_sender_name,
+                    'destination' => $row->payment_channel === 'cash'
+                        ? trim(($row->pettyCashAccount?->code ?? '').' - '.($row->pettyCashAccount?->name ?? ''), ' -')
+                        : trim(($row->fundBank?->nama_bank ?? '').' - '.($row->fundBank?->nomor_rekening ?? ''), ' -'),
+                    'creator' => $row->creator?->name,
+                    'approval_step' => $row->latestApproval?->current_step,
+                    'approval_total' => $row->latestApproval?->total_steps,
+                    'can_review' => $row->latestApproval ? $workflow->canReview($row->latestApproval) : false,
+                    'reviewer_roles' => Role::query()->whereIn('id', $reviewerRoleIds)->orderBy('name')->pluck('name')->values(),
+                    'requires_finance_verification' => $row->latestApproval?->current_step === 1,
+                    'review_url' => route('admin.customer-receipts.reservation-review', $row, absolute: false),
+                    'approve_url' => route('admin.approval.requests.approve', $row->latestApproval, absolute: false),
+                    'reject_url' => route('admin.approval.requests.reject', $row->latestApproval, absolute: false),
                 ];
             });
 
@@ -247,27 +228,57 @@ class CustomerReceivableController extends Controller
         ]);
     }
 
-    public function create(Request $request): Response
+    public function create(Request $request, CustomerReceivableService $receivables): Response
     {
         $this->allow($request, 'customer-receipts.create');
-        $transactions = SalesTransaction::query()->finalized()->with(['customer', 'housingProject', 'housingUnit', 'paymentSchedules'])->where('status', 'active')->latest()->limit(500)->get()->map(fn (SalesTransaction $t) => ['value' => (string) $t->id, 'label' => $t->transaction_no.' — '.$t->customer?->nama.' — '.$t->housingProject?->nama_perusahaan.' / '.$t->housingUnit?->nomor_rumah, 'customer' => $t->customer?->nama, 'unit' => $t->housingUnit?->nomor_rumah, 'schedules' => $t->paymentSchedules->where('record_status', 'locked')->map(fn ($s) => ['value' => (string) $s->id, 'label' => $s->invoice_no.' — '.$s->description.' — '.optional($s->due_date)->format('d/m/Y'), 'remaining' => max(0, (float) $s->amount - (float) $s->paid_amount)])->values()->all()]);
-        $banks = MasterBank::query()->finalized()->with('perumahan')->where('status', 'aktif')->get()->map(fn ($b) => ['value' => (string) $b->id, 'label' => $b->nama_bank.' — '.$b->nomor_rekening.' — '.$b->nama_rekening.' ('.$b->perumahan?->nama_perusahaan.')']);
+        $transactions = SalesTransaction::query()->finalized()->with(['customer', 'housingProject', 'housingUnit', 'paymentSchedules.allocations.receipt'])->where('status', 'active')->latest()->limit(500)->get()->map(function (SalesTransaction $t) use ($receivables) {
+            $schedules = $t->paymentSchedules->where('record_status', 'locked')->map(function (PaymentSchedule $schedule) use ($receivables) {
+                $reserved = (float) $schedule->allocations->filter(fn ($allocation) => in_array($allocation->receipt?->status, ['draft', 'pending_approval'], true))->sum('amount');
+                $remaining = max(0, (float) $schedule->amount - (float) $schedule->paid_amount - $reserved);
+                $penalty = $receivables->calculateSchedulePenalty($schedule, today());
+                $available = round($remaining + $penalty, 2);
+                if ($available <= 0) {
+                    return null;
+                }
+                $purpose = $schedule->type === 'down_payment' || str_contains(strtolower((string) $schedule->description), 'uang muka') ? 'down_payment'
+                    : (str_contains(strtolower((string) $schedule->description), 'booking') ? 'booking_fee' : 'invoice_payment');
 
-        return Inertia::render('Admin/CustomerReceipts/Form', ['title' => 'Input Penerimaan Customer', 'transactions' => $transactions, 'banks' => $banks, 'defaults' => ['transaction' => (string) $request->query('transaction', ''), 'purpose' => (string) $request->query('purpose', 'invoice_payment')], 'storeUrl' => route('admin.customer-receipts.store', absolute: false)]);
+                return ['value' => (string) $schedule->id, 'label' => $schedule->invoice_no.' — '.$schedule->description.' — '.optional($schedule->due_date)->format('d/m/Y'), 'remaining' => $remaining, 'penalty' => $penalty, 'available' => $available, 'purpose' => $purpose, 'due_date' => optional($schedule->due_date)->format('Y-m-d')];
+            })->filter()->values()->all();
+
+            return ['value' => (string) $t->id, 'label' => $t->transaction_no.' — '.$t->customer?->nama.' — '.$t->housingProject?->nama_perusahaan.' / '.$t->housingUnit?->nomor_rumah, 'customer' => $t->customer?->nama, 'unit' => $t->housingUnit?->nomor_rumah, 'schedules' => $schedules];
+        });
+        $banks = MasterBank::query()->finalized()->with('perumahan')->where('status', 'aktif')->get()->map(fn ($b) => ['value' => (string) $b->id, 'label' => $b->nama_bank.' — '.$b->nomor_rekening.' — '.$b->nama_rekening.' ('.$b->perumahan?->nama_perusahaan.')']);
+        $pettyCashAccounts = PettyCashAccount::query()->where('status', 'active')->orderBy('name')->get()->map(fn ($account) => ['value' => (string) $account->id, 'label' => $account->code.' — '.$account->name]);
+
+        return Inertia::render('Admin/CustomerReceipts/Form', ['title' => 'Input Penerimaan Customer', 'transactions' => $transactions, 'banks' => $banks, 'pettyCashAccounts' => $pettyCashAccounts, 'defaults' => ['transaction' => (string) $request->query('transaction', ''), 'purpose' => (string) $request->query('purpose', 'invoice_payment')], 'storeUrl' => route('admin.customer-receipts.store', absolute: false)]);
     }
 
     public function store(Request $request): RedirectResponse
     {
         $this->allow($request, 'customer-receipts.create');
-        $data = $request->validate(['sales_transaction_id' => 'required|exists:sales_transactions,id', 'master_bank_id' => 'nullable|exists:master_banks,id', 'payment_date' => 'required|date', 'amount' => 'required|numeric|min:1', 'payment_method' => ['required', Rule::in(['transfer', 'cash', 'giro', 'virtual_account', 'lainnya'])], 'receipt_purpose' => ['required', Rule::in(['booking_fee', 'down_payment', 'invoice_payment', 'accelerated_payment', 'overpayment', 'other'])], 'bank_reference' => 'nullable|string|max:100', 'sender_bank' => 'nullable|string|max:100', 'sender_name' => 'nullable|string|max:150', 'proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120', 'notes' => 'nullable|string', 'allocations' => 'nullable|array', 'allocations.*.payment_schedule_id' => 'nullable|exists:payment_schedules,id', 'allocations.*.amount' => 'required|numeric|min:0.01']);
-        if (in_array($data['payment_method'], ['transfer', 'virtual_account'], true) && ! $request->hasFile('proof')) {
+        $data = $request->validate(['sales_transaction_id' => 'required|exists:sales_transactions,id', 'master_bank_id' => 'nullable|required_if:payment_method,transfer|exists:master_banks,id', 'petty_cash_account_id' => 'nullable|required_if:payment_method,cash|exists:petty_cash_accounts,id', 'payment_date' => 'required|date', 'amount' => 'required|numeric|min:1', 'payment_method' => ['required', Rule::in(['transfer', 'cash'])], 'receipt_purpose' => ['required', Rule::in(['booking_fee', 'down_payment', 'invoice_payment', 'accelerated_payment', 'overpayment', 'other'])], 'bank_reference' => 'nullable|string|max:100', 'sender_bank' => 'nullable|string|max:100', 'sender_name' => 'nullable|string|max:150', 'proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120', 'notes' => 'nullable|string', 'allocations' => 'nullable|array', 'allocations.*.payment_schedule_id' => 'nullable|distinct|exists:payment_schedules,id', 'allocations.*.amount' => 'required|numeric|min:0.01']);
+        $data['master_bank_id'] = $data['payment_method'] === 'transfer' ? ($data['master_bank_id'] ?? null) : null;
+        $data['petty_cash_account_id'] = $data['payment_method'] === 'cash' ? ($data['petty_cash_account_id'] ?? null) : null;
+        if ($data['payment_method'] === 'transfer' && ! $request->hasFile('proof')) {
             return back()->withErrors(['proof' => 'Bukti transfer wajib diunggah.'])->withInput();
         }
         $receipt = DB::transaction(function () use ($request, $data) {
             $alloc = collect($data['allocations'] ?? [])->filter(fn ($a) => (float) $a['amount'] > 0);
-            abort_if($alloc->sum('amount') > (float) $data['amount'], 422, 'Total alokasi melebihi penerimaan.');
+            if ($alloc->sum('amount') > (float) $data['amount']) {
+                throw ValidationException::withMessages(['allocations' => 'Total alokasi melebihi penerimaan.']);
+            }
             foreach ($alloc as $a) {
-                abort_unless(PaymentSchedule::whereKey($a['payment_schedule_id'])->where('sales_transaction_id', $data['sales_transaction_id'])->exists(), 422, 'Tagihan bukan milik transaksi.');
+                $schedule = PaymentSchedule::query()->lockForUpdate()->whereKey($a['payment_schedule_id'])->where('sales_transaction_id', $data['sales_transaction_id'])->first();
+                if (! $schedule) {
+                    throw ValidationException::withMessages(['allocations' => 'Tagihan bukan milik transaksi yang dipilih.']);
+                }
+                $reserved = (float) $schedule->allocations()->whereHas('receipt', fn ($query) => $query->whereIn('status', ['draft', 'pending_approval']))->sum('amount');
+                $penalty = app(CustomerReceivableService::class)->calculateSchedulePenalty($schedule, $data['payment_date']);
+                $available = round(max(0, (float) $schedule->amount - (float) $schedule->paid_amount - $reserved) + $penalty, 2);
+                if ((float) $a['amount'] > $available) {
+                    throw ValidationException::withMessages(['allocations' => "Nominal tagihan {$schedule->invoice_no} melebihi sisa yang masih tersedia."]);
+                }
             }unset($data['allocations'],$data['proof']);
             $path = $request->file('proof')?->store('customer-receipts/'.now()->format('Y/m'), 'public');
             $r = CustomerReceipt::create([...$data, 'receipt_no' => 'RCV/'.now()->format('Y').'/'.str_pad((string) (CustomerReceipt::withTrashed()->count() + 1), 7, '0', STR_PAD_LEFT), 'proof_path' => $path, 'proof_original_name' => $request->file('proof')?->getClientOriginalName(), 'created_by' => $request->user()?->id, 'updated_by' => $request->user()?->id]);

@@ -70,7 +70,6 @@ export default function Index({
     permissions,
 }) {
     const [search, setSearch] = useState(filters.search ?? "");
-    const [source, setSource] = useState(filters.source ?? "");
     const [status, setStatus] = useState(filters.status ?? "active");
     const [branchId, setBranchId] = useState(filters.cabang_id ?? "");
     const [projectId, setProjectId] = useState(filters.perumahan_id ?? "");
@@ -160,7 +159,6 @@ export default function Index({
             baseUrl,
             {
                 search,
-                source,
                 status,
                 cabang_id: branchId,
                 perumahan_id: projectId,
@@ -208,44 +206,32 @@ export default function Index({
                     </div>
                     {permissions.canCreate && (
                         <Button type="button" onClick={openCreate}>
-                            <PlusCircle size={17} /> Input Pemilik Lama
+                            <PlusCircle size={17} /> Tambah Pemilik Unit
                         </Button>
                     )}
                 </section>
 
-                <section className="grid gap-px overflow-hidden rounded-lg border border-silver-deep/60 bg-silver-deep/60 dark:border-white/10 dark:bg-white/10 md:grid-cols-3">
-                    {[
-                        ["Pemilik ditampilkan", rows.total ?? 0],
-                        [
-                            "Sumber otomatis",
-                            rows.data.filter(
-                                (row) => row.source_type !== "legacy",
-                            ).length,
-                        ],
-                        [
-                            "Data lama halaman ini",
-                            rows.data.filter(
-                                (row) => row.source_type === "legacy",
-                            ).length,
-                        ],
-                    ].map(([label, value]) => (
-                        <div
-                            className="bg-white px-5 py-4 dark:bg-graphite"
-                            key={label}
-                        >
-                            <p className="text-xs font-extrabold uppercase text-ink-soft dark:text-white/50">
-                                {label}
-                            </p>
-                            <p className="mt-2 text-2xl font-extrabold">
-                                {value}
-                            </p>
-                        </div>
-                    ))}
+                <section className="grid gap-px overflow-hidden rounded-lg border border-silver-deep/60 bg-silver-deep/60 dark:border-white/10 dark:bg-white/10">
+                    {[["Jumlah data pemilik", rows.total ?? 0]].map(
+                        ([label, value]) => (
+                            <div
+                                className="bg-white px-5 py-4 dark:bg-graphite"
+                                key={label}
+                            >
+                                <p className="text-xs font-extrabold uppercase text-ink-soft dark:text-white/50">
+                                    {label}
+                                </p>
+                                <p className="mt-2 text-2xl font-extrabold">
+                                    {value}
+                                </p>
+                            </div>
+                        ),
+                    )}
                 </section>
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form
-                        className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr_1fr_1fr_auto_auto] xl:items-end"
+                        className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr_1fr_auto_auto] xl:items-end"
                         onSubmit={submitFilters}
                     >
                         <Input
@@ -274,14 +260,6 @@ export default function Index({
                                 value={projectId}
                                 options={projectOptions}
                                 onChange={setProjectId}
-                            />
-                        </label>
-                        <label className="grid gap-2 text-sm font-extrabold">
-                            <span>Sumber</span>
-                            <Dropdown
-                                value={source}
-                                options={options.sources}
-                                onChange={setSource}
                             />
                         </label>
                         <label className="grid gap-2 text-sm font-extrabold">
@@ -314,7 +292,6 @@ export default function Index({
                                         "Pemilik",
                                         "Identitas",
                                         "Kontak",
-                                        "Sumber",
                                         "Mulai / Berakhir",
                                         "Dokumen",
                                         "Status",
@@ -356,13 +333,6 @@ export default function Index({
                                             <p className="text-xs text-ink-soft">
                                                 {row.email || "-"}
                                             </p>
-                                        </td>
-                                        <td className="px-4 py-4">
-                                            <span
-                                                className={`rounded-full px-3 py-1 text-xs font-extrabold ${row.source_type === "legacy" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}
-                                            >
-                                                {row.source_label}
-                                            </span>
                                         </td>
                                         <td className="px-4 py-4 font-semibold">
                                             <p>{row.acquired_at}</p>
@@ -471,7 +441,7 @@ export default function Index({
                                     <tr>
                                         <td
                                             className="px-5 py-10 text-center font-bold text-ink-soft"
-                                            colSpan={10}
+                                            colSpan={9}
                                         >
                                             Belum ada data kepemilikan sesuai
                                             filter.
@@ -488,9 +458,7 @@ export default function Index({
             <Modal
                 open={modalOpen}
                 title={
-                    editing
-                        ? "Ubah Data Pemilik Lama"
-                        : "Input Pemilik Unit Lama"
+                    editing ? "Ubah Data Pemilik" : "Input Data Pemilik Unit"
                 }
                 onClose={() => setModalOpen(false)}
             >
@@ -526,7 +494,7 @@ export default function Index({
                                 Pilih Pelanggan yang Sudah Ada (Opsional)
                             </span>
                             <Dropdown
-                                label="Kosongkan untuk membuat pelanggan otomatis"
+                                label="Kosongkan bila pembeli belum terdaftar"
                                 value={form.data.costumer_id}
                                 options={[
                                     {

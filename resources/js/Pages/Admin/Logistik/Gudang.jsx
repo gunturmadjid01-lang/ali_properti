@@ -25,6 +25,7 @@ export default function Gudang({
     filters = {},
     options,
     stats = {},
+    charts = {},
 }) {
     const [search, setSearch] = useState(filters.search ?? "");
     const quickActions = useMemo(
@@ -119,6 +120,21 @@ export default function Gudang({
                         },
                     ]}
                 />
+
+                <section className="grid gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+                    <SectionCard
+                        title="Tren aktivitas logistik"
+                        description="Perbandingan permintaan, pemakaian, dan pengembalian material selama enam bulan terakhir."
+                    >
+                        <WarehouseActivityChart data={charts.activity} />
+                    </SectionCard>
+                    <SectionCard
+                        title="Kesehatan stok"
+                        description="Komposisi posisi material per lokasi saat ini."
+                    >
+                        <StockHealthChart data={charts.stock_health} />
+                    </SectionCard>
+                </section>
 
                 <section className="grid gap-4 xl:grid-cols-3">
                     <SectionCard
@@ -278,6 +294,99 @@ function MetricRow({ label, value }) {
                 {label}
             </span>
             <span className="text-lg font-black">{value}</span>
+        </div>
+    );
+}
+
+function WarehouseActivityChart({ data = {} }) {
+    const series = [
+        { key: "requests", label: "Permintaan", color: "#d97706" },
+        { key: "usages", label: "Pemakaian", color: "#059669" },
+        { key: "returns", label: "Pengembalian", color: "#2563eb" },
+    ];
+    const maximum = Math.max(
+        1,
+        ...series.flatMap((item) => data[item.key] ?? []).map(Number),
+    );
+
+    return (
+        <div className="px-5 pb-5 pt-4">
+            <div className="flex h-56 items-end gap-3 border-b border-silver-deep/60 pb-3 dark:border-white/10">
+                {(data.labels ?? []).map((label, index) => (
+                    <div
+                        className="flex h-full min-w-0 flex-1 flex-col justify-end"
+                        key={label}
+                    >
+                        <div className="flex h-44 items-end justify-center gap-1.5">
+                            {series.map((item) => {
+                                const value = Number(
+                                    data[item.key]?.[index] ?? 0,
+                                );
+                                return (
+                                    <div
+                                        className="w-full max-w-7 rounded-t-md"
+                                        key={item.key}
+                                        style={{
+                                            backgroundColor: item.color,
+                                            height: `${Math.max(value ? 6 : 1, (value / maximum) * 100)}%`,
+                                        }}
+                                        title={`${item.label}: ${value}`}
+                                    />
+                                );
+                            })}
+                        </div>
+                        <span className="mt-2 truncate text-center text-[10px] font-extrabold uppercase text-ink-soft">
+                            {label}
+                        </span>
+                    </div>
+                ))}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-4">
+                {series.map((item) => (
+                    <span
+                        className="flex items-center gap-2 text-xs font-bold text-ink-soft"
+                        key={item.key}
+                    >
+                        <i
+                            className="h-2.5 w-2.5 rounded-full"
+                            style={{ backgroundColor: item.color }}
+                        />
+                        {item.label}
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function StockHealthChart({ data = {} }) {
+    const available = Number(data.available ?? 0);
+    const empty = Number(data.empty ?? 0);
+    const total = available + empty;
+    const availableShare = total ? (available / total) * 100 : 0;
+    const background = total
+        ? `conic-gradient(#059669 0 ${availableShare}%, #dc2626 ${availableShare}% 100%)`
+        : "#e2e8f0";
+
+    return (
+        <div className="grid place-items-center gap-5 px-5 pb-6 pt-5">
+            <div
+                className="grid h-40 w-40 place-items-center rounded-full"
+                style={{ background }}
+            >
+                <div className="grid h-24 w-24 place-items-center rounded-full bg-white text-center shadow-inner dark:bg-[#181d24]">
+                    <div>
+                        <strong className="block text-2xl">{total}</strong>
+                        <span className="text-xs font-bold text-ink-soft">
+                            Posisi stok
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div className="grid w-full grid-cols-2 gap-3">
+                <MetricRow label="Tersedia" value={available} />
+                <MetricRow label="Kosong" value={empty} />
+            </div>
         </div>
     );
 }

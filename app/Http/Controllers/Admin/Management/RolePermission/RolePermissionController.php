@@ -349,6 +349,7 @@ class RolePermissionController extends Controller
                     $module('perumahan', 'Perumahan'),
                     $module('detail-rumah', 'Kapling / Unit'),
                     $module('unit-ownership', 'Data Pemilik Unit', ['view', 'create', 'update', 'delete', 'unlock']),
+                    $module('water-billing-periods', 'Periode Tagihan Air', ['view', 'create', 'update', 'lock', 'unlock']),
                 ],
             ],
             [
@@ -496,6 +497,7 @@ class RolePermissionController extends Controller
                     $module('customer-receipts', 'Penerimaan Customer', ['view', 'create', 'update', 'lock', 'unlock', 'print']),
                     $module('customer-charges', 'Tagihan & Talangan Customer', ['view', 'create', 'update', 'lock', 'unlock', 'print', 'reverse']),
                     $module('customer-refunds', 'Refund Booking Fee & Uang Muka', ['view', 'update', 'lock', 'unlock', 'print']),
+                    $module('water-payments', 'Pembayaran Air', ['view', 'create', 'update', 'lock', 'unlock', 'print']),
                     $module('hutang', 'Hutang Supplier & Kontraktor', ['view']),
                 ],
             ],

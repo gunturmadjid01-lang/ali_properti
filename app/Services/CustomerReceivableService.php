@@ -10,8 +10,12 @@ use App\Models\CustomerReceiptAllocation;
 use App\Models\DeveloperKprApplication;
 use App\Models\Journal;
 use App\Models\PaymentSchedule;
+use App\Models\PettyCashAccount;
+use App\Models\PettyCashLedger;
 use App\Models\SalesWorkflowHistory;
 use App\Models\Spr;
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -22,7 +26,9 @@ class CustomerReceivableService
         DB::transaction(function () use ($spr): void {
             $spr->loadMissing(['salesTransaction', 'housingReservation.paymentSchedule']);
             $transaction = $spr->salesTransaction;
-            if (! $transaction) return;
+            if (! $transaction) {
+                return;
+            }
             $bookingCredit = $spr->booking_fee_includes_dp ? (float) $spr->booking_fee : 0;
             $amount = max(0, (float) $spr->uang_muka - $bookingCredit);
             $this->invoice($transaction, $spr, 1, 'Uang Muka', $spr->tanggal_jatuh_tempo_dp ?: $spr->tanggal_spr, $amount, 'down_payment');
@@ -59,7 +65,7 @@ class CustomerReceivableService
                         'fixed' => (int) round($value * 100),'percentage_sale','percentage_final' => (int) round($remaining * $value / 100),'remaining' => $remaining - $allocated,default => intdiv($remaining, $count) + ($i <= $remaining % $count ? 1 : 0)
                     };
                     $allocated += $cents;
-                    $this->invoice($transaction, $source, $i, $step['name'] ?? "Termin {$i}", $source->start_date->copy()->addMonths((int) ($step['due_offset_months'] ?? $i - 1)), $cents / 100);
+                    $this->invoice($transaction, $source, $i, $step['name'] ?? "Termin {$i}", $source->start_date->copy()->addMonths((int) ($step['due_offset_months'] ?? $i - 1)), $cents / 100, null, $source->scheme_snapshot);
                 }
                 $source->update(['status' => 'active']);
             } else {
@@ -67,7 +73,7 @@ class CustomerReceivableService
                 $principal = (int) round((float) $source->financing_amount * 100);
                 $installment = (int) round((float) $source->estimated_installment * 100);
                 for ($i = 1; $i <= $count; $i++) {
-                    $this->invoice($transaction, $source, $i, "Angsuran {$i}", now()->startOfDay()->addMonths($i), ($i === $count ? max(0, $principal - $installment * ($count - 1)) : $installment) / 100);
+                    $this->invoice($transaction, $source, $i, "Angsuran {$i}", now()->startOfDay()->addMonths($i), ($i === $count ? max(0, $principal - $installment * ($count - 1)) : $installment) / 100, null, $source->product_snapshot);
                 }
                 $source->update(['status' => 'approved']);
             }
@@ -116,22 +122,57 @@ class CustomerReceivableService
         }
     }
 
-    private function invoice($transaction, $source, int $sequence, string $description, $dueDate, float $amount, ?string $invoiceType = null): void
+    private function invoice($transaction, $source, int $sequence, string $description, $dueDate, float $amount, ?string $invoiceType = null, array $terms = []): void
     {
         if ($amount <= 0) {
             return;
         }
         if (str_contains(strtolower($description), 'booking') && $transaction->spr?->housingReservation?->paymentSchedule) {
             $transaction->spr->housingReservation->paymentSchedule->update(['sales_transaction_id' => $transaction->id]);
+
             return;
         }
         $row = PaymentSchedule::firstOrCreate(['sales_transaction_id' => $transaction->id, 'source_type' => $source::class, 'source_id' => $source->id, 'sequence' => $sequence], [
-            'type' => $invoiceType ?? ($source instanceof CashInstallmentContract ? 'termin' : ($source instanceof CashSale ? 'cash' : 'angsuran')), 'description' => $description, 'due_date' => $dueDate, 'amount' => $amount, 'paid_amount' => 0, 'status' => 'belum_dibayar', 'record_status' => 'locked', 'locked_at' => now(), 'locked_by' => auth()->id(),
+            'type' => $invoiceType ?? ($source instanceof CashInstallmentContract ? 'termin' : ($source instanceof CashSale ? 'cash' : 'angsuran')), 'description' => $description, 'due_date' => $dueDate, 'amount' => $amount, 'paid_amount' => 0, 'status' => 'belum_dibayar', 'calculation_snapshot' => ['penalty_method' => $terms['penalty_method'] ?? 'none', 'penalty_value' => (float) ($terms['penalty_value'] ?? 0), 'grace_period_days' => (int) ($terms['grace_period_days'] ?? 0), 'penalty_assessed_amount' => 0], 'record_status' => 'locked', 'locked_at' => now(), 'locked_by' => auth()->id(),
         ]);
         if (! $row->invoice_no) {
             $row->update(['invoice_no' => 'INV/'.now()->format('Y').'/'.str_pad((string) $row->id, 7, '0', STR_PAD_LEFT), 'issued_at' => now()]);
         }
         app(AccountingService::class)->recordCustomerInvoice($row->fresh());
+    }
+
+    public function calculateSchedulePenalty(PaymentSchedule $schedule, CarbonInterface|string $paymentDate): float
+    {
+        $terms = $schedule->calculation_snapshot ?? [];
+        if (! isset($terms['penalty_method'])) {
+            $schedule->loadMissing('source');
+            $sourceTerms = $schedule->source instanceof CashInstallmentContract
+                ? ($schedule->source->scheme_snapshot ?? [])
+                : ($schedule->source instanceof DeveloperKprApplication ? ($schedule->source->product_snapshot ?? []) : []);
+            $terms = [...$sourceTerms, ...$terms];
+        }
+        $method = $terms['penalty_method'] ?? 'none';
+        $value = (float) ($terms['penalty_value'] ?? 0);
+        if ($method === 'none' || $value <= 0 || ! $schedule->due_date) {
+            return 0;
+        }
+        $date = $paymentDate instanceof CarbonInterface ? $paymentDate : CarbonImmutable::parse($paymentDate);
+        $lateFrom = $schedule->due_date->copy()->addDays((int) ($terms['grace_period_days'] ?? 0));
+        if ($date->lte($lateFrom)) {
+            return 0;
+        }
+        $days = max(1, $lateFrom->diffInDays($date));
+        $assessed = (float) ($terms['penalty_assessed_amount'] ?? 0);
+        $base = max(0, (float) $schedule->amount - $assessed);
+        $total = match ($method) {
+            'fixed' => $value,
+            'invoice_percentage', 'installment_percentage' => $base * $value / 100,
+            'daily_percentage' => $base * $value / 100 * $days,
+            'monthly_percentage' => $base * $value / 100 * (int) ceil($days / 30),
+            default => 0,
+        };
+
+        return round(max(0, $total - $assessed), 2);
     }
 
     public function approveReceipt(CustomerReceipt $receipt): void
@@ -149,6 +190,23 @@ class CustomerReceivableService
                 $schedule = PaymentSchedule::query()->lockForUpdate()->findOrFail($group->first()->payment_schedule_id);
                 abort_unless((int) $schedule->sales_transaction_id === (int) $receipt->sales_transaction_id, 422, 'Tagihan bukan milik transaksi yang dipilih.');
                 $paymentAmount = round((float) $group->sum('amount'), 2);
+                $penalty = $this->calculateSchedulePenalty($schedule, $receipt->payment_date);
+                if ($penalty > 0) {
+                    $snapshot = $schedule->calculation_snapshot ?? [];
+                    if (! isset($snapshot['penalty_method'])) {
+                        $schedule->loadMissing('source');
+                        $sourceTerms = $schedule->source instanceof CashInstallmentContract
+                            ? ($schedule->source->scheme_snapshot ?? [])
+                            : ($schedule->source instanceof DeveloperKprApplication ? ($schedule->source->product_snapshot ?? []) : []);
+                        $snapshot = [...$sourceTerms, ...$snapshot];
+                    }
+                    $snapshot['penalty_assessed_amount'] = round((float) ($snapshot['penalty_assessed_amount'] ?? 0) + $penalty, 2);
+                    $schedule->update(['amount' => (float) $schedule->amount + $penalty, 'calculation_snapshot' => $snapshot]);
+                    app(AccountingService::class)->postJournal($group->first(), 'customer_late_penalty', $receipt->payment_date->toDateString(), $receipt->salesTransaction->perumahan_id, $receipt->salesTransaction->detail_rumah_id, "Denda keterlambatan {$schedule->invoice_no}", [
+                        ['account' => ChartOfAccount::PIUTANG_CUSTOMER, 'debit' => $penalty, 'kredit' => 0],
+                        ['account' => ChartOfAccount::PENDAPATAN_ADMIN, 'debit' => 0, 'kredit' => $penalty],
+                    ]);
+                }
                 $remaining = round(max(0, (float) $schedule->amount - (float) $schedule->paid_amount), 2);
                 if ($paymentAmount > $remaining) {
                     throw ValidationException::withMessages(['allocations' => "Alokasi ke invoice {$schedule->invoice_no} melebihi sisa tagihan ".number_format($remaining, 0, ',', '.')]);
@@ -157,15 +215,84 @@ class CustomerReceivableService
                 $schedule->update(['paid_amount' => $newPaid, 'status' => $newPaid >= (float) $schedule->amount ? 'lunas' : 'sebagian']);
             }
             $journal = $this->receiptJournal($receipt, $allocated);
+            if ($receipt->payment_method === 'cash') {
+                $account = PettyCashAccount::query()->lockForUpdate()->findOrFail($receipt->petty_cash_account_id);
+                $newBalance = (float) $account->balance + (float) $receipt->amount;
+                PettyCashLedger::firstOrCreate(
+                    ['source_type' => CustomerReceipt::class, 'source_id' => $receipt->id, 'direction' => 'in'],
+                    ['petty_cash_account_id' => $account->id, 'transaction_date' => $receipt->payment_date, 'amount' => $receipt->amount, 'balance_after' => $newBalance, 'description' => "Penerimaan customer {$receipt->receipt_no}", 'created_by' => auth()->id()]
+                );
+                $account->update(['balance' => $newBalance]);
+            }
             $receipt->update(['status' => 'posted', 'approved_at' => now(), 'approved_by' => auth()->id(), 'journal_id' => $journal->id]);
             SalesWorkflowHistory::firstOrCreate(['sales_transaction_id' => $receipt->sales_transaction_id, 'process' => 'customer_receipt_posted', 'notes' => "Penerimaan {$receipt->receipt_no} disetujui dan diposting."], ['to_status' => 'posted', 'user_id' => auth()->id(), 'occurred_at' => now()]);
+        });
+    }
+
+    public function reverseReceipt(CustomerReceipt $receipt, string $reason): void
+    {
+        DB::transaction(function () use ($receipt, $reason): void {
+            $receipt = CustomerReceipt::query()
+                ->with(['allocations.schedule', 'journal.details.account'])
+                ->lockForUpdate()
+                ->findOrFail($receipt->id);
+
+            if ($receipt->status === 'reversed') {
+                return;
+            }
+            if ($receipt->status !== 'posted' || ! $receipt->journal) {
+                throw ValidationException::withMessages(['receipt' => 'Hanya penerimaan terposting yang dapat direversal.']);
+            }
+
+            foreach ($receipt->allocations->whereNotNull('payment_schedule_id') as $allocation) {
+                $schedule = PaymentSchedule::query()->lockForUpdate()->findOrFail($allocation->payment_schedule_id);
+                $paid = max(0, (float) $schedule->paid_amount - (float) $allocation->amount);
+                $schedule->update([
+                    'paid_amount' => $paid,
+                    'status' => $paid <= 0 ? 'belum_dibayar' : ($paid >= (float) $schedule->amount ? 'lunas' : 'sebagian'),
+                ]);
+            }
+
+            $lines = $receipt->journal->details->map(fn ($detail) => [
+                'account' => $detail->account->kode_akun,
+                'debit' => (float) $detail->kredit,
+                'kredit' => (float) $detail->debit,
+                'keterangan' => 'Reversal '.$receipt->receipt_no,
+            ])->all();
+            app(AccountingService::class)->postJournal(
+                $receipt,
+                'customer_receipt_reversal',
+                now()->toDateString(),
+                $receipt->salesTransaction?->perumahan_id,
+                $receipt->salesTransaction?->detail_rumah_id,
+                "Reversal penerimaan {$receipt->receipt_no}: {$reason}",
+                $lines,
+                $receipt->payment_method === 'cash' ? null : $receipt->master_bank_id,
+            );
+
+            if ($receipt->payment_method === 'cash' && $receipt->petty_cash_account_id) {
+                $account = PettyCashAccount::query()->lockForUpdate()->findOrFail($receipt->petty_cash_account_id);
+                $newBalance = max(0, (float) $account->balance - (float) $receipt->amount);
+                PettyCashLedger::firstOrCreate(
+                    ['source_type' => CustomerReceipt::class, 'source_id' => $receipt->id, 'direction' => 'out'],
+                    ['petty_cash_account_id' => $account->id, 'transaction_date' => now()->toDateString(), 'amount' => $receipt->amount, 'balance_after' => $newBalance, 'description' => "Reversal penerimaan {$receipt->receipt_no}", 'created_by' => auth()->id()],
+                );
+                $account->update(['balance' => $newBalance]);
+            }
+
+            $receipt->update([
+                'status' => 'reversed',
+                'notes' => trim(($receipt->notes ? $receipt->notes."\n" : '')."DIREVERSAL: {$reason}"),
+                'updated_by' => auth()->id(),
+            ]);
         });
     }
 
     private function receiptJournal(CustomerReceipt $receipt, float $allocated): Journal
     {
         $deposit = max(0, round((float) $receipt->amount - $allocated, 2));
-        $lines = [['account' => ChartOfAccount::KAS_BANK, 'debit' => $receipt->amount, 'kredit' => 0]];
+        $cashAccount = $receipt->payment_method === 'cash' ? ChartOfAccount::KAS_KECIL : ChartOfAccount::KAS_BANK;
+        $lines = [['account' => $cashAccount, 'debit' => $receipt->amount, 'kredit' => 0]];
         if ($allocated > 0) {
             $lines[] = ['account' => ChartOfAccount::PIUTANG_CUSTOMER, 'debit' => 0, 'kredit' => $allocated];
         }
@@ -173,6 +300,6 @@ class CustomerReceivableService
             $lines[] = ['account' => ChartOfAccount::UANG_MUKA_CUSTOMER, 'debit' => 0, 'kredit' => $deposit];
         }
 
-        return app(AccountingService::class)->postJournal($receipt, 'customer_receipt', $receipt->payment_date->toDateString(), $receipt->salesTransaction->perumahan_id, $receipt->salesTransaction->detail_rumah_id, "Penerimaan customer {$receipt->receipt_no}", $lines, $receipt->master_bank_id);
+        return app(AccountingService::class)->postJournal($receipt, 'customer_receipt', $receipt->payment_date->toDateString(), $receipt->salesTransaction->perumahan_id, $receipt->salesTransaction->detail_rumah_id, "Penerimaan customer {$receipt->receipt_no}", $lines, $receipt->payment_method === 'cash' ? null : $receipt->master_bank_id);
     }
 }

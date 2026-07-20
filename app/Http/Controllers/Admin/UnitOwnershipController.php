@@ -30,7 +30,6 @@ class UnitOwnershipController extends Controller
     {
         $this->authorizeAction('view');
         $search = trim((string) $request->query('search', ''));
-        $source = trim((string) $request->query('source', ''));
         $status = trim((string) $request->query('status', 'active'));
         $branchId = trim((string) $request->query('cabang_id', ''));
         $projectId = trim((string) $request->query('perumahan_id', ''));
@@ -48,7 +47,6 @@ class UnitOwnershipController extends Controller
                             ->orWhereHas('perumahan', fn (Builder $query) => $query->where('nama_perusahaan', 'like', "%{$search}%")));
                 });
             })
-            ->when($source !== '', fn (Builder $query) => $query->where('source_type', $source))
             ->when($projectId !== '', fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $query->where('perumahan_id', $projectId)))
             ->when($branchId !== '', fn (Builder $query) => $query->whereHas('detailRumah.perumahan', fn (Builder $query) => $query->where('cabang_id', $branchId)))
             ->when($status === 'active', fn (Builder $query) => $query->where('is_active', true))
@@ -61,12 +59,11 @@ class UnitOwnershipController extends Controller
 
         return Inertia::render('Admin/UnitOwnership/Index', [
             'title' => 'Data Pemilik Unit',
-            'description' => 'Kelola pemilik unit lama dan pantau kepemilikan yang tersinkron otomatis dari akad KPR atau serah terima cash.',
+            'description' => 'Catat pemilik rumah yang telah terjual sebelum aplikasi digunakan. Pembelian baru akan masuk ke daftar ini setelah akad atau serah terima siap huni.',
             'baseUrl' => route('admin.unit-ownership.index', absolute: false),
             'rows' => $rows,
             'filters' => [
                 'search' => $search,
-                'source' => $source,
                 'status' => $status,
                 'cabang_id' => $branchId,
                 'perumahan_id' => $projectId,
@@ -94,21 +91,21 @@ class UnitOwnershipController extends Controller
             abort_if(
                 $current && $current->source_type !== 'legacy',
                 422,
-                'Unit sudah memiliki pemilik dari transaksi otomatis. Perubahan harus dilakukan melalui transaksi asal.',
+                'Unit sudah memiliki pemilik dari proses penjualan. Perubahan harus dilakukan melalui transaksi penjualannya.',
             );
             $customer = $this->resolveCustomer($validated, $request->user()?->id);
             $attachment = $request->file('attachment')?->store('unit-ownerships', 'public');
             $service->createLegacy([...$validated, 'attachment_path' => $attachment], $customer, $request->user()?->id);
         });
 
-        return back()->with('success', 'Data pemilik lama berhasil disimpan dan unit otomatis ditandai terjual.');
+        return back()->with('success', 'Data pemilik berhasil disimpan dan unit ditandai terjual.');
     }
 
     public function update(Request $request, string $id): RedirectResponse
     {
         $this->authorizeAction('update');
         $ownership = UnitOwnership::query()->findOrFail($id);
-        abort_unless($ownership->source_type === 'legacy', 422, 'Data otomatis dari transaksi tidak dapat diedit dari halaman ini.');
+        abort_unless($ownership->source_type === 'legacy', 422, 'Data dari proses penjualan tidak dapat diedit dari halaman ini.');
         $this->abortIfLocked($ownership);
         $validated = $this->validated($request, $ownership);
 
@@ -219,7 +216,7 @@ class UnitOwnershipController extends Controller
             'email' => $payload['email'] ?? null,
             'telepon' => $payload['phone'] ?? null,
             'nama_lengkap_pasangan' => $payload['spouse_name'] ?? null,
-            'keterangan' => 'Dibuat otomatis dari input data pemilik unit lama.',
+            'keterangan' => 'Dibuat dari pencatatan pemilik unit yang telah terjual sebelum aplikasi digunakan.',
         ]);
     }
 
@@ -258,12 +255,6 @@ class UnitOwnershipController extends Controller
                     'address' => $customer->alamat,
                     'spouse_name' => $customer->nama_lengkap_pasangan,
                 ])->values(),
-            'sources' => [
-                ['value' => '', 'label' => 'Semua Sumber'],
-                ['value' => 'legacy', 'label' => 'Data Lama / Manual'],
-                ['value' => 'kpr_akad', 'label' => 'Akad KPR'],
-                ['value' => 'cash_handover', 'label' => 'Serah Terima Cash'],
-            ],
             'statuses' => [
                 ['value' => 'all', 'label' => 'Semua Riwayat'],
                 ['value' => 'active', 'label' => 'Pemilik Aktif'],
@@ -298,9 +289,6 @@ class UnitOwnershipController extends Controller
             'address' => $row->address,
             'spouse_name' => $row->spouse_name,
             'source_type' => $row->source_type,
-            'source_label' => match ($row->source_type) {
-                'kpr_akad' => 'Akad KPR', 'cash_handover' => 'Serah Terima Cash', default => 'Data Lama / Manual',
-            },
             'acquisition_method' => $row->acquisition_method,
             'acquired_at' => optional($row->acquired_at)->format('Y-m-d'),
             'ended_at' => optional($row->ended_at)->format('Y-m-d'),

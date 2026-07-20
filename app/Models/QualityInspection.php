@@ -26,6 +26,13 @@ class QualityInspection extends Model
         'locked_at' => 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        $sync = fn (QualityInspection $row) => $row->detail_rumah_id ? app(\App\Services\SalesProcessService::class)->syncLinkedUnitData((int) $row->detail_rumah_id) : null;
+        static::saved($sync);
+        static::deleted($sync);
+    }
+
     public function perumahan(): BelongsTo
     {
         return $this->belongsTo(Perumahan::class);

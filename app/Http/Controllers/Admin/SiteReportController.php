@@ -103,6 +103,35 @@ class SiteReportController extends Controller
         ]);
     }
 
+    public function create(): Response
+    {
+        $this->authorizeSiteReport('create');
+
+        return Inertia::render('Admin/SiteReport/Index', [
+            'title' => 'Buat Laporan Lapangan',
+            'baseUrl' => route('admin.site-report.index', absolute: false),
+            'formPage' => true,
+            'options' => $this->options(),
+            'permissions' => ['canCreate' => true, 'canUpdate' => false],
+        ]);
+    }
+
+    public function edit(string $id): Response
+    {
+        $this->authorizeSiteReport('update');
+        $row = SiteReport::query()->findOrFail($id);
+        $this->abortIfLocked($row);
+
+        return Inertia::render('Admin/SiteReport/Index', [
+            'title' => 'Edit Laporan Lapangan',
+            'baseUrl' => route('admin.site-report.index', absolute: false),
+            'formPage' => true,
+            'editingRow' => $this->formRow($row),
+            'options' => $this->options(),
+            'permissions' => ['canCreate' => false, 'canUpdate' => true],
+        ]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $this->authorizeSiteReport('create');
@@ -140,7 +169,7 @@ class SiteReportController extends Controller
             'updated_by' => auth()->id(),
         ]);
 
-        return back()->with('success', $approvalRequired
+        return redirect()->route('admin.site-report.index')->with('success', $approvalRequired
             ? 'Laporan lapangan berhasil dibuat dan menunggu review manajer.'
             : 'Laporan lapangan berhasil disimpan dan langsung aktif.');
     }
@@ -200,7 +229,7 @@ class SiteReportController extends Controller
             'updated_by' => auth()->id(),
         ]);
 
-        return back()->with('success', $approvalRequired
+        return redirect()->route('admin.site-report.index')->with('success', $approvalRequired
             ? 'Laporan lapangan berhasil diperbarui dan menunggu review manajer.'
             : 'Laporan lapangan berhasil diperbarui dan langsung aktif.');
     }
@@ -237,6 +266,31 @@ class SiteReportController extends Controller
             || $user?->can("site-report.{$action}")
             || $user?->can('site-report.manage')
         );
+    }
+
+    private function formRow(SiteReport $row): array
+    {
+        return [
+            'id' => $row->id,
+            'kode_laporan' => $row->kode_laporan,
+            'jenis_laporan' => $row->jenis_laporan,
+            'tanggal' => optional($row->tanggal)->format('Y-m-d'),
+            'periode_mulai' => optional($row->periode_mulai)->format('Y-m-d'),
+            'periode_selesai' => optional($row->periode_selesai)->format('Y-m-d'),
+            'perumahan_id' => (string) $row->perumahan_id,
+            'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
+            'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
+            'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),
+            'progress_pembangunan_id' => (string) ($row->progress_pembangunan_id ?? ''),
+            'cuaca' => $row->cuaca,
+            'jumlah_pekerja' => $row->jumlah_pekerja,
+            'kontraktor' => $row->kontraktor,
+            'pekerjaan_selesai' => $row->pekerjaan_selesai,
+            'pekerjaan_tertahan' => $row->pekerjaan_tertahan,
+            'kendala' => $row->kendala,
+            'koordinasi' => $row->koordinasi,
+            'rencana_berikutnya' => $row->rencana_berikutnya,
+        ];
     }
 
     private function options(): array

@@ -11,6 +11,7 @@ use App\Models\MaterialReturn;
 use App\Models\MaterialUsage;
 use App\Models\Perumahan;
 use App\Models\SiteMaterialStock;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,16 @@ class GudangController extends Controller
     public function index(Request $request): Response
     {
         $search = trim((string) $request->query('search', ''));
+        $chartStart = now()->copy()->subMonths(5)->startOfMonth();
+        $months = collect(range(5, 0))->map(fn (int $offset) => now()->copy()->subMonths($offset));
+        $requestsByMonth = MaterialRequest::query()->whereDate('tanggal', '>=', $chartStart)->get(['tanggal'])
+            ->countBy(fn (MaterialRequest $row) => $row->tanggal?->format('Y-m'));
+        $usagesByMonth = MaterialUsage::query()->whereDate('tanggal', '>=', $chartStart)->get(['tanggal'])
+            ->countBy(fn (MaterialUsage $row) => $row->tanggal?->format('Y-m'));
+        $returnsByMonth = MaterialReturn::query()->whereDate('tanggal', '>=', $chartStart)->get(['tanggal'])
+            ->countBy(fn (MaterialReturn $row) => $row->tanggal?->format('Y-m'));
+        $emptyStock = SiteMaterialStock::query()->where('qty_available', '<=', 0)->count();
+        $availableStock = SiteMaterialStock::query()->where('qty_available', '>', 0)->count();
 
         return Inertia::render('Admin/Logistik/Gudang', [
             'title' => 'Dashboard Gudang',
@@ -35,6 +46,18 @@ class GudangController extends Controller
                 'permintaan_material' => MaterialRequest::query()->whereIn('status', [MaterialRequest::STATUS_DIAJUKAN, MaterialRequest::STATUS_MENUNGGU_OWNER, MaterialRequest::STATUS_MENUNGGU_STOK])->count(),
                 'pengembalian_diajukan' => MaterialReturn::query()->where('status', MaterialReturn::STATUS_DIAJUKAN)->count(),
                 'pemakaian_hari_ini' => MaterialUsage::query()->whereDate('tanggal', now()->toDateString())->count(),
+            ],
+            'charts' => [
+                'activity' => [
+                    'labels' => $months->map(fn (Carbon $month) => $month->translatedFormat('M Y'))->values(),
+                    'requests' => $months->map(fn (Carbon $month) => $requestsByMonth->get($month->format('Y-m'), 0))->values(),
+                    'usages' => $months->map(fn (Carbon $month) => $usagesByMonth->get($month->format('Y-m'), 0))->values(),
+                    'returns' => $months->map(fn (Carbon $month) => $returnsByMonth->get($month->format('Y-m'), 0))->values(),
+                ],
+                'stock_health' => [
+                    'available' => $availableStock,
+                    'empty' => $emptyStock,
+                ],
             ],
             'rows' => Gudang::query()
                 ->with(['cabang:id,nama_cabang', 'perumahan:id,nama_perusahaan'])

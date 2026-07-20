@@ -72,6 +72,8 @@ use App\Models\TipePost;
 use App\Models\UnitOwnership;
 use App\Models\User;
 use App\Models\WorkChangeRequest;
+use App\Models\WaterBillingPeriod;
+use App\Models\WaterPayment;
 use App\Services\BankCreditProductService;
 use App\Services\BankPartnershipService;
 use App\Services\MaterialGroupService;
@@ -84,6 +86,8 @@ class ApprovalResources
     public static function modules(): array
     {
         return [
+            'water-billing-period' => ['label' => 'Periode Tagihan Air', 'model' => WaterBillingPeriod::class],
+            'water-payment' => ['label' => 'Pembayaran Air', 'model' => WaterPayment::class],
             'attendance' => [
                 'label' => 'Absensi Pegawai',
                 'model' => AttendanceRecord::class,
@@ -261,10 +265,10 @@ class ApprovalResources
     {
         return [
             'management' => ['label' => 'Manajemen & Akses', 'modules' => ['cabang-perusahaan', 'user', 'role-permission']],
-            'property' => ['label' => 'Properti & Legalitas', 'modules' => ['perumahan', 'detail-rumah', 'dokumen-legalitas', 'dokumen-legalitas-rumah', 'unit-ownership']],
+            'property' => ['label' => 'Properti & Legalitas', 'modules' => ['perumahan', 'detail-rumah', 'dokumen-legalitas', 'dokumen-legalitas-rumah', 'unit-ownership', 'water-billing-period']],
             'marketing' => ['label' => 'Marketing & Pelanggan', 'modules' => ['customer', 'customer-follow-up', 'marketing-lead-source', 'marketing-campaign', 'marketing-template', 'marketing-target', 'marketing-commission', 'marketing-survey', 'dokumen-customer', 'document-requirement-set']],
             'sales' => ['label' => 'Penjualan & Pembiayaan', 'modules' => ['housing-reservation', 'spr', 'cash-sale', 'kpr-submission', 'cash-installment-scheme', 'cash-installment-contract', 'developer-kpr-product', 'developer-kpr-contract', 'bank-credit-master', 'master-bank', 'bank-branch', 'bank-credit-product', 'bank-housing-partnership', 'bank-kpr-financing', 'bank-kpr-disbursement', 'sales-process-step', 'sales-resolution-request']],
-            'finance' => ['label' => 'Keuangan', 'modules' => ['tipe-post', 'customer-receipt', 'customer-refund', 'customer-charge', 'customer-charge-reversal', 'petty-cash-funding', 'petty-cash-deposit']],
+            'finance' => ['label' => 'Keuangan', 'modules' => ['tipe-post', 'customer-receipt', 'customer-refund', 'customer-charge', 'customer-charge-reversal', 'water-payment', 'petty-cash-funding', 'petty-cash-deposit']],
             'materials' => ['label' => 'Material & Logistik', 'modules' => ['master-material', 'material-type', 'material-brand', 'material-unit', 'material-group', 'supplier', 'gudang', 'material-request', 'material-purchase-request', 'material-purchase', 'material-opening-balance', 'material-price', 'material-return', 'material-usage']],
             'project' => ['label' => 'Proyek & Lapangan', 'modules' => ['progress', 'site-schedule', 'site-report', 'quality-inspection', 'field-supervision', 'field-defect', 'field-work-change', 'field-manpower', 'field-safety', 'field-handover', 'spk-kontraktor', 'kontraktor']],
             'assets' => ['label' => 'Aset & Alat Berat', 'modules' => ['inventory-loans', 'inventory-receipts', 'inventory-returns', 'inventory-transfers', 'inventory-damages', 'inventory-losses', 'inventory-stock-opname', 'heavy-replacements', 'heavy-usage', 'heavy-maintenance', 'heavy-damages', 'heavy-fuel']],

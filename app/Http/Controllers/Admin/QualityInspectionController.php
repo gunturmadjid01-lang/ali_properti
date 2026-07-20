@@ -98,6 +98,35 @@ class QualityInspectionController extends Controller
         ]);
     }
 
+    public function create(): Response
+    {
+        $this->authorizeQualityInspection('create');
+
+        return Inertia::render('Admin/QualityInspection/Index', [
+            'title' => 'Buat Kontrol Kualitas',
+            'baseUrl' => route('admin.quality-inspection.index', absolute: false),
+            'formPage' => true,
+            'options' => $this->options(),
+            'permissions' => ['canCreate' => true, 'canUpdate' => false],
+        ]);
+    }
+
+    public function edit(string $id): Response
+    {
+        $this->authorizeQualityInspection('update');
+        $row = QualityInspection::query()->findOrFail($id);
+        $this->abortIfLocked($row);
+
+        return Inertia::render('Admin/QualityInspection/Index', [
+            'title' => 'Edit Kontrol Kualitas',
+            'baseUrl' => route('admin.quality-inspection.index', absolute: false),
+            'formPage' => true,
+            'editingRow' => $this->formRow($row),
+            'options' => $this->options(),
+            'permissions' => ['canCreate' => false, 'canUpdate' => true],
+        ]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $this->authorizeQualityInspection('create');
@@ -133,7 +162,7 @@ class QualityInspectionController extends Controller
             $this->syncDefectFromInspection($inspection);
         }
 
-        return back()->with('success', $approvalRequired
+        return redirect()->route('admin.quality-inspection.index')->with('success', $approvalRequired
             ? 'Hasil kontrol kualitas berhasil disimpan dan menunggu approval.'
             : 'Hasil kontrol kualitas berhasil disimpan dan langsung aktif.');
     }
@@ -197,7 +226,7 @@ class QualityInspectionController extends Controller
             $this->syncDefectFromInspection($row->fresh());
         }
 
-        return back()->with('success', $approvalRequired
+        return redirect()->route('admin.quality-inspection.index')->with('success', $approvalRequired
             ? 'Kontrol kualitas berhasil diperbarui dan menunggu approval.'
             : 'Kontrol kualitas berhasil diperbarui dan langsung aktif.');
     }
@@ -234,6 +263,26 @@ class QualityInspectionController extends Controller
             || $user?->can("quality-inspection.{$action}")
             || $user?->can('quality-inspection.manage')
         );
+    }
+
+    private function formRow(QualityInspection $row): array
+    {
+        return [
+            'id' => $row->id,
+            'kode_inspeksi' => $row->kode_inspeksi,
+            'tanggal' => optional($row->tanggal)->format('Y-m-d'),
+            'perumahan_id' => (string) $row->perumahan_id,
+            'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
+            'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
+            'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),
+            'progress_pembangunan_id' => (string) ($row->progress_pembangunan_id ?? ''),
+            'hasil' => $row->hasil,
+            'item_pemeriksaan' => $row->item_pemeriksaan,
+            'temuan' => $row->temuan,
+            'tindakan_perbaikan' => $row->tindakan_perbaikan,
+            'target_selesai' => optional($row->target_selesai)->format('Y-m-d'),
+            'status' => $row->status,
+        ];
     }
 
     protected function syncDefectFromInspection(QualityInspection $inspection): void

@@ -21,6 +21,9 @@ use App\Models\SalesProcessStep;
 use App\Models\SalesResolutionRequest;
 use App\Models\Spr;
 use App\Models\SprApproval;
+use App\Models\WaterPayment;
+use App\Models\WaterBillingPeriod;
+use App\Models\UnitOwnership;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Illuminate\Database\Eloquent\Model;
 
@@ -28,6 +31,9 @@ class ApprovalWorkflowEffectService
 {
     public function submitted(Model $model, ApprovalRequest $request): void
     {
+        if ($model instanceof WaterPayment && $request->status === ApprovalRequest::STATUS_PENDING) {
+            $model->update(['status' => 'pending_approval']);
+        }
         if ($model instanceof PettyCashFunding && $request->status === ApprovalRequest::STATUS_PENDING) {
             $model->update(['status' => PettyCashFunding::PENDING]);
         }
@@ -52,6 +58,21 @@ class ApprovalWorkflowEffectService
 
     public function approved(Model $model, ApprovalRequest $request): void
     {
+        if ($model instanceof WaterBillingPeriod) {
+            UnitOwnership::query()->where('is_active', true)
+                ->whereHas('detailRumah', fn ($query) => $query->where('perumahan_id', $model->perumahan_id))
+                ->each(function (UnitOwnership $owner) use ($model): void {
+                    WaterPayment::query()->firstOrCreate(
+                        ['water_billing_period_id' => $model->id, 'unit_ownership_id' => $owner->id],
+                        ['perumahan_id' => $model->perumahan_id, 'detail_rumah_id' => $owner->detail_rumah_id, 'payment_no' => $model->period_code.'-'.$owner->id, 'amount' => $model->amount, 'status' => 'unpaid', 'record_status' => 'draft', 'created_by' => auth()->id(), 'updated_by' => auth()->id()],
+                    );
+                });
+            return;
+        }
+        if ($model instanceof WaterPayment) {
+            $model->update(['status' => 'paid']);
+            return;
+        }
         if ($model instanceof HousingReservation && $request->module_key === 'housing-reservation') {
             app(HousingReservationService::class)->finalize($model);
             app(HousingReservationService::class)->markPaid($model->fresh());
@@ -197,6 +218,10 @@ class ApprovalWorkflowEffectService
 
     public function rejected(Model $model, ApprovalRequest $request, ?string $note): void
     {
+        if ($model instanceof WaterPayment) {
+            $model->update(['status' => 'rejected']);
+            return;
+        }
         if ($model instanceof HousingReservation && $request->module_key === 'housing-reservation') {
             $model->paymentSchedule()->delete();
             DetailRumah::query()->whereKey($model->detail_rumah_id)->where('status_penjualan', 'booking')->update(['status_penjualan' => 'tersedia', 'booking_at' => null]);

@@ -189,45 +189,52 @@ function SalesAnalytics({ analytics }) {
                     tone="blue"
                 />
                 <MetricCard
-                    label="Penjualan Aktif"
-                    value={summary.active ?? 0}
-                    hint="Transaksi dengan status aktif"
+                    label="Penjualan Selesai"
+                    value={summary.completed ?? 0}
+                    hint="Sudah menyelesaikan seluruh proses"
                     icon={TrendingUp}
                     tone="green"
                 />
                 <MetricCard
                     label="Nilai Penjualan"
                     value={money(summary.sales_value)}
-                    hint="Akumulasi harga jual transaksi"
+                    hint="Omzet dari penjualan selesai"
                     icon={Banknote}
                     tone="amber"
                 />
                 <MetricCard
-                    label="Rata-rata Transaksi"
-                    value={money(summary.average_value)}
-                    hint="Nilai rata-rata per transaksi"
+                    label="Pipeline Menunggu"
+                    value={money(summary.pipeline_value)}
+                    hint={`${summary.pipeline ?? 0} transaksi masih diproses`}
                     icon={Home}
                     tone="violet"
                 />
             </section>
             <FinanceTrendChart
-                title="Tren Omzet Penjualan"
-                subtitle="Garis menunjukkan nilai penjualan berdasarkan bulan persetujuan atau pembuatan."
+                title="Penjualan Selesai vs Pipeline"
+                subtitle="Omzet hanya menghitung transaksi selesai; pipeline menunjukkan potensi transaksi yang masih diproses."
                 items={trend}
                 series={[
                     {
                         key: "value",
-                        label: "Omzet",
+                        label: "Selesai",
                         color: "#2563eb",
                         area: true,
+                    },
+                    {
+                        key: "pipeline_value",
+                        label: "Menunggu / Proses",
+                        color: "#f59e0b",
+                        area: false,
                     },
                 ]}
             />
             <section className="grid gap-5 xl:grid-cols-3">
                 <div className="rounded-xl border border-white/80 bg-white/80 p-5 shadow-soft dark:border-white/10 dark:bg-white/8 xl:col-span-2">
-                    <h3 className="font-black">Jumlah Unit Terjual</h3>
+                    <h3 className="font-black">Jumlah Unit Selesai</h3>
                     <p className="mt-1 text-xs text-ink-soft">
-                        Batang membandingkan jumlah transaksi per bulan.
+                        Batang menunjukkan unit selesai; angka bawahnya
+                        memperlihatkan pipeline.
                     </p>
                     <div className="mt-6 flex h-56 items-end gap-3 overflow-x-auto border-b border-silver-deep/60 px-2 pb-0">
                         {trend.map((row) => (
@@ -236,7 +243,7 @@ function SalesAnalytics({ analytics }) {
                                 key={row.key}
                             >
                                 <div className="mb-2 text-center text-[10px] font-bold text-ink-soft">
-                                    {row.count} unit
+                                    {row.count} selesai
                                 </div>
                                 <div
                                     className="group relative mx-auto w-full max-w-16 rounded-t-lg bg-gradient-to-t from-blue-700 to-blue-400 transition hover:from-gold-deep hover:to-amber-400"
@@ -248,7 +255,10 @@ function SalesAnalytics({ analytics }) {
                                 <div className="py-2 text-center text-[10px] font-bold">
                                     {row.label}
                                     <span className="block text-ink-soft">
-                                        {row.count} trx
+                                        {row.count} selesai
+                                        <span className="block text-amber-600">
+                                            {row.pipeline_count ?? 0} menunggu
+                                        </span>
                                     </span>
                                 </div>
                             </div>
@@ -262,17 +272,25 @@ function SalesAnalytics({ analytics }) {
                 </div>
                 <BarList
                     title="Metode Pembayaran"
-                    subtitle="Komposisi jumlah transaksi."
+                    subtitle="Komposisi seluruh transaksi, termasuk yang masih diproses."
                     rows={analytics?.methods ?? []}
                     valueFormatter={(value) => `${value} trx`}
                     color="bg-violet-500"
                 />
                 <BarList
                     title="Penjualan per Perumahan"
-                    subtitle="Perbandingan nilai penjualan antar proyek."
+                    subtitle="Nilai penjualan selesai per proyek."
                     rows={analytics?.housing ?? []}
                     valueFormatter={money}
                     color="bg-amber-500"
+                />
+                <BarList
+                    title="Pipeline per Perumahan"
+                    subtitle="Potensi nilai transaksi yang masih menunggu proses."
+                    rows={analytics?.housing ?? []}
+                    valueKey="pipeline_value"
+                    valueFormatter={money}
+                    color="bg-violet-500"
                 />
                 <BarList
                     title="Status Transaksi"

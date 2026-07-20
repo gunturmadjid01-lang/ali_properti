@@ -61,6 +61,11 @@ class DetailRumah extends Model
 
     protected static function booted(): void
     {
+        static::updated(function (DetailRumah $detailRumah) {
+            if ($detailRumah->wasChanged(['status_pembangunan', 'progress_terakhir', 'tanggal_mulai_bangun', 'tanggal_selesai_bangun'])) {
+                app(\App\Services\SalesProcessService::class)->syncLinkedUnitData($detailRumah->id);
+            }
+        });
         static::deleting(function (DetailRumah $detailRumah) {
             $detailRumah->progressPembangunans()->get()->each->delete();
             $detailRumah->detailRumahHpps()->get()->each->delete();

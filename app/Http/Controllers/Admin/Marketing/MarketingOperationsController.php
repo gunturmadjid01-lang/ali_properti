@@ -229,6 +229,12 @@ class MarketingOperationsController extends Controller
     {
         $month = now()->month;
         $year = now()->year;
+        $months = collect(range(5, 0))->map(fn (int $offset) => now()->copy()->subMonths($offset));
+        $trendStart = $months->first()->copy()->startOfMonth();
+        $leadsByMonth = $this->customerQueryFor($request)->where('created_at', '>=', $trendStart)->get(['created_at'])
+            ->countBy(fn (Costumer $row) => $row->created_at?->format('Y-m'));
+        $sprByMonth = $this->sprQueryFor($request)->whereDate('tanggal_spr', '>=', $trendStart)->get(['tanggal_spr'])
+            ->countBy(fn (Spr $row) => $row->tanggal_spr?->format('Y-m'));
 
         return [
             'stats' => [
@@ -240,6 +246,11 @@ class MarketingOperationsController extends Controller
                 'overdue' => PaymentSchedule::query()->where('record_status', 'locked')->whereDate('due_date', '<', today())->whereColumn('paid_amount', '<', 'amount')
                     ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('marketing_user_id', $request->user()?->id)))
                     ->count(),
+            ],
+            'trend' => [
+                'labels' => $months->map(fn (Carbon $date) => $date->translatedFormat('M Y'))->values(),
+                'leads' => $months->map(fn (Carbon $date) => $leadsByMonth->get($date->format('Y-m'), 0))->values(),
+                'spr' => $months->map(fn (Carbon $date) => $sprByMonth->get($date->format('Y-m'), 0))->values(),
             ],
             'performance' => User::query()
                 ->withCount([

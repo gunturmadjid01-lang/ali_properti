@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers\Admin\Management\Perumahan;
 
-use App\Http\Controllers\Controller;
-use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Admin\Management\Perumahan\Logic\PerumahanPayload;
+use App\Http\Controllers\Concerns\HandlesCrudLock;
+use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Perumahan\StorePerumahanRequest;
 use App\Http\Requests\Admin\Perumahan\UpdatePerumahanRequest;
 use App\Http\Requests\Admin\PerumahanHpp\UpdatePerumahanHppRequest;
@@ -13,14 +13,21 @@ use App\Models\DetailPerumahanHpp;
 use App\Models\DetailRumah;
 use App\Models\DetailRumahHpp;
 use App\Models\DetailRumahHppItem;
+use App\Models\HousingReservation;
 use App\Models\HppRealisasi;
 use App\Models\KelompokHpp;
 use App\Models\MaterialRequest;
 use App\Models\Perumahan;
 use App\Models\PerumahanHpp;
 use App\Models\ProgressPembangunan;
-use App\Models\TransaksiLogistik;
+use App\Models\QualityInspection;
+use App\Models\SalesTransaction;
+use App\Models\SiteReport;
+use App\Models\SiteSchedule;
+use App\Models\SpkKontraktor;
+use App\Models\Spr;
 use App\Models\TahapanPembangunan;
+use App\Models\TransaksiLogistik;
 use App\Models\User;
 use App\Services\ApprovalWorkflowService;
 use App\Services\HppTemplateService;
@@ -29,7 +36,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -170,18 +176,33 @@ class PerumahanController extends Controller
 
     public function unitDetail(Request $request, string $id, string $rumahId): Response
     {
+        abort_unless($this->canSeeUnitSection('detail-rumah.view'), 403, 'Anda tidak memiliki permission untuk melihat detail unit rumah.');
+
         $search = trim((string) $request->query('search', ''));
+        $canSeePrice = $this->canSeeUnitSection('pricelist.view');
+        $canSeeOwnership = $this->canSeeUnitSection('unit-ownership.view');
+        $canSeeProgress = $this->canSeeUnitSection('progress.view');
+        $canSeeMaterials = $this->canSeeUnitSection('material-request.view');
+        $canSeeLogistics = $this->canSeeUnitSection('material-usage.view');
+        $canSeeHpp = $this->canSeeUnitSection('rab-unit.view');
+        $canSeeReservations = $this->canSeeUnitSection('housing-reservation.view');
+        $canSeeSales = $this->canSeeUnitSection('sales.transactions.view');
+        $canSeeSpk = $this->canSeeUnitSection('spk-kontraktor.view');
+        $canSeeSchedules = $this->canSeeUnitSection('site-schedule.view');
+        $canSeeReports = $this->canSeeUnitSection('site-report.view');
+        $canSeeQuality = $this->canSeeUnitSection('quality-inspection.view');
 
         $perumahan = Perumahan::query()
             ->with('cabang')
             ->findOrFail($id);
 
         $rumah = DetailRumah::query()
-            ->with(['creator:id,name', 'updater:id,name', 'currentOwnership.costumer:id,kode_costumer,nama'])
+            ->with(['creator:id,name', 'updater:id,name'])
+            ->when($canSeeOwnership, fn (Builder $query) => $query->with('currentOwnership.costumer:id,kode_costumer,nama'))
             ->where('perumahan_id', $perumahan->id)
             ->findOrFail($rumahId);
 
-        $progress = ProgressPembangunan::query()
+        $progress = $canSeeProgress ? ProgressPembangunan::query()
             ->with(['tahapanPembangunan:id,nama_tahapan,bobot_persen', 'user:id,name', 'approvedBy:id,name', 'lockedBy:id,name'])
             ->where('detail_rumah_id', $rumah->id)
             ->when($search !== '', function (Builder $query) use ($search) {
@@ -215,9 +236,9 @@ class PerumahanController extends Controller
                 'input_oleh' => $row->user?->name ?? '-',
                 'approved_by' => $row->approvedBy?->name ?? '-',
             ])
-            ->values();
+            ->values() : collect();
 
-        $materialRequests = MaterialRequest::query()
+        $materialRequests = $canSeeMaterials ? MaterialRequest::query()
             ->with(['details.barangMaterial:id,nama_barang', 'gudang:id,nama_gudang', 'approvedByGudang:id,name', 'tahapanPembangunan:id,nama_tahapan'])
             ->where('detail_rumah_id', $rumah->id)
             ->when($search !== '', function (Builder $query) use ($search) {
@@ -246,12 +267,10 @@ class PerumahanController extends Controller
                 'items_text' => $row->details->map(fn ($detail) => trim(($detail->barangMaterial?->nama_barang ?? '-').' x '.($detail->qty ?? 0).' '.($detail->satuan ?? '')))->join(', '),
                 'keterangan' => $row->keterangan,
                 'approved_by' => $row->approvedByGudang?->name ?? '-',
-                'can_approve' => ($row->record_status ?? 'draft') === 'locked' && (bool) auth()->user()?->hasAnyRole(['owner', 'super_admin', 'user_area_gudang']),
-                'approve_url' => route('admin.material-request.approve', $row->id, false),
             ])
-            ->values();
+            ->values() : collect();
 
-        $logistik = TransaksiLogistik::query()
+        $logistik = $canSeeLogistics ? TransaksiLogistik::query()
             ->with(['gudang:id,nama_gudang', 'details.barangMaterial:id,nama_barang'])
             ->where('detail_rumah_id', $rumah->id)
             ->when($search !== '', function (Builder $query) use ($search) {
@@ -273,7 +292,67 @@ class PerumahanController extends Controller
                 'keterangan' => $row->keterangan,
                 'items_text' => $row->details->map(fn ($detail) => trim(($detail->barangMaterial?->nama_barang ?? '-').' x '.($detail->qty ?? 0).' '.($detail->satuan ?? '')))->join(', '),
             ])
-            ->values();
+            ->values() : collect();
+
+        $hppItems = $canSeeHpp
+            ? $this->rumahHppItems($rumah->loadMissing('detailRumahHpps.items.kelompokHpp', 'detailRumahHpps.items.tahapanPembangunan'), KelompokHpp::query()->orderBy('nama_hpp')->get(['id', 'nama_hpp']))
+            : collect();
+
+        $salesRows = $canSeeSales ? Spr::query()
+            ->with(['costumer:id,kode_costumer,nama', 'creator:id,name'])
+            ->where('detail_rumah_id', $rumah->id)->latest('id')->get()
+            ->map(fn (Spr $row) => [
+                'id' => $row->id, 'number' => $row->kode_spr, 'date' => optional($row->tanggal_spr)->format('Y-m-d'),
+                'customer' => $row->costumer?->nama, 'method' => $row->metode_pembayaran,
+                'sale_price' => (float) $row->harga_jual, 'booking_fee' => (float) $row->booking_fee,
+                'down_payment' => (float) $row->uang_muka, 'status' => $row->status,
+                'marketing' => $row->creator?->name, 'url' => route('admin.marketing.spr.show', $row->id, false),
+            ])->values() : collect();
+
+        $transactionRows = $canSeeSales ? SalesTransaction::query()
+            ->with(['customer:id,kode_costumer,nama', 'marketing:id,name'])
+            ->where('detail_rumah_id', $rumah->id)->latest('id')->get()
+            ->map(fn (SalesTransaction $row) => [
+                'id' => $row->id, 'number' => $row->transaction_no, 'customer' => $row->customer?->nama,
+                'sale_price' => (float) $row->sale_price_snapshot, 'payment_method' => $row->payment_method,
+                'status' => $row->status, 'marketing' => $row->marketing?->name,
+                'url' => route('admin.integrated-sales.show', ['transactions', $row->id], false),
+            ])->values() : collect();
+
+        $reservationRows = $canSeeReservations ? HousingReservation::query()
+            ->with(['customer:id,kode_costumer,nama', 'creator:id,name'])
+            ->where('detail_rumah_id', $rumah->id)->latest('id')->get()
+            ->map(fn (HousingReservation $row) => [
+                'id' => $row->id, 'number' => $row->reservation_no, 'customer' => $row->customer?->nama,
+                'reserved_at' => optional($row->reserved_at)->format('Y-m-d H:i'), 'booking_fee' => (float) $row->booking_fee,
+                'paid_amount' => (float) $row->paid_amount, 'status' => $row->status, 'record_status' => $row->record_status,
+                'creator' => $row->creator?->name, 'url' => route('admin.marketing.reservations.show', $row->id, false),
+            ])->values() : collect();
+
+        $spkRows = $canSeeSpk ? SpkKontraktor::query()->with('kontraktor:id,nama_kontraktor')
+            ->where('detail_rumah_id', $rumah->id)->latest('tanggal_spk')->get()
+            ->map(fn (SpkKontraktor $row) => [
+                'id' => $row->id, 'number' => $row->nomor_spk, 'title' => $row->judul_pekerjaan,
+                'contractor' => $row->kontraktor?->nama_kontraktor, 'date' => optional($row->tanggal_spk)->format('Y-m-d'),
+                'start_date' => optional($row->tanggal_mulai)->format('Y-m-d'), 'end_date' => optional($row->tanggal_selesai)->format('Y-m-d'),
+                'value' => (float) $row->nilai_kontrak, 'status' => $row->status,
+                'url' => route('admin.spk-kontraktor.show', $row->id, false),
+            ])->values() : collect();
+
+        $scheduleRows = $canSeeSchedules ? SiteSchedule::query()->with('tahapanPembangunan:id,nama_tahapan')
+            ->where('detail_rumah_id', $rumah->id)->latest('tanggal_mulai')->get()
+            ->map(fn (SiteSchedule $row) => ['id' => $row->id, 'number' => $row->kode_jadwal, 'work' => $row->nama_pekerjaan, 'stage' => $row->tahapanPembangunan?->nama_tahapan, 'start_date' => optional($row->tanggal_mulai)->format('Y-m-d'), 'target_date' => optional($row->tanggal_target)->format('Y-m-d'), 'target' => (float) $row->target_progress, 'actual' => (float) $row->realisasi_progress, 'status' => $row->status])
+            ->values() : collect();
+
+        $reportRows = $canSeeReports ? SiteReport::query()->with('tahapanPembangunan:id,nama_tahapan')
+            ->where('detail_rumah_id', $rumah->id)->latest('tanggal')->get()
+            ->map(fn (SiteReport $row) => ['id' => $row->id, 'number' => $row->kode_laporan, 'date' => optional($row->tanggal)->format('Y-m-d'), 'type' => $row->jenis_laporan, 'stage' => $row->tahapanPembangunan?->nama_tahapan, 'workers' => $row->jumlah_pekerja, 'completed' => $row->pekerjaan_selesai, 'blocked' => $row->pekerjaan_tertahan, 'status' => $row->approval_status])
+            ->values() : collect();
+
+        $qualityRows = $canSeeQuality ? QualityInspection::query()->with('tahapanPembangunan:id,nama_tahapan')
+            ->where('detail_rumah_id', $rumah->id)->latest('tanggal')->get()
+            ->map(fn (QualityInspection $row) => ['id' => $row->id, 'number' => $row->kode_inspeksi, 'date' => optional($row->tanggal)->format('Y-m-d'), 'stage' => $row->tahapanPembangunan?->nama_tahapan, 'result' => $row->hasil, 'finding' => $row->temuan, 'corrective_action' => $row->tindakan_perbaikan, 'target_date' => optional($row->target_selesai)->format('Y-m-d'), 'status' => $row->status])
+            ->values() : collect();
 
         return Inertia::render('Admin/Management/Perumahan/UnitDetail', [
             'title' => 'Detail Unit Rumah',
@@ -300,9 +379,9 @@ class PerumahanController extends Controller
                 'carport' => $rumah->carport,
                 'arah_hadap' => $rumah->arah_hadap,
                 'posisi_unit' => $rumah->posisi_unit,
-                'harga_jual' => (float) $rumah->harga_jual,
+                'harga_jual' => $canSeePrice ? (float) $rumah->harga_jual : null,
                 'status_penjualan' => $rumah->status_penjualan,
-                'pemilik' => $rumah->currentOwnership ? [
+                'pemilik' => $canSeeOwnership && $rumah->currentOwnership ? [
                     'nama' => $rumah->currentOwnership->owner_name,
                     'jenis_identitas' => $rumah->currentOwnership->identity_type,
                     'nomor_identitas' => $rumah->currentOwnership->identity_number,
@@ -316,7 +395,7 @@ class PerumahanController extends Controller
                     'nomor_dokumen' => $rumah->currentOwnership->document_number,
                 ] : null,
                 'status_pembangunan' => $rumah->status_pembangunan,
-                'progress_terakhir' => (float) $rumah->progress_terakhir,
+                'progress_terakhir' => $canSeeProgress ? (float) $rumah->progress_terakhir : null,
                 'tanggal_mulai_bangun' => optional($rumah->tanggal_mulai_bangun)->format('Y-m-d'),
                 'tanggal_selesai_bangun' => optional($rumah->tanggal_selesai_bangun)->format('Y-m-d'),
                 'spesifikasi' => $rumah->spesifikasi,
@@ -327,8 +406,29 @@ class PerumahanController extends Controller
             'progressRows' => $progress,
             'materialRows' => $materialRequests,
             'logistikRows' => $logistik,
+            'hpp' => $canSeeHpp ? ['rows' => $hppItems->values(), 'total_rab' => (float) $hppItems->sum('jumlah_rab'), 'total_realisasi' => (float) $hppItems->sum('jumlah_realisasi'), 'url' => route('admin.unit-rumah.hpp.detail', $rumah->id, false)] : null,
+            'salesRows' => $salesRows,
+            'transactionRows' => $transactionRows,
+            'reservationRows' => $reservationRows,
+            'spkRows' => $spkRows,
+            'scheduleRows' => $scheduleRows,
+            'reportRows' => $reportRows,
+            'qualityRows' => $qualityRows,
+            'visibility' => [
+                'price' => $canSeePrice, 'ownership' => $canSeeOwnership, 'progress' => $canSeeProgress,
+                'materials' => $canSeeMaterials, 'logistics' => $canSeeLogistics, 'hpp' => $canSeeHpp,
+                'reservations' => $canSeeReservations, 'sales' => $canSeeSales, 'spk' => $canSeeSpk,
+                'schedules' => $canSeeSchedules, 'reports' => $canSeeReports, 'quality' => $canSeeQuality,
+            ],
             'filters' => ['search' => $search],
         ]);
+    }
+
+    private function canSeeUnitSection(string $permission): bool
+    {
+        $user = auth()->user();
+
+        return (bool) ($user && ($user->hasRole('super_admin') || $user->can($permission)));
     }
 
     public function storeRumah(Request $request, string $id): RedirectResponse
@@ -391,6 +491,7 @@ class PerumahanController extends Controller
             ...$payload,
             'updated_by' => auth()->id(),
         ]);
+
         return back()->with('success', 'Unit rumah berhasil diperbarui.');
     }
 
@@ -614,6 +715,7 @@ class PerumahanController extends Controller
 
                 if ($itemId !== null) {
                     $existing ? $existing->update($data) : $hpp->items()->create($data);
+
                     continue;
                 }
 
@@ -711,6 +813,7 @@ class PerumahanController extends Controller
                     foreach ($items as $item) {
                         $hpp->detailPerumahanHpps()->create($item);
                     }
+
                     continue;
                 }
 
@@ -999,7 +1102,7 @@ class PerumahanController extends Controller
     {
         $userId = auth()->id() ?? User::query()->value('id');
 
-        abort_if(!$userId, 422, 'User belum tersedia untuk membuat HPP.');
+        abort_if(! $userId, 422, 'User belum tersedia untuk membuat HPP.');
 
         return (int) $userId;
     }

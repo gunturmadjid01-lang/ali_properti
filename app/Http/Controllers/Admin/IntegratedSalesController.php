@@ -11,6 +11,8 @@ use App\Models\DeveloperKprProduct;
 use App\Models\KprSubmission;
 use App\Models\SalesTransaction;
 use App\Services\ApprovalWorkflowService;
+use App\Services\CustomerReceivableService;
+use App\Services\SalesProcessService;
 use App\Support\SalesProcessDefinitions;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -99,8 +101,12 @@ class IntegratedSalesController extends Controller
             'closed_lost' => 'Batal / Gagal',
         ];
         $total = (clone $query)->count('sales_transactions.id');
-        $salesValue = (float) (clone $query)->sum('sales_transactions.sale_price_snapshot');
-        $active = (clone $query)->where('sales_transactions.status', 'active')->count('sales_transactions.id');
+        $completedQuery = (clone $query)->where('sales_transactions.status', 'completed');
+        $pipelineQuery = (clone $query)->whereNotIn('sales_transactions.status', ['completed', 'cancelled', 'closed_lost']);
+        $completed = (clone $completedQuery)->count('sales_transactions.id');
+        $completedValue = (float) (clone $completedQuery)->sum('sales_transactions.sale_price_snapshot');
+        $pipeline = (clone $pipelineQuery)->count('sales_transactions.id');
+        $pipelineValue = (float) (clone $pipelineQuery)->sum('sales_transactions.sale_price_snapshot');
 
         $distribution = function (string $column, array $labels) use ($query): array {
             return (clone $query)
@@ -116,35 +122,49 @@ class IntegratedSalesController extends Controller
         };
 
         $trend = (clone $query)
-            ->selectRaw('SUBSTR(COALESCE(sales_transactions.approved_at, sales_transactions.created_at), 1, 7) as period, COUNT(DISTINCT sales_transactions.id) as total, SUM(sales_transactions.sale_price_snapshot) as value')
+            ->selectRaw("SUBSTR(COALESCE(sales_transactions.approved_at, sales_transactions.created_at), 1, 7) as period,
+                COUNT(DISTINCT CASE WHEN sales_transactions.status = 'completed' THEN sales_transactions.id END) as completed_count,
+                COUNT(DISTINCT CASE WHEN sales_transactions.status NOT IN ('completed','cancelled','closed_lost') THEN sales_transactions.id END) as pipeline_count,
+                SUM(CASE WHEN sales_transactions.status = 'completed' THEN sales_transactions.sale_price_snapshot ELSE 0 END) as completed_value,
+                SUM(CASE WHEN sales_transactions.status NOT IN ('completed','cancelled','closed_lost') THEN sales_transactions.sale_price_snapshot ELSE 0 END) as pipeline_value")
             ->groupBy('period')
             ->orderBy('period')
             ->get()
             ->map(fn ($row) => [
                 'key' => (string) $row->period,
                 'label' => filled($row->period) ? now()->createFromFormat('Y-m', $row->period)->translatedFormat('M Y') : '-',
-                'count' => (int) $row->total,
-                'value' => (float) $row->value,
+                'count' => (int) $row->completed_count,
+                'pipeline_count' => (int) $row->pipeline_count,
+                'value' => (float) $row->completed_value,
+                'pipeline_value' => (float) $row->pipeline_value,
             ])->values()->all();
 
         $housing = (clone $query)
-            ->selectRaw('sales_transactions.perumahan_id as chart_key, perumahans.nama_perusahaan as label, COUNT(DISTINCT sales_transactions.id) as total, SUM(sales_transactions.sale_price_snapshot) as value')
+            ->selectRaw("sales_transactions.perumahan_id as chart_key, perumahans.nama_perusahaan as label,
+                COUNT(DISTINCT CASE WHEN sales_transactions.status = 'completed' THEN sales_transactions.id END) as completed_count,
+                COUNT(DISTINCT CASE WHEN sales_transactions.status NOT IN ('completed','cancelled','closed_lost') THEN sales_transactions.id END) as pipeline_count,
+                SUM(CASE WHEN sales_transactions.status = 'completed' THEN sales_transactions.sale_price_snapshot ELSE 0 END) as completed_value,
+                SUM(CASE WHEN sales_transactions.status NOT IN ('completed','cancelled','closed_lost') THEN sales_transactions.sale_price_snapshot ELSE 0 END) as pipeline_value")
             ->groupBy('sales_transactions.perumahan_id', 'perumahans.nama_perusahaan')
-            ->orderByDesc('value')
+            ->orderByDesc('completed_value')
             ->get()
             ->map(fn ($row) => [
                 'key' => (string) $row->chart_key,
                 'label' => (string) $row->label,
-                'count' => (int) $row->total,
-                'value' => (float) $row->value,
+                'count' => (int) $row->completed_count,
+                'pipeline_count' => (int) $row->pipeline_count,
+                'value' => (float) $row->completed_value,
+                'pipeline_value' => (float) $row->pipeline_value,
             ])->values()->all();
 
         return [
             'summary' => [
                 'total' => (int) $total,
-                'active' => (int) $active,
-                'sales_value' => $salesValue,
-                'average_value' => $total > 0 ? $salesValue / $total : 0,
+                'completed' => (int) $completed,
+                'pipeline' => (int) $pipeline,
+                'sales_value' => $completedValue,
+                'pipeline_value' => $pipelineValue,
+                'average_value' => $completed > 0 ? $completedValue / $completed : 0,
             ],
             'trend' => $trend,
             'methods' => $distribution('payment_method', $methodLabels),
@@ -177,6 +197,13 @@ class IntegratedSalesController extends Controller
             default => abort(404),
         };
         if ($kind === 'transaction') {
+            app(SalesProcessService::class)->initialize($record);
+            $record->unsetRelation('processSteps')->load([
+                'processSteps.checklistItems',
+                'processSteps.documents',
+                'processSteps.assignee',
+            ]);
+
             $permissionMap = ['Ringkasan' => 'summary', 'Jadwal & Tagihan' => 'schedules', 'Pembayaran' => 'payments', 'Pembangunan' => 'construction', 'Serah Terima' => 'handover', 'After Sales' => 'after-sales', 'Histori' => 'history'];
             $tabs = collect($tabs)->filter(fn ($tab) => $tab === 'Proses sampai Huni' ? ($request->user()?->can('sales-process.view') || $request->user()?->hasRole('super_admin')) : ($request->user()?->can('sales.transaction-detail.'.$permissionMap[$tab].'.view') || $request->user()?->hasRole('super_admin')))->values()->all();
         }
@@ -491,7 +518,32 @@ class IntegratedSalesController extends Controller
         $after = DB::table('field_defects')->where('detail_rumah_id', $record->detail_rumah_id)->whereNull('deleted_at')->orderByDesc('tanggal')->get()->map(fn ($r) => ['label' => $r->kode_defect.' — '.$r->kategori, 'date' => $r->tanggal, 'value' => $human($r->status), 'notes' => $r->temuan.' '.($r->instruksi_perbaikan ?? '')]);
         $steps = $this->stepPayload($record->processSteps, $human);
 
+        return $this->enrichedTransactionPayload($record, $human, $money, $steps, $progress, $handover, $after);
+
         return ['heading' => $record->transaction_no, 'subtitle' => ($record->customer?->nama ?? 'Customer').' — '.($record->housingUnit?->nomor_rumah ?? 'Unit'), 'summary' => ['Nomor Transaksi' => $record->transaction_no, 'Nomor SPR' => $record->spr?->kode_spr, 'Customer' => $record->customer?->nama, 'No. Identitas' => $record->customer?->no_identitas, 'Telepon' => $record->customer?->telepon, 'Perumahan' => $record->housingProject?->nama_perusahaan, 'Unit' => trim(($record->housingUnit?->kode_nlok ?? '').' / '.($record->housingUnit?->nomor_rumah ?? '')), 'Tipe Unit' => $record->housingUnit?->tipe_rumah, 'Marketing' => $record->marketing?->name, 'Metode Pembayaran' => $human($record->payment_method), 'Harga Jual' => $money($record->sale_price_snapshot), 'Tanggal Disetujui' => $record->approved_at?->format('d/m/Y H:i'), 'Status' => $human($record->status)], 'processSteps' => $steps, 'schedules' => $record->paymentSchedules->map(fn ($r) => ['invoice' => $r->invoice_no, 'description' => $r->description, 'due_date' => $r->due_date?->format('d/m/Y'), 'amount' => $money($r->amount), 'paid' => $money($r->paid_amount), 'status' => $human($r->status), 'url' => $r->invoice_no ? route('admin.receivables.invoice', $r, absolute: false) : null])->all(), 'payments' => $record->customerReceipts->map(fn ($r) => ['label' => $r->receipt_no, 'date' => $r->payment_date?->format('d/m/Y'), 'value' => $money($r->amount), 'status' => $human($r->status), 'notes' => $r->bank_reference, 'url' => route('admin.customer-receipts.preview', $r, absolute: false)])->all(), 'construction' => $progress->all(), 'handover' => $handover->all(), 'afterSales' => $after->all(), 'timeline' => $record->workflowHistories->sortByDesc('occurred_at')->map(fn ($r) => ['title' => $human($r->process).' — '.$human($r->to_status), 'date' => $r->occurred_at?->format('d/m/Y H:i'), 'notes' => $r->notes])->all()];
+    }
+
+    private function enrichedTransactionPayload(SalesTransaction $record, callable $human, callable $money, array $steps, $progress, $handover, $after): array
+    {
+        $record->loadMissing(['paymentSchedules.source', 'customerReceipts.allocations.schedule', 'customerReceipts.bankAccount', 'customerReceipts.pettyCashAccount']);
+        $receivables = app(CustomerReceivableService::class);
+        $purposeLabels = ['booking_fee' => 'Booking Fee', 'down_payment' => 'Uang Muka / DP', 'invoice_payment' => 'Pembayaran Tagihan', 'accelerated_payment' => 'Percepatan Tagihan', 'overpayment' => 'Pembayaran Lebih', 'other' => 'Penerimaan Lainnya'];
+        $schedules = $record->paymentSchedules->map(function ($row) use ($money, $human, $receivables) {
+            $assessedPenalty = (float) (($row->calculation_snapshot ?? [])['penalty_assessed_amount'] ?? 0);
+            $bill = max(0, (float) $row->amount - $assessedPenalty);
+            $penalty = $assessedPenalty + $receivables->calculateSchedulePenalty($row, today());
+            $total = $bill + $penalty;
+            $remaining = max(0, $total - (float) $row->paid_amount);
+
+            return ['invoice' => $row->invoice_no, 'description' => $row->description, 'due_date' => $row->due_date?->format('d/m/Y'), 'amount' => $money($bill), 'penalty' => $money($penalty), 'total_due' => $money($total), 'paid' => $money($row->paid_amount), 'remaining' => $money($remaining), 'status' => $human($row->status), 'url' => $row->invoice_no ? route('admin.receivables.invoice', $row, absolute: false) : null];
+        })->all();
+        $payments = $record->customerReceipts->sortByDesc('payment_date')->map(function ($row) use ($money, $human, $purposeLabels) {
+            $destination = $row->payment_method === 'cash' ? ($row->pettyCashAccount?->name ?? 'Kas Kecil') : trim(($row->bankAccount?->nama_bank ?? '').' - '.($row->bankAccount?->nomor_rekening ?? ''), ' -');
+
+            return ['label' => $row->receipt_no, 'date' => $row->payment_date?->format('d/m/Y'), 'value' => $money($row->amount), 'status' => $human($row->status), 'purpose' => $purposeLabels[$row->receipt_purpose] ?? $human($row->receipt_purpose), 'method' => $row->payment_method === 'cash' ? 'Cash' : 'Transfer', 'destination' => $destination ?: '-', 'sender' => $row->sender_name ?: '-', 'reference' => $row->bank_reference ?: '-', 'notes' => $row->notes, 'allocations' => $row->allocations->map(fn ($allocation) => ['label' => $allocation->schedule ? trim(($allocation->schedule->invoice_no ?? '').' - '.($allocation->schedule->description ?? ''), ' -') : 'Deposit belum dialokasikan', 'amount' => $money($allocation->amount)])->all(), 'url' => route('admin.customer-receipts.preview', $row, absolute: false)];
+        })->values()->all();
+
+        return ['heading' => $record->transaction_no, 'subtitle' => ($record->customer?->nama ?? 'Customer').' — '.($record->housingUnit?->nomor_rumah ?? 'Unit'), 'summary' => ['Nomor Transaksi' => $record->transaction_no, 'Nomor SPR' => $record->spr?->kode_spr, 'Customer' => $record->customer?->nama, 'No. Identitas' => $record->customer?->no_identitas, 'Telepon' => $record->customer?->telepon, 'Perumahan' => $record->housingProject?->nama_perusahaan, 'Unit' => trim(($record->housingUnit?->kode_nlok ?? '').' / '.($record->housingUnit?->nomor_rumah ?? '')), 'Tipe Unit' => $record->housingUnit?->tipe_rumah, 'Marketing' => $record->marketing?->name, 'Metode Pembayaran' => $human($record->payment_method), 'Harga Jual' => $money($record->sale_price_snapshot), 'Tanggal Disetujui' => $record->approved_at?->format('d/m/Y H:i'), 'Status' => $human($record->status)], 'processSteps' => $steps, 'schedules' => $schedules, 'payments' => $payments, 'construction' => $progress->all(), 'handover' => $handover->all(), 'afterSales' => $after->all(), 'timeline' => $record->workflowHistories->sortByDesc('occurred_at')->map(fn ($row) => ['title' => $human($row->process).' — '.$human($row->to_status), 'date' => $row->occurred_at?->format('d/m/Y H:i'), 'notes' => $row->notes])->all()];
     }
 
     private function config(string $section): array

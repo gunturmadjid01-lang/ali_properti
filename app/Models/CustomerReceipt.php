@@ -23,6 +23,7 @@ class CustomerReceipt extends Model
     {
         return $this->belongsTo(MasterBank::class, 'master_bank_id');
     }
+    public function pettyCashAccount() { return $this->belongsTo(PettyCashAccount::class); }
 
     public function allocations()
     {

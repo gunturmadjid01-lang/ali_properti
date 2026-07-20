@@ -30,6 +30,9 @@ class SalesProcessController extends Controller
     public function workspace(Request $request, SalesProcessStep $step): Response
     {
         $this->allow($request, 'sales-process.view');
+        $step->loadMissing('salesTransaction.housingUnit');
+        app(SalesProcessService::class)->initialize($step->salesTransaction);
+        $step->refresh();
         $step = app(SalesProcessService::class)->syncContext($step);
         $step->load(['salesTransaction.spr.berkasCostumers.dokumen', 'salesTransaction.spr.bankKredit', 'salesTransaction.spr.bankBranch', 'salesTransaction.spr.bankCreditProduct', 'salesTransaction.spr.cashInstallmentScheme', 'salesTransaction.spr.developerKprProduct', 'salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'checklistItems', 'documents', 'assignee', 'locker', 'completer']);
         $definition = SalesProcessDefinitions::get($step->code);

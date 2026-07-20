@@ -89,6 +89,7 @@ use App\Http\Controllers\Admin\TukangController;
 use App\Http\Controllers\Admin\TukangGajiController;
 use App\Http\Controllers\Admin\UnitOwnershipController;
 use App\Http\Controllers\Admin\UnitRumahController as AdminUnitRumahController;
+use App\Http\Controllers\Admin\WaterBillingController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\AttendanceController;
 use Illuminate\Support\Facades\Route;
@@ -259,6 +260,20 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('/pemilik-unit/{id}/deactivate', [UnitOwnershipController::class, 'deactivate'])->name('admin.unit-ownership.deactivate');
     Route::post('/pemilik-unit/{id}/lock', [UnitOwnershipController::class, 'lock'])->name('admin.unit-ownership.lock');
     Route::post('/pemilik-unit/{id}/unlock', [UnitOwnershipController::class, 'unlock'])->name('admin.unit-ownership.unlock');
+    Route::get('/periode-tagihan-air', [WaterBillingController::class, 'periods'])->name('admin.water-periods.index');
+    Route::get('/periode-tagihan-air/create', [WaterBillingController::class, 'createPeriod'])->name('admin.water-periods.create');
+    Route::post('/periode-tagihan-air', [WaterBillingController::class, 'storePeriod'])->name('admin.water-periods.store');
+    Route::get('/periode-tagihan-air/{period}/edit', [WaterBillingController::class, 'editPeriod'])->name('admin.water-periods.edit');
+    Route::put('/periode-tagihan-air/{period}', [WaterBillingController::class, 'updatePeriod'])->name('admin.water-periods.update');
+    Route::post('/periode-tagihan-air/{period}/lock', [WaterBillingController::class, 'lockPeriod'])->name('admin.water-periods.lock');
+    Route::post('/periode-tagihan-air/{period}/unlock', [WaterBillingController::class, 'unlockPeriod'])->name('admin.water-periods.unlock');
+    Route::get('/pembayaran-air', [WaterBillingController::class, 'payments'])->name('admin.water-payments.index');
+    Route::get('/pembayaran-air/create', [WaterBillingController::class, 'createPayment'])->name('admin.water-payments.create');
+    Route::post('/pembayaran-air', [WaterBillingController::class, 'storePayment'])->name('admin.water-payments.store');
+    Route::post('/pembayaran-air/{payment}/lock', [WaterBillingController::class, 'lockPayment'])->name('admin.water-payments.lock');
+    Route::post('/pembayaran-air/{payment}/unlock', [WaterBillingController::class, 'unlockPayment'])->name('admin.water-payments.unlock');
+    Route::post('/air/{type}/{id}/approve', [WaterBillingController::class, 'approve'])->where('type', 'period|payment')->name('admin.water-billing.approve');
+    Route::post('/air/{type}/{id}/reject', [WaterBillingController::class, 'reject'])->where('type', 'period|payment')->name('admin.water-billing.reject');
     Route::prefix('inventaris-perusahaan')->group(function () {
         Route::post('/divisi', [InventoryCompanyController::class, 'storeDivision'])->name('admin.company-inventory.divisions.store');
         Route::get('/{section}/create', [InventoryCompanyController::class, 'create'])->name('admin.company-inventory.create');
@@ -427,6 +442,8 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('/progress-pembangunan/{id}/unlock', [ProgressPembangunanController::class, 'unlock'])->name('admin.progress-pembangunan.unlock');
     Route::post('/progress-pembangunan/{id}/approve', [ProgressPembangunanController::class, 'approve'])->name('admin.progress-pembangunan.approve');
     Route::get('/laporan-lapangan', [SiteReportController::class, 'index'])->name('admin.site-report.index');
+    Route::get('/laporan-lapangan/create', [SiteReportController::class, 'create'])->name('admin.site-report.create');
+    Route::get('/laporan-lapangan/{id}/edit', [SiteReportController::class, 'edit'])->name('admin.site-report.edit');
     Route::post('/laporan-lapangan', [SiteReportController::class, 'store'])->name('admin.site-report.store');
     Route::put('/laporan-lapangan/{id}', [SiteReportController::class, 'update'])->name('admin.site-report.update');
     Route::delete('/laporan-lapangan/{id}', [SiteReportController::class, 'destroy'])->name('admin.site-report.destroy');
@@ -434,6 +451,8 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('/laporan-lapangan/{id}/lock', [SiteReportController::class, 'lock'])->name('admin.site-report.lock');
     Route::post('/laporan-lapangan/{id}/unlock', [SiteReportController::class, 'unlock'])->name('admin.site-report.unlock');
     Route::get('/kontrol-kualitas', [QualityInspectionController::class, 'index'])->name('admin.quality-inspection.index');
+    Route::get('/kontrol-kualitas/create', [QualityInspectionController::class, 'create'])->name('admin.quality-inspection.create');
+    Route::get('/kontrol-kualitas/{id}/edit', [QualityInspectionController::class, 'edit'])->name('admin.quality-inspection.edit');
     Route::post('/kontrol-kualitas', [QualityInspectionController::class, 'store'])->name('admin.quality-inspection.store');
     Route::put('/kontrol-kualitas/{id}', [QualityInspectionController::class, 'update'])->name('admin.quality-inspection.update');
     Route::delete('/kontrol-kualitas/{id}', [QualityInspectionController::class, 'destroy'])->name('admin.quality-inspection.destroy');

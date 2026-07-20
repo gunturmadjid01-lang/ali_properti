@@ -26,6 +26,13 @@ class FieldDefect extends Model
         'locked_at' => 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        $sync = fn (FieldDefect $row) => $row->detail_rumah_id ? app(\App\Services\SalesProcessService::class)->syncLinkedUnitData((int) $row->detail_rumah_id) : null;
+        static::saved($sync);
+        static::deleted($sync);
+    }
+
     public function perumahan(): BelongsTo { return $this->belongsTo(Perumahan::class); }
     public function detailRumah(): BelongsTo { return $this->belongsTo(DetailRumah::class); }
     public function tahapanPembangunan(): BelongsTo { return $this->belongsTo(TahapanPembangunan::class); }

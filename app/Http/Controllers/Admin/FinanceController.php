@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\ChartOfAccount;
 use App\Models\CabangPerusahaan;
+use App\Models\ChartOfAccount;
 use App\Models\Journal;
 use App\Models\JournalDetail;
 use App\Models\MasterBank;
@@ -26,6 +26,14 @@ use Inertia\Response;
 
 class FinanceController extends Controller
 {
+    /** Pemasukan yang memang tidak mempunyai workflow transaksi khusus. */
+    protected const MANUAL_INCOME_POSTS = [
+        'Setoran Modal Awal',
+        'Investasi Investor - Penyertaan Modal',
+        'Pinjaman Investor',
+        'Pendapatan Lain-lain',
+    ];
+
     protected array $sections = [
         'dashboard' => 'Dashboard Keuangan',
         'pemasukan' => 'Pemasukan Kas & Bank',
@@ -47,6 +55,10 @@ class FinanceController extends Controller
         abort_unless(array_key_exists($section, $this->sections), 404);
 
         [$from, $to] = $this->period($request);
+        if ($section === 'arus-kas' && ! $request->filled('date_from') && ! $request->filled('date_to')) {
+            $from = now()->startOfMonth()->startOfDay();
+            $to = now()->endOfMonth()->endOfDay();
+        }
         $perumahanId = $this->perumahanId($request);
 
         return Inertia::render('Admin/Finance/Index', [
@@ -83,6 +95,7 @@ class FinanceController extends Controller
                     ->whereNotNull('debit_account_id')
                     ->whereNotNull('credit_account_id')
                     ->when(in_array($section, ['pemasukan', 'pengeluaran'], true), fn (Builder $query) => $query->where('jenis', $section))
+                    ->when($section === 'pemasukan', fn (Builder $query) => $query->whereIn('nama_post', self::MANUAL_INCOME_POSTS))
                     ->orderBy('jenis')
                     ->orderBy('nama_post')
                     ->get()
@@ -182,10 +195,15 @@ class FinanceController extends Controller
             ->whereNotNull('debit_account_id')
             ->whereNotNull('credit_account_id')
             ->firstOrFail();
+        abort_if(
+            $post->jenis === 'pemasukan' && ! in_array($post->nama_post, self::MANUAL_INCOME_POSTS, true),
+            422,
+            'Jenis pemasukan ini dicatat otomatis dari modul transaksi asal dan tidak boleh diposting manual.',
+        );
         DB::transaction(function () use ($request, $validated, $bank, $post, $accounting): void {
             $transaction = TransaksiKeuangan::query()->create([
                 'cabang_id' => $validated['cabang_id'],
-                'perumahan_id' => null,
+                'perumahan_id' => $bank->perumahan_id,
                 'master_bank_id' => $bank->id,
                 'tipe_post_id' => $post->id,
                 'tanggal' => $validated['tanggal'],
@@ -535,20 +553,27 @@ class FinanceController extends Controller
         $cashIn = (float) $periodRows->sum('debit');
         $cashOut = (float) $periodRows->sum('kredit');
         $runningBalance = $opening;
-        $trend = $periodRows->groupBy(fn (JournalDetail $row) => $row->journal?->tanggal?->format('Y-m-d'))
-            ->map(function ($rows, string $date) use (&$runningBalance) {
-                $cashIn = (float) $rows->sum('debit');
-                $cashOut = (float) $rows->sum('kredit');
-                $runningBalance += $cashIn - $cashOut;
-
-                return [
-                    'date' => $date,
-                    'label' => Carbon::parse($date)->format('d M'),
-                    'in' => $cashIn,
-                    'out' => $cashOut,
-                    'balance' => $runningBalance,
-                ];
-            })->values();
+        $annual = $from->isSameDay($from->copy()->startOfYear()) && $to->isSameDay($to->copy()->endOfYear());
+        $keyFormat = $annual ? 'Y-m' : 'Y-m-d';
+        $grouped = $periodRows->groupBy(fn (JournalDetail $row) => $row->journal?->tanggal?->format($keyFormat));
+        $cursor = $annual ? $from->copy()->startOfMonth() : $from->copy()->startOfDay();
+        $last = $annual ? $to->copy()->startOfMonth() : $to->copy()->startOfDay();
+        $trend = collect();
+        while ($cursor->lte($last)) {
+            $key = $cursor->format($keyFormat);
+            $rows = $grouped->get($key, collect());
+            $cashInForBucket = (float) $rows->sum('debit');
+            $cashOutForBucket = (float) $rows->sum('kredit');
+            $runningBalance += $cashInForBucket - $cashOutForBucket;
+            $trend->push([
+                'date' => $key,
+                'label' => $annual ? $cursor->locale('id')->translatedFormat('M') : $cursor->format('d M'),
+                'in' => $cashInForBucket,
+                'out' => $cashOutForBucket,
+                'balance' => $runningBalance,
+            ]);
+            $cursor = $annual ? $cursor->addMonth() : $cursor->addDay();
+        }
 
         return [
             'opening_balance' => $opening,

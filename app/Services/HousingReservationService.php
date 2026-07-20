@@ -55,6 +55,9 @@ class HousingReservationService
     {
         return DB::transaction(function () use ($reservation) {
             $row = HousingReservation::query()->lockForUpdate()->findOrFail($reservation->id);
+            DetailRumah::query()->whereKey($row->detail_rumah_id)
+                ->whereIn('status_penjualan', ['tersedia', 'available'])
+                ->update(['status_penjualan' => 'booking', 'booking_at' => now()]);
             $schedule = PaymentSchedule::firstOrCreate(
                 ['housing_reservation_id' => $row->id],
                 ['source_type' => HousingReservation::class, 'source_id' => $row->id, 'sequence' => 1, 'invoice_no' => $row->invoice_no, 'type' => 'booking_fee', 'description' => 'Booking Fee Reservasi '.$row->reservation_no, 'issued_at' => $row->payment_submitted_at, 'due_date' => $row->payment_submitted_at, 'amount' => $row->booking_fee, 'paid_amount' => 0, 'status' => 'belum_dibayar', 'record_status' => 'locked', 'locked_at' => now(), 'locked_by' => auth()->id()]

@@ -109,50 +109,34 @@ export default function Index({
                         </div>
                         <div className="flex flex-wrap gap-2">
                             <select
-                                aria-label="Periode statistik"
-                                value={statistics.period}
+                                aria-label="Bulan statistik"
+                                value={statistics.month}
                                 onChange={(event) =>
                                     setStatistics({
-                                        period: event.target.value,
+                                        month: Number(event.target.value),
                                     })
                                 }
                                 className="rounded-lg border bg-white px-3 py-2 text-sm dark:bg-slate-900"
                             >
-                                <option value="daily">Harian</option>
-                                <option value="monthly">Bulanan</option>
-                                <option value="yearly">Tahunan</option>
+                                {[
+                                    "Januari",
+                                    "Februari",
+                                    "Maret",
+                                    "April",
+                                    "Mei",
+                                    "Juni",
+                                    "Juli",
+                                    "Agustus",
+                                    "September",
+                                    "Oktober",
+                                    "November",
+                                    "Desember",
+                                ].map((label, index) => (
+                                    <option value={index + 1} key={label}>
+                                        {label}
+                                    </option>
+                                ))}
                             </select>
-                            {statistics.period === "daily" && (
-                                <select
-                                    aria-label="Bulan statistik"
-                                    value={statistics.month}
-                                    onChange={(event) =>
-                                        setStatistics({
-                                            month: Number(event.target.value),
-                                        })
-                                    }
-                                    className="rounded-lg border bg-white px-3 py-2 text-sm dark:bg-slate-900"
-                                >
-                                    {[
-                                        "Januari",
-                                        "Februari",
-                                        "Maret",
-                                        "April",
-                                        "Mei",
-                                        "Juni",
-                                        "Juli",
-                                        "Agustus",
-                                        "September",
-                                        "Oktober",
-                                        "November",
-                                        "Desember",
-                                    ].map((label, index) => (
-                                        <option value={index + 1} key={label}>
-                                            {label}
-                                        </option>
-                                    ))}
-                                </select>
-                            )}
                             <select
                                 aria-label="Tahun statistik"
                                 value={statistics.year}

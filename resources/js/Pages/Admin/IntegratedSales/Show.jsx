@@ -46,6 +46,7 @@ function ProcessStep({ step }) {
             available: "border-amber-300 bg-amber-50",
             in_progress: "border-amber-300 bg-amber-50",
             waiting: "border-slate-200 bg-slate-50",
+            skipped: "border-cyan-300 bg-cyan-50",
         }[step.status] || "border-slate-200";
     const completedChecks = (step.checklist ?? []).filter(
         (item) => item.completed,
@@ -69,7 +70,11 @@ function ProcessStep({ step }) {
                     </div>
                 </div>
                 <div className="text-right">
-                    <b>{step.status_label}</b>
+                    <b>
+                        {step.status === "skipped"
+                            ? "Dilewati"
+                            : step.status_label}
+                    </b>
                     {step.approval_stage && (
                         <p className="text-xs text-blue-700">
                             {step.approval_stage}
@@ -104,15 +109,23 @@ function ProcessStep({ step }) {
                     Menunggu prasyarat proses sebelumnya.
                 </p>
             )}
+            {step.status === "skipped" && (
+                <p className="mt-3 rounded-lg bg-cyan-100 px-3 py-2 text-sm font-bold text-cyan-900">
+                    {step.metadata?.skip_reason ||
+                        "Tahap ini tidak diperlukan untuk kondisi unit terpilih."}
+                </p>
+            )}
             <div className="mt-4">
                 <Button
                     as={Link}
                     href={`/admin/penjualan-terintegrasi/tahapan/${step.id}`}
                     size="sm"
                 >
-                    {step.status === "waiting"
-                        ? "Lihat Persyaratan"
-                        : "Buka Proses"}
+                    {step.status === "skipped"
+                        ? "Lihat Data Unit"
+                        : step.status === "waiting"
+                          ? "Lihat Persyaratan"
+                          : "Buka Proses"}
                 </Button>
             </div>
         </article>
@@ -265,7 +278,9 @@ function EnteredStages({ steps = [] }) {
                                             </h3>
                                         </div>
                                         <span className="w-fit rounded-full bg-silver-soft px-3 py-1 text-xs font-black dark:bg-white/10">
-                                            {step.status_label}
+                                            {step.status === "skipped"
+                                                ? "Dilewati"
+                                                : step.status_label}
                                             {step.approval_stage
                                                 ? ` · ${step.approval_stage}`
                                                 : ""}
@@ -492,8 +507,11 @@ export default function Show({
                                         <th className="px-5 py-4">
                                             Jatuh Tempo
                                         </th>
-                                        <th className="px-5 py-4">Nominal</th>
-                                        <th className="px-5 py-4">Dibayar</th>
+                                        <th className="px-5 py-4">Tagihan</th>
+                                        <th className="px-5 py-4">Denda</th>
+                                        <th className="px-5 py-4">Total</th>
+                                        <th className="px-5 py-4">Bayar</th>
+                                        <th className="px-5 py-4">Sisa</th>
                                         <th className="px-5 py-4">Status</th>
                                     </tr>
                                 </thead>
@@ -532,7 +550,16 @@ export default function Show({
                                                     {row.amount}
                                                 </td>
                                                 <td className="px-5 py-4">
+                                                    {row.penalty}
+                                                </td>
+                                                <td className="px-5 py-4 font-bold">
+                                                    {row.total_due}
+                                                </td>
+                                                <td className="px-5 py-4">
                                                     {row.paid}
+                                                </td>
+                                                <td className="px-5 py-4 font-black">
+                                                    {row.remaining}
                                                 </td>
                                                 <td className="px-5 py-4">
                                                     {row.status}
@@ -544,7 +571,7 @@ export default function Show({
                                         <tr>
                                             <td
                                                 className="px-5 py-10 text-center text-ink-soft"
-                                                colSpan="5"
+                                                colSpan="8"
                                             >
                                                 Belum ada jadwal resmi. Jadwal
                                                 dibuat setelah kontrak mendapat
@@ -609,8 +636,72 @@ export default function Show({
                                                 {item.date}
                                             </p>
                                         </div>
-                                        <b>{item.value || item.status}</b>
+                                        <div className="text-right">
+                                            <b className="text-lg">
+                                                {item.value || item.status}
+                                            </b>
+                                            {item.status && (
+                                                <p className="text-xs font-bold text-emerald-700">
+                                                    {item.status}
+                                                </p>
+                                            )}
+                                        </div>
                                     </div>
+                                    {activeTab === "Pembayaran" &&
+                                        item.purpose && (
+                                            <div className="mt-4 grid gap-3 rounded-lg bg-slate-50 p-4 text-sm md:grid-cols-2 xl:grid-cols-4 dark:bg-white/5">
+                                                <div>
+                                                    <span className="block text-xs font-bold uppercase text-ink-soft">
+                                                        Jenis
+                                                    </span>
+                                                    <b>{item.purpose}</b>
+                                                </div>
+                                                <div>
+                                                    <span className="block text-xs font-bold uppercase text-ink-soft">
+                                                        Metode
+                                                    </span>
+                                                    <b>{item.method}</b>
+                                                </div>
+                                                <div>
+                                                    <span className="block text-xs font-bold uppercase text-ink-soft">
+                                                        Tujuan Dana
+                                                    </span>
+                                                    <b>{item.destination}</b>
+                                                </div>
+                                                <div>
+                                                    <span className="block text-xs font-bold uppercase text-ink-soft">
+                                                        Pengirim / Referensi
+                                                    </span>
+                                                    <b>{item.sender}</b>
+                                                    <p>{item.reference}</p>
+                                                </div>
+                                            </div>
+                                        )}
+                                    {item.allocations?.length > 0 && (
+                                        <div className="mt-3 space-y-2">
+                                            <p className="text-xs font-black uppercase text-ink-soft">
+                                                Alokasi Pembayaran
+                                            </p>
+                                            {item.allocations.map(
+                                                (
+                                                    allocation,
+                                                    allocationIndex,
+                                                ) => (
+                                                    <div
+                                                        key={allocationIndex}
+                                                        className="flex flex-wrap justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+                                                    >
+                                                        <span>
+                                                            {allocation.label}
+                                                        </span>
+                                                        <b>
+                                                            {allocation.amount}
+                                                        </b>
+                                                    </div>
+                                                ),
+                                            )}
+                                        </div>
+                                    )}
                                     {item.notes && (
                                         <p className="mt-2 text-sm">
                                             {item.notes}
