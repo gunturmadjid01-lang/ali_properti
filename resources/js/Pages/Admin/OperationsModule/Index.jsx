@@ -60,6 +60,9 @@ const salesMoneyColumns = new Set([
     "administration_fee",
     "contract_fee",
     "minimum_income",
+    "approved_limit",
+    "disbursed_amount",
+    "nilai_pengajuan",
 ]);
 const salesMoneyTokens = [
     "amount",
@@ -404,7 +407,7 @@ export default function Index({
                               : "Manajemen Aset Bergerak Perusahaan"}
                     </p>
                     <h2 className="mt-2 font-display text-3xl font-extrabold">
-                        {title}
+                        {module === "sales" ? sectionTitle : title}
                     </h2>
                     <p className="mt-2 text-ink-soft">
                         Modul aset terhubung dengan stok, lokasi, pemakai,
@@ -1039,6 +1042,19 @@ export default function Index({
                                                             "developer-products",
                                                             "developer-applications",
                                                             "bank-applications",
+                                                            "bank-application-detail",
+                                                            "bank-document-validation",
+                                                            "bank-slik",
+                                                            "bank-appraisal",
+                                                            "bank-decision",
+                                                            "bank-sp3k",
+                                                            "bank-contract-preparation",
+                                                            "bank-contract-schedule",
+                                                            "bank-contract-execution",
+                                                            "bank-disbursement",
+                                                            "bank-change",
+                                                            "bank-rejections",
+                                                            "bank-reports",
                                                         ].includes(section) && (
                                                             <Button
                                                                 size="sm"
@@ -1063,6 +1079,19 @@ export default function Index({
                                                             "developer-products",
                                                             "developer-applications",
                                                             "bank-applications",
+                                                            "bank-application-detail",
+                                                            "bank-document-validation",
+                                                            "bank-slik",
+                                                            "bank-appraisal",
+                                                            "bank-decision",
+                                                            "bank-sp3k",
+                                                            "bank-contract-preparation",
+                                                            "bank-contract-schedule",
+                                                            "bank-contract-execution",
+                                                            "bank-disbursement",
+                                                            "bank-change",
+                                                            "bank-rejections",
+                                                            "bank-reports",
                                                         ].includes(section) && (
                                                             <Button
                                                                 size="sm"
