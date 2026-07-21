@@ -51,6 +51,7 @@ class SalesProcessService
         $latestProgress = $unit ? DB::table('progress_pembangunans')->where('detail_rumah_id', $unit->id)->whereNull('deleted_at')->orderByDesc('tanggal')->orderByDesc('id')->first() : null;
         $latestInspection = $unit ? DB::table('quality_inspections')->where('detail_rumah_id', $unit->id)->whereNull('deleted_at')->orderByDesc('tanggal')->orderByDesc('id')->first() : null;
         $defects = $unit ? DB::table('field_defects')->where('detail_rumah_id', $unit->id)->whereNull('deleted_at')->get() : collect();
+        $openCriticalDefects = $defects->whereIn('prioritas', ['urgent', 'critical', 'high'])->whereNotIn('status', ['selesai', 'closed', 'resolved'])->count();
         $final = (float) ($spr?->nilai_pengajuan_akhir ?: $transaction?->sale_price_snapshot ?: 0);
         $financing = (float) ($spr?->nilai_pengajuan_kpr ?: max(0, $final - (float) $spr?->booking_fee - (float) $spr?->uang_muka));
         $master = $spr?->payment_configuration_snapshot['master'] ?? $transaction?->payment_snapshot['master'] ?? [];
@@ -67,6 +68,8 @@ class SalesProcessService
         $existingInstallment = (float) collect($customer?->daftar_cicilan ?? [])->sum('angsuran_bulanan');
         $totalIncome = $customerIncome + $spouseIncome;
         $common = ['customer_name' => $customer?->nama, 'spouse_name' => $customer?->nama_lengkap_pasangan, 'recipient_name' => $customer?->nama, 'occupant_name' => $customer?->nama, 'occupant_phone' => $customer?->telepon, 'final_price' => $final, 'final_contract_value' => $final, 'booking_fee' => (float) $spr?->booking_fee, 'down_payment' => (float) $spr?->uang_muka, 'financed_amount' => $financing, 'requested_financing' => $financing, 'installment_count' => $spr?->jumlah_termin, 'first_due_date' => $spr?->tanggal_jatuh_tempo_angsuran?->format('Y-m-d')];
+        $constructionReady = $unit && ($unit->status_pembangunan === 'selesai' || (float) $unit->progress_terakhir >= 100);
+        $qualityReady = (bool) $latestInspection && in_array($latestInspection->record_status ?? null, ['locked'], true) && $openCriticalDefects === 0;
         $specific = match ($step->code) {
             'contract_review' => ['grace_days' => $master['grace_period_days'] ?? 0, 'penalty_terms' => $this->penaltySummary($master), 'early_settlement_terms' => $this->advancedTerm($master, 'early_settlement', 'early_settlement_terms', 'Pelunasan dipercepat'), 'cancellation_terms' => $this->advancedTerm($master, 'cancellation', 'cancellation_terms', 'Pembatalan kontrak')],
             'affordability_analysis' => ['customer_income' => $customerIncome, 'spouse_income' => $spouseIncome, 'monthly_expense' => $monthlyExpense, 'existing_installment' => $existingInstallment, 'net_disposable_income' => max(0, $totalIncome - $monthlyExpense - $existingInstallment), 'dsr_percent' => $totalIncome > 0 ? round(($existingInstallment / $totalIncome) * 100, 2) : 0, 'requested_financing' => $financing, 'recommended_tenor' => $spr?->kpr_tenor_bulan, 'recommended_installment' => $spr?->nominal_termin],
@@ -76,8 +79,8 @@ class SalesProcessService
             'contract_preparation' => ['dp_paid' => (float) $spr?->uang_muka, 'shortfall_paid' => 0],
             'contract_signing' => ['customer_name' => $customer?->nama, 'spouse_name' => $customer?->nama_lengkap_pasangan, 'final_contract_value' => $step->salesTransaction?->payment_method === 'kpr_bank' ? $financing : $final, 'notary_name' => $prior['notary_name'] ?? null, 'location' => $prior['contract_location'] ?? null],
             'installment_monitoring' => ['total_bill' => $totalBill, 'total_paid' => $totalPaid, 'outstanding' => max(0, $totalBill - $totalPaid), 'overdue_amount' => (float) $schedules->where('due_date', '<', today())->whereNotIn('status', ['paid', 'cancelled'])->sum(fn ($row) => max(0, (float) $row->amount - (float) $row->paid_amount)), 'payment_condition' => $totalBill > 0 && $totalPaid >= $totalBill ? 'paid_off' : ($totalPaid > 0 ? 'partial' : 'current')],
-            'construction_preparation' => ['planned_start' => $unit?->tanggal_mulai_bangun?->format('Y-m-d'), 'planned_finish' => $unit?->tanggal_selesai_bangun?->format('Y-m-d')],
-            'construction' => ['start_date' => $unit?->tanggal_mulai_bangun?->format('Y-m-d'), 'finish_date' => $unit?->tanggal_selesai_bangun?->format('Y-m-d'), 'progress_percent' => (float) ($latestProgress?->persentase_total ?? $unit?->progress_terakhir ?? 0)],
+            'construction_preparation' => ['planned_start' => $unit?->tanggal_mulai_bangun?->format('Y-m-d'), 'planned_finish' => $unit?->tanggal_selesai_bangun?->format('Y-m-d'), 'progress_percent' => (float) ($latestProgress?->persentase_total ?? $unit?->progress_terakhir ?? 0), 'unit_status' => $unit?->status_pembangunan, 'skip_reason' => $constructionReady ? 'Unit sudah selesai / ready stock, tahap ini bisa dilewati.' : null],
+            'construction' => ['start_date' => $unit?->tanggal_mulai_bangun?->format('Y-m-d'), 'finish_date' => $unit?->tanggal_selesai_bangun?->format('Y-m-d'), 'progress_percent' => (float) ($latestProgress?->persentase_total ?? $unit?->progress_terakhir ?? 0), 'unit_status' => $unit?->status_pembangunan, 'skip_reason' => $constructionReady ? 'Progress unit sudah selesai, tahap ini bisa dilewati.' : null],
             'quality_inspection' => ['inspection_number' => $latestInspection?->kode_inspeksi, 'inspection_date' => $latestInspection?->tanggal, 'inspection_items' => $latestInspection?->item_pemeriksaan, 'findings' => $latestInspection?->temuan, 'corrective_action' => $latestInspection?->tindakan_perbaikan, 'target_finish' => $latestInspection?->target_selesai, 'critical_defects' => $defects->whereIn('prioritas', ['urgent', 'critical'])->count(), 'major_defects' => $defects->where('prioritas', 'high')->count(), 'minor_defects' => $defects->whereIn('prioritas', ['medium', 'low'])->count(), 'result' => match ($latestInspection?->hasil) {'lulus', 'passed' => 'passed', 'perbaikan', 'conditional' => 'conditional', 'gagal', 'failed' => 'failed', default => null}],
             'customer_handover' => ['recipient_name' => $customer?->nama],
             'move_in' => ['occupant_name' => $customer?->nama, 'occupant_phone' => $customer?->telepon, 'occupant_relation' => 'Pemilik'],
@@ -101,12 +104,17 @@ class SalesProcessService
         $metadata['dependencies'] = $metadata['dependencies'] ?? SalesProcessDefinitions::dependencies($step->code, $transaction?->payment_method);
         $sourceLabel = in_array($step->code, ['construction_preparation', 'construction'], true) ? 'Otomatis dari unit dan Progress Pembangunan' : ($step->code === 'quality_inspection' ? 'Otomatis dari Inspeksi Mutu dan Daftar Perbaikan' : 'Otomatis dari SPR/transaksi/master metode');
         $metadata['sources'] = array_fill_keys(array_keys($automatic), $sourceLabel);
+        if ($step->code === 'quality_inspection') {
+            $metadata['skip_reason'] = $qualityReady ? 'Inspeksi mutu sudah final dan defect kritis sudah tertutup.' : ($metadata['skip_reason'] ?? null);
+            $metadata['inspection_status'] = $latestInspection?->record_status ?? null;
+            $metadata['open_critical_defects'] = $openCriticalDefects;
+        }
         if ($metadata !== $step->metadata) {
             $step->update(['metadata' => $metadata]);
         }
         if ($step->code === 'quality_inspection') {
             $inspectionFinal = $latestInspection && ($latestInspection->record_status === 'locked' || $latestInspection->approval_status === 'approved');
-            $openCritical = $defects->whereIn('prioritas', ['high', 'urgent', 'critical'])->whereNotIn('status', ['selesai', 'closed', 'resolved'])->count();
+            $openCritical = $openCriticalDefects;
             $step->checklistItems()->updateOrCreate(['item_key' => 'inspection_linked'], ['label' => 'Inspeksi mutu unit sudah final', 'is_required' => true, 'is_completed' => $inspectionFinal]);
             $step->checklistItems()->updateOrCreate(['item_key' => 'critical_defects_closed'], ['label' => 'Seluruh defect mayor/kritis ditutup', 'is_required' => true, 'is_completed' => $inspectionFinal && $openCritical === 0]);
         }
@@ -208,6 +216,19 @@ class SalesProcessService
         $unit = $transaction->housingUnit;
         if (! $unit) return;
         $ready = $unit->status_pembangunan === 'selesai' || (float) $unit->progress_terakhir >= 100;
+        $latestInspection = DB::table('quality_inspections')
+            ->where('detail_rumah_id', $unit->id)
+            ->whereNull('deleted_at')
+            ->orderByDesc('tanggal')
+            ->orderByDesc('id')
+            ->first();
+        $openCriticalDefects = DB::table('field_defects')
+            ->where('detail_rumah_id', $unit->id)
+            ->whereNull('deleted_at')
+            ->whereIn('prioritas', ['urgent', 'critical', 'high'])
+            ->whereNotIn('status', ['selesai', 'closed', 'resolved'])
+            ->count();
+        $inspectionFinal = (bool) $latestInspection && in_array($latestInspection->record_status ?? null, ['locked'], true) && $openCriticalDefects === 0;
         foreach ($transaction->processSteps->whereIn('code', ['construction_preparation', 'construction']) as $step) {
             $metadata = $step->metadata ?? [];
             if ($ready && $step->status !== 'completed') {
@@ -219,6 +240,18 @@ class SalesProcessService
                 unset($metadata['skip_reason']);
                 unset($metadata['data']['skip_reason']);
                 $metadata['unit_condition'] = 'under_construction';
+                $step->update(['status' => $this->dependenciesMet($step) ? 'available' : 'waiting', 'actual_date' => null, 'metadata' => $metadata]);
+            }
+        }
+        foreach ($transaction->processSteps->where('code', 'quality_inspection') as $step) {
+            $metadata = $step->metadata ?? [];
+            if ($inspectionFinal && $step->status !== 'completed') {
+                $metadata['skip_reason'] = 'Inspeksi mutu sudah final dan defect kritis sudah tertutup.';
+                $metadata['inspection_status'] = $latestInspection->record_status ?? null;
+                $metadata['open_critical_defects'] = $openCriticalDefects;
+                $step->update(['status' => 'skipped', 'actual_date' => $latestInspection->tanggal ?? today(), 'metadata' => $metadata]);
+            } elseif (! $inspectionFinal && $step->status === 'skipped') {
+                unset($metadata['skip_reason'], $metadata['inspection_status'], $metadata['open_critical_defects']);
                 $step->update(['status' => $this->dependenciesMet($step) ? 'available' : 'waiting', 'actual_date' => null, 'metadata' => $metadata]);
             }
         }

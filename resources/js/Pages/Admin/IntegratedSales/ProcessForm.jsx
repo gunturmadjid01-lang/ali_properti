@@ -96,13 +96,13 @@ export default function ProcessForm({ title, backUrl, transaction, step }) {
     };
     const finalize = () => {
         setFinalizeResponse(null);
-        form.transform((data) => ({
-            ...data,
+        const payload = {
+            ...form.data,
             checklist: checklistForm.data.checklist,
             _method: "put",
             finalize: true,
-        }));
-        form.post(`/admin/penjualan-terintegrasi/tahapan/${step.id}`, {
+        };
+        router.post(`/admin/penjualan-terintegrasi/tahapan/${step.id}`, payload, {
             forceFormData: true,
             preserveScroll: true,
             onError: (errors) => {
@@ -138,7 +138,6 @@ export default function ProcessForm({ title, backUrl, transaction, step }) {
                     },
                 });
             },
-            onFinish: () => form.transform((data) => data),
         });
     };
     const saveChecklist = (event) => {
@@ -1000,7 +999,9 @@ export default function ProcessForm({ title, backUrl, transaction, step }) {
                     <p className="mt-2 text-sm text-ink-soft">
                         Finalisasi hanya dapat dilakukan setelah data,
                         checklist, tanggal aktual, catatan, dan dokumen wajib
-                        lengkap.
+                        lengkap. Untuk tahap pembangunan dan QC, tahap bisa
+                        dilewati jika status unit atau inspeksi sudah
+                        tersinkron.
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
                         {step.can_lock && (
@@ -1011,7 +1012,20 @@ export default function ProcessForm({ title, backUrl, transaction, step }) {
                             >
                                 {form.processing
                                     ? "Menyimpan & Memfinalisasi..."
-                                    : "Simpan, Finalisasi & Ajukan"}
+                                : "Simpan, Finalisasi & Ajukan"}
+                            </Button>
+                        )}
+                        {step.can_skip && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() =>
+                                    router.post(
+                                        `/admin/penjualan-terintegrasi/tahapan/${step.id}/skip`,
+                                    )
+                                }
+                            >
+                                Lewati Tahap & Buka Berikutnya
                             </Button>
                         )}
                         {step.can_unlock && (

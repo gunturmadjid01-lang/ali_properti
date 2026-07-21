@@ -302,13 +302,13 @@ class MaterialPurchaseRequestController extends Controller
     protected function options(): array
     {
         return [
-            'gudangs' => Gudang::query()->finalized()
+            'gudangs' => Gudang::query()
                 ->where('status', 'aktif')
                 ->orderBy('nama_gudang')
                 ->get(['id', 'nama_gudang'])
                 ->map(fn (Gudang $row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])
                 ->values(),
-            'barangMaterials' => BarangMaterial::query()->finalized()
+            'barangMaterials' => BarangMaterial::query()
                 ->orderBy('kode_barang')
                 ->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'harga_hpp'])
                 ->map(fn (BarangMaterial $row) => [

@@ -190,7 +190,40 @@ function fieldIsVisible(field, data) {
     return true;
 }
 
-export default function Index({ title, section, baseUrl, rows = { data: [], links: [] }, filters = {}, fields = [], options = {}, config = {} }) {
+const sectionMeta = {
+    defect: {
+        eyebrow: 'Punch list dan koreksi pekerjaan',
+        description: 'Catat defect per unit, hubungkan ke QC dan tahapan pembangunan, lalu lock saat siap direview.',
+        formLabel: 'Input Defect',
+        tableHint: 'Defect terbuka jadi pengikat untuk status siap huni.',
+    },
+    'perubahan-pekerjaan': {
+        eyebrow: 'Perubahan scope pekerjaan',
+        description: 'Pakai form ini untuk perubahan volume, spek, atau penyesuaian pekerjaan yang harus disetujui.',
+        formLabel: 'Input Perubahan Pekerjaan',
+        tableHint: 'Perubahan yang locked ikut jalur approval sebelum memengaruhi proyek.',
+    },
+    'tenaga-kerja-alat': {
+        eyebrow: 'Log tenaga kerja dan alat',
+        description: 'Pisahkan sumber tenaga kerja, alat, dan upah supaya histori proyek tetap bisa diaudit.',
+        formLabel: 'Input Tenaga Kerja & Alat',
+        tableHint: 'Form ini lebih operasional, jadi tidak memakai approval final.',
+    },
+    k3: {
+        eyebrow: 'Keselamatan kerja lapangan',
+        description: 'Rekam temuan K3, tindakan, dan status risiko agar bisa ditelusuri bersama status unit.',
+        formLabel: 'Input K3 / Safety',
+        tableHint: 'Temuan K3 menjadi bagian dari sinkron status kelayakan unit.',
+    },
+    'serah-terima-internal': {
+        eyebrow: 'Tahap akhir sebelum serah ke marketing/customer',
+        description: 'Gunakan form ini saat unit sudah mendekati siap huni supaya progress dan status pembangunan ikut terkunci.',
+        formLabel: 'Input Serah Terima Internal',
+        tableHint: 'Section ini yang paling dekat ke status siap huni.',
+    },
+};
+
+export default function Index({ title, section, sections = [], baseUrl, rows = { data: [], links: [] }, filters = {}, fields = [], options = {}, config = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [filterPerumahan, setFilterPerumahan] = useState(filters.perumahan_id ?? '');
     const [filterUnit, setFilterUnit] = useState(filters.detail_rumah_id ?? '');
@@ -297,22 +330,39 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
     const canApprove = config.canApprove ?? false;
     const canLock = config.canLock ?? false;
     const canUnlock = config.canUnlock ?? false;
+    const meta = sectionMeta[section] ?? {};
 
     return (
         <>
             <Head title={title} />
             <div className="grid gap-6">
                 <section className="rounded-lg border border-white/80 bg-white/78 p-6 shadow-soft dark:border-white/10 dark:bg-white/8">
-                    <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">Pengawasan Lapangan</p>
+                    <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">{meta.eyebrow ?? 'Pengawasan Lapangan'}</p>
                     <h2 className="mt-2 font-display text-3xl font-extrabold">{title}</h2>
-                    <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">Data ini tersambung ke unit, progress, SPK, dan approval lapangan sesuai kebutuhan menu.</p>
+                    <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">{meta.description ?? 'Data ini tersambung ke unit, progress, SPK, dan approval lapangan sesuai kebutuhan menu.'}</p>
                 </section>
+
+                {sections.length > 0 && (
+                    <section className="flex flex-wrap gap-3 rounded-lg border border-white/70 bg-white/70 p-4 shadow-soft dark:border-white/10 dark:bg-white/8">
+                        {sections.map((item) => (
+                            <Button
+                                as="a"
+                                href={item.link}
+                                key={item.key}
+                                variant={item.key === section ? 'primary' : 'outline'}
+                                className="min-w-0"
+                            >
+                                {item.title}
+                            </Button>
+                        ))}
+                    </section>
+                )}
 
                 {(canCreate || (editing && canUpdate)) && (
                 <Form
                     collapsible
-                    title={editing ? `Edit ${editing.kode}` : `Input ${title}`}
-                    description="Isi data lapangan sesuai kejadian/realisasi, lalu manajer atau owner dapat melakukan approval bila dibutuhkan."
+                    title={editing ? `Edit ${editing.kode}` : (meta.formLabel ?? `Input ${title}`)}
+                    description={meta.tableHint ?? 'Isi data lapangan sesuai kejadian/realisasi, lalu manajer atau owner dapat melakukan approval bila dibutuhkan.'}
                     onSubmit={submit}
                     actions={<>{editing && canUpdate && <Button type="button" variant="outline" onClick={resetForm}><X size={15} /> Batal</Button>}<Button type="submit" disabled={form.processing}><FileText size={17} /> {editing ? 'Simpan Perubahan' : 'Simpan'}</Button></>}
                 >
@@ -346,6 +396,9 @@ export default function Index({ title, section, baseUrl, rows = { data: [], link
                 )}
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
+                    <div className="border-b border-silver-deep/40 px-5 py-4">
+                        <p className="text-sm font-extrabold">{meta.tableHint ?? 'Tabel data pengawasan.'}</p>
+                    </div>
                     <form className="grid gap-3 p-5 lg:grid-cols-[1.2fr_1fr_1fr_auto]" onSubmit={searchRows}>
                         <Input label="Cari" value={search} onChange={(event) => setSearch(event.target.value)} />
                         <div className="grid gap-2"><span className="text-sm font-extrabold">Perumahan</span><Dropdown value={filterPerumahan} label="Semua Perumahan" options={[{ value: '', label: 'Semua Perumahan' }, ...(options.perumahans ?? [])]} onChange={(value) => { setFilterPerumahan(value); setFilterUnit(''); }} /></div>

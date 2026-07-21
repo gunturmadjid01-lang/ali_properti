@@ -357,8 +357,39 @@ const sidebarMenu = [
                     {
                         title: "Pengawasan Lapangan",
                         icon: ClipboardCheck,
-                        link: "/admin/pengawasan/defect",
                         permission: "field-supervision.view",
+                        items: [
+                            {
+                                title: "Defect / Punch List",
+                                icon: ClipboardCheck,
+                                link: "/admin/pengawasan/defect",
+                                permission: "field-supervision.defect.view",
+                            },
+                            {
+                                title: "Perubahan Pekerjaan",
+                                icon: FileText,
+                                link: "/admin/pengawasan/perubahan-pekerjaan",
+                                permission: "field-supervision.work-change.view",
+                            },
+                            {
+                                title: "Tenaga Kerja & Alat",
+                                icon: HardHat,
+                                link: "/admin/pengawasan/tenaga-kerja-alat",
+                                permission: "field-supervision.manpower.view",
+                            },
+                            {
+                                title: "K3 / Safety Report",
+                                icon: ShieldCheck,
+                                link: "/admin/pengawasan/k3",
+                                permission: "field-supervision.safety.view",
+                            },
+                            {
+                                title: "Serah Terima Internal",
+                                icon: ClipboardCheck,
+                                link: "/admin/pengawasan/serah-terima-internal",
+                                permission: "field-supervision.handover.view",
+                            },
+                        ],
                     },
                 ],
             },
@@ -554,6 +585,12 @@ const sidebarMenu = [
                             "material-request.view",
                             "material-purchase.view",
                         ],
+                    },
+                    {
+                        title: "Daftar Gudang",
+                        icon: Warehouse,
+                        link: "/admin/gudang/manajemen/list",
+                        permission: "gudang.view",
                     },
                     {
                         title: "Master Material",

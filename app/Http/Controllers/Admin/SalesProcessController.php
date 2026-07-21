@@ -110,6 +110,7 @@ class SalesProcessController extends Controller
             'locked_at' => $step->locked_at?->format('d/m/Y H:i'),
             'locked_by' => $step->locker?->name,
             'completed_by' => $step->completer?->name,
+            'can_skip' => $request->user()?->can('sales-process.lock') && $step->record_status === 'draft' && in_array($step->status, ['available', 'in_progress'], true) && in_array($step->code, ['construction_preparation', 'construction', 'quality_inspection'], true),
             'approval' => $approval ? [
                 'status' => $human($approval->status),
                 'current_step' => $approval->current_step,
@@ -155,11 +156,11 @@ class SalesProcessController extends Controller
                 $metadata[$key] = $step->metadata['data'][$key];
             }
         }
-        $checklist = $data['checklist'] ?? [];
+        $checklist = $data['checklist'] ?? null;
         unset($data['attachment'],$data['checklist'],$data['metadata'],$data['finalize']);
         $data['outcome'] = $metadata['decision'] ?? $metadata['result'] ?? $metadata['payment_condition'] ?? $data['outcome'] ?? null;
         $data['metadata'] = ['data' => $metadata, 'dependencies' => $step->metadata['dependencies'] ?? SalesProcessDefinitions::dependencies($step->code, $step->salesTransaction->payment_method), 'sources' => $step->metadata['sources'] ?? []];
-        if ($finalize) {
+        if (is_array($checklist)) {
             foreach ($step->checklistItems as $item) {
                 $done = (bool) ($checklist[$item->item_key] ?? false);
                 $item->update(['is_completed' => $done, 'completed_by' => $done ? $request->user()?->id : null, 'completed_at' => $done ? now() : null]);
@@ -174,7 +175,7 @@ class SalesProcessController extends Controller
         $step->update([...$data, 'started_at' => $step->started_at ?: now(), 'status' => 'in_progress', 'updated_by' => $request->user()?->id]);
 
         if ($finalize) {
-            $approval = $this->finalizeStep($step, $request, app(ApprovalWorkflowService::class));
+            $approval = $this->finalizeStep($step, $request, app(ApprovalWorkflowService::class), is_array($checklist) ? $checklist : null);
 
             return back()->with('success', $approval->status === 'approved' ? 'Tahap disetujui dan tahap berikutnya dibuka.' : "Tahap diajukan ke approval {$approval->current_step}/{$approval->total_steps}.");
         }
@@ -213,6 +214,46 @@ class SalesProcessController extends Controller
         $approval = $this->finalizeStep($step, $request, $workflow);
 
         return back()->with('success', $approval->status === 'approved' ? 'Tahap disetujui dan tahap berikutnya dibuka.' : "Tahap diajukan ke approval {$approval->current_step}/{$approval->total_steps}.");
+    }
+
+    public function skip(Request $request, SalesProcessStep $step): RedirectResponse
+    {
+        $this->allow($request, 'sales-process.lock');
+        abort_unless($step->record_status === 'draft' && in_array($step->status, ['available', 'in_progress'], true), 422, 'Tahap belum tersedia atau sudah difinalisasi.');
+        abort_unless(in_array($step->code, ['construction_preparation', 'construction', 'quality_inspection'], true), 422, 'Tahap ini tidak bisa dilewati.');
+        $step = app(SalesProcessService::class)->syncContext($step)->load(['salesTransaction.housingUnit', 'checklistItems', 'documents']);
+        $reason = match ($step->code) {
+            'construction_preparation', 'construction' => $step->metadata['skip_reason'] ?? 'Unit sudah siap sehingga tahap pembangunan dilewati.',
+            'quality_inspection' => $step->metadata['skip_reason'] ?? 'Inspeksi mutu sudah final sehingga tahap ini dilewati.',
+            default => 'Tahap dilewati.',
+        };
+        abort_if($step->code !== 'quality_inspection' && empty($step->metadata['skip_reason']) && ! ($step->salesTransaction?->housingUnit?->status_pembangunan === 'selesai' || (float) $step->salesTransaction?->housingUnit?->progress_terakhir >= 100), 422, 'Tahap ini belum memenuhi syarat untuk dilewati.');
+        abort_if($step->code === 'quality_inspection' && empty($step->metadata['skip_reason']), 422, 'Inspeksi mutu belum final sehingga belum bisa dilewati.');
+
+        DB::transaction(function () use ($step, $request, $reason) {
+            $locked = SalesProcessStep::with(['salesTransaction.processSteps'])->lockForUpdate()->findOrFail($step->id);
+            abort_if($locked->record_status !== 'draft' || ! in_array($locked->status, ['available', 'in_progress'], true), 422, 'Tahap belum tersedia atau sudah difinalisasi.');
+            $locked->update([
+                'status' => 'skipped',
+                'actual_date' => $locked->actual_date ?: now(),
+                'updated_by' => $request->user()?->id,
+                'metadata' => [
+                    ...($locked->metadata ?? []),
+                    'skip_reason' => $reason,
+                    'data' => [
+                        ...($locked->metadata['data'] ?? []),
+                        'skip_reason' => $reason,
+                    ],
+                ],
+            ]);
+
+            app(SalesProcessService::class)->syncUnitState($locked->salesTransaction->fresh());
+            $locked->salesTransaction->fresh(['processSteps'])->processSteps
+                ->where('status', 'waiting')
+                ->each(fn ($candidate) => app(SalesProcessService::class)->dependenciesMet($candidate) && $candidate->update(['status' => 'available']));
+        });
+
+        return back()->with('success', 'Tahap dilewati dan proses berikutnya dibuka.');
     }
 
     public function updateDocumentChecklist(Request $request, SalesProcessStep $step): RedirectResponse
@@ -286,9 +327,9 @@ class SalesProcessController extends Controller
         return Storage::disk('public')->download($document->file_path, $document->original_name);
     }
 
-    private function validateCompletion(SalesProcessStep $step): void
+    private function validateCompletion(SalesProcessStep $step, ?array $checklistOverride = null): void
     {
-        $checklist = $step->checklistItems
+        $checklist = $checklistOverride ?? $step->checklistItems
             ->mapWithKeys(fn ($item) => [$item->item_key => (bool) $item->is_completed])
             ->all();
 
@@ -324,9 +365,9 @@ class SalesProcessController extends Controller
                 $errors['metadata.'.$field['name']] = $field['label'].' harus berupa angka yang valid.';
             }
         }
-        foreach ($definition['checklist'] as $item) {
-            if ($item['required'] && ! (bool) ($checklist[$item['key']] ?? false)) {
-                $errors['checklist.'.$item['key']] = 'Checklist "'.$item['label'].'" wajib dicentang.';
+        foreach ($step->checklistItems as $item) {
+            if ($item->is_required && ! (bool) ($checklist[$item->item_key] ?? false)) {
+                $errors['checklist.'.$item->item_key] = 'Checklist "'.$item->label.'" wajib dicentang.';
             }
         }
         $present = $step->documents->pluck('document_type');
@@ -356,11 +397,11 @@ class SalesProcessController extends Controller
         return $value === null || (is_string($value) && trim($value) === '');
     }
 
-    private function finalizeStep(SalesProcessStep $step, Request $request, ApprovalWorkflowService $workflow): ApprovalRequest
+    private function finalizeStep(SalesProcessStep $step, Request $request, ApprovalWorkflowService $workflow, ?array $checklistOverride = null): ApprovalRequest
     {
         abort_unless($step->record_status === 'draft' && in_array($step->status, ['available', 'in_progress'], true), 422);
         $step = $step->fresh(['checklistItems', 'documents', 'salesTransaction.paymentSchedules', 'salesTransaction.housingUnit']);
-        $this->validateCompletion($step);
+        $this->validateCompletion($step, $checklistOverride);
         $this->validateDomain($step);
         $step->update(['record_status' => 'locked', 'status' => 'pending_approval', 'locked_at' => now(), 'locked_by' => $request->user()?->id]);
 

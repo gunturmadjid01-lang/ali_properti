@@ -45,7 +45,7 @@ Setiap modul bisnis baru wajib:
 - Infrastruktur lock terpusat pada controller yang menggunakan `HandlesCrudLock`; status tabel per modul tetap harus diverifikasi dengan kontrak UI di `docs/ai-module-approval-contract.md`.
 - Marketing Campaign, Template, Target, dan Komisi.
 - Milestone KPR/Akad/Serah Terima.
-- Pengawasan lapangan: defect, perubahan pekerjaan, tenaga kerja/alat, K3, dan serah terima internal.
+- Pengawasan lapangan: defect, perubahan pekerjaan, tenaga kerja/alat, K3, dan serah terima internal. UI sudah dipisah per section dengan permission granular `field-supervision.{section}.{action}`, sementara approval final tetap memakai workflow pusat `field-supervision` agar relasi data, lock, dan review tetap satu jalur.
 - Seluruh transaksi arsip Aset Perusahaan.
 - Seluruh transaksi arsip Alat Berat.
 - Modul yang sudah terdaftar di `ApprovalResources` dan memakai alur lock terpusat.

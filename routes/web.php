@@ -98,7 +98,7 @@ use Inertia\Inertia;
 Route::get('/media/{path}', function (string $path) {
     abort_if(str_contains($path, '..'), 404);
 
-    $file = storage_path('app/public/'.$path);
+    $file = storage_path('app/public/' . $path);
 
     abort_unless(is_file($file), 404);
 
@@ -179,8 +179,15 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::put('/{salary}', [EmployeeSalaryMasterController::class, 'update'])->name('update');
         Route::patch('/{salary}/status', [EmployeeSalaryMasterController::class, 'toggle'])->name('toggle');
     });
-    Route::middleware('auth')->prefix('panjar-pegawai')->name('admin.employee-advances.')->group(function(){
-        Route::get('/',[EmployeeAdvanceController::class,'index'])->name('index');Route::get('/create',[EmployeeAdvanceController::class,'create'])->name('create');Route::post('/',[EmployeeAdvanceController::class,'store'])->name('store');Route::get('/{advance}/edit',[EmployeeAdvanceController::class,'edit'])->name('edit');Route::put('/{advance}',[EmployeeAdvanceController::class,'update'])->name('update');Route::post('/{advance}/lock',[EmployeeAdvanceController::class,'lock'])->name('lock');Route::post('/{advance}/unlock',[EmployeeAdvanceController::class,'unlock'])->name('unlock');Route::post('/{advance}/review/{decision}',[EmployeeAdvanceController::class,'review'])->whereIn('decision',['approve','reject'])->name('review');
+    Route::middleware('auth')->prefix('panjar-pegawai')->name('admin.employee-advances.')->group(function () {
+        Route::get('/', [EmployeeAdvanceController::class, 'index'])->name('index');
+        Route::get('/create', [EmployeeAdvanceController::class, 'create'])->name('create');
+        Route::post('/', [EmployeeAdvanceController::class, 'store'])->name('store');
+        Route::get('/{advance}/edit', [EmployeeAdvanceController::class, 'edit'])->name('edit');
+        Route::put('/{advance}', [EmployeeAdvanceController::class, 'update'])->name('update');
+        Route::post('/{advance}/lock', [EmployeeAdvanceController::class, 'lock'])->name('lock');
+        Route::post('/{advance}/unlock', [EmployeeAdvanceController::class, 'unlock'])->name('unlock');
+        Route::post('/{advance}/review/{decision}', [EmployeeAdvanceController::class, 'review'])->whereIn('decision', ['approve', 'reject'])->name('review');
     });
 
     Route::middleware('auth')->prefix('chat')->name('admin.chat.')->group(function () {
@@ -298,6 +305,11 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     });
 
     Route::get('/gudang', [GudangController::class, 'index'])->name('admin.gudang.index');
+    Route::get('/gudang/create', [GudangController::class, 'create'])->name('admin.gudang.create');
+    Route::get('/gudang/{id}/edit', [GudangController::class, 'edit'])->name('admin.gudang.edit');
+    Route::get('/gudang/manajemen/list', [GudangController::class, 'manajemen'])->name('admin.gudang.manajemen');
+    Route::post('/gudang/{id}/assign-user', [GudangController::class, 'assignUser'])->name('admin.gudang.assign-user');
+    Route::post('/gudang/{id}/remove-user', [GudangController::class, 'removeUser'])->name('admin.gudang.remove-user');
     Route::post('/gudang', [GudangController::class, 'store'])->name('admin.gudang.store');
     Route::put('/gudang/{id}', [GudangController::class, 'update'])->name('admin.gudang.update');
     Route::delete('/gudang/{id}', [GudangController::class, 'destroy'])->name('admin.gudang.destroy');
@@ -500,7 +512,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('/permintaan-pembelian/{id}/lock', [MaterialPurchaseRequestController::class, 'lock'])->name('admin.material-purchase-request.lock');
     Route::post('/permintaan-pembelian/{id}/unlock', [MaterialPurchaseRequestController::class, 'unlock'])->name('admin.material-purchase-request.unlock');
     Route::get('/rekening-bank', [BankAccountLedgerController::class, 'index'])->name('admin.bank-account-ledger.index');
-    Route::get('/keuangan/transaksi-kas-bank', fn () => redirect('/admin/keuangan/pemasukan'));
+    Route::get('/keuangan/transaksi-kas-bank', fn() => redirect('/admin/keuangan/pemasukan'));
     Route::get('/keuangan/piutang', [CustomerReceivableController::class, 'receivables'])->name('admin.receivables.index');
     Route::get('/keuangan/monitoring-jatuh-tempo', [CustomerReceivableController::class, 'dueMonitor'])->name('admin.receivables.due-monitor');
     Route::put('/keuangan/monitoring-jatuh-tempo/pengaturan', [CustomerReceivableController::class, 'updateDueSetting'])->name('admin.receivables.due-setting');
@@ -545,6 +557,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::put('/tahapan/{step}', [SalesProcessController::class, 'update'])->name('admin.sales-process.update');
         Route::put('/tahapan/{step}/checklist', [SalesProcessController::class, 'updateChecklist'])->name('admin.sales-process.checklist.update');
         Route::post('/tahapan/{step}/lock', [SalesProcessController::class, 'lock'])->name('admin.sales-process.lock');
+        Route::post('/tahapan/{step}/skip', [SalesProcessController::class, 'skip'])->name('admin.sales-process.skip');
         Route::post('/tahapan/{step}/unlock', [SalesProcessController::class, 'unlock'])->name('admin.sales-process.unlock');
         Route::post('/tahapan/{step}/review/{decision}', [SalesProcessController::class, 'review'])->whereIn('decision', ['approve', 'reject'])->name('admin.sales-process.review');
         Route::get('/tahapan/{step}/lampiran', [SalesProcessController::class, 'attachment'])->name('admin.sales-process.attachment');
@@ -564,12 +577,12 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::post('/{section}/records/{id}/unlock', [IntegratedSalesController::class, 'unlockProcess'])->name('admin.integrated-sales.unlock');
         Route::post('/{section}/records/{id}/review/{decision}', [IntegratedSalesController::class, 'reviewProcess'])->whereIn('decision', ['approve', 'reject'])->name('admin.integrated-sales.review');
     });
-    Route::get('/kpr', fn () => redirect()->route('admin.integrated-sales.index', 'bank-applications'))->name('admin.kpr.index');
+    Route::get('/kpr', fn() => redirect()->route('admin.integrated-sales.index', 'bank-applications'))->name('admin.kpr.index');
     Route::post('/kpr/{submission}/financing', [BankKprFinancialController::class, 'saveFinancing'])->name('admin.kpr.financing.save');
     Route::post('/kpr/financing/{financing}/lock', [BankKprFinancialController::class, 'lockFinancing'])->name('admin.kpr.financing.lock');
     Route::post('/kpr/{submission}/disbursements', [BankKprFinancialController::class, 'storeDisbursement'])->name('admin.kpr.disbursement.store');
     Route::post('/kpr/disbursements/{disbursement}/lock', [BankKprFinancialController::class, 'lockDisbursement'])->name('admin.kpr.disbursement.lock');
-    Route::get('/kpr/{id}', fn (string $id) => redirect()->route('admin.integrated-sales.show', ['bank-applications', $id]))->name('admin.kpr.show');
+    Route::get('/kpr/{id}', fn(string $id) => redirect()->route('admin.integrated-sales.show', ['bank-applications', $id]))->name('admin.kpr.show');
 
     Route::prefix('approval')->name('admin.approval.')->group(function () {
         Route::get('/', [ApprovalRequestController::class, 'index'])->name('requests.index');
@@ -626,7 +639,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::resource('cabang-perusahaan', AdminCabangPerusahaanController::class)->parameters(['cabang-perusahaan' => 'id'])->except(['show']);
         Route::resource('perumahan', AdminPerumahanController::class)->parameters(['perumahan' => 'id'])->except(['show']);
         Route::resource('master-bank', AdminMasterBankController::class)->parameters(['master-bank' => 'id'])->except(['show']);
-        Route::get('bank-kredit', fn () => redirect()->route('admin.bank-master.index'))->name('bank-kredit.index');
+        Route::get('bank-kredit', fn() => redirect()->route('admin.bank-master.index'))->name('bank-kredit.index');
         Route::resource('dokumen-legalitas', AdminDokumenLegalitasController::class)->parameters(['dokumen-legalitas' => 'id'])->except(['show']);
         Route::resource('dokumen-legalitas-rumah', AdminDokumenLegalitasRumahController::class)->parameters(['dokumen-legalitas-rumah' => 'id'])->except(['create', 'show', 'edit']);
         Route::resource('master-dokumen-customer', AdminDokumenCostumerController::class)->parameters(['master-dokumen-customer' => 'id'])->except(['show']);

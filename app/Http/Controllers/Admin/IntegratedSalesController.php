@@ -513,6 +513,10 @@ class IntegratedSalesController extends Controller
     private function transactionPayload(SalesTransaction $record, callable $human): array
     {
         $money = fn ($v) => 'Rp '.number_format((float) $v, 0, ',', '.');
+        if ($record->detail_rumah_id) {
+            app(SalesProcessService::class)->syncLinkedUnitData((int) $record->detail_rumah_id);
+            $record->refresh()->loadMissing(['processSteps.checklistItems', 'processSteps.documents', 'housingUnit']);
+        }
         $progress = DB::table('progress_pembangunans')->leftJoin('tahapan_pembangunans', 'tahapan_pembangunans.id', '=', 'progress_pembangunans.tahapan_pembangunan_id')->where('progress_pembangunans.detail_rumah_id', $record->detail_rumah_id)->whereNull('progress_pembangunans.deleted_at')->orderByDesc('progress_pembangunans.tanggal')->get(['progress_pembangunans.nama_progress', 'progress_pembangunans.tanggal', 'progress_pembangunans.persentase_total', 'progress_pembangunans.keterangan', 'tahapan_pembangunans.nama_tahapan'])->map(fn ($r) => ['label' => $r->nama_progress ?: $r->nama_tahapan, 'date' => $r->tanggal, 'value' => ($r->persentase_total ?? 0).'%', 'notes' => $r->keterangan]);
         $handover = DB::table('internal_handovers')->where('detail_rumah_id', $record->detail_rumah_id)->whereNull('deleted_at')->orderByDesc('tanggal')->get()->map(fn ($r) => ['label' => $r->kode_serah_terima, 'date' => $r->tanggal, 'value' => $human($r->status ?? $r->record_status), 'notes' => $r->catatan ?? $r->keterangan ?? null]);
         $after = DB::table('field_defects')->where('detail_rumah_id', $record->detail_rumah_id)->whereNull('deleted_at')->orderByDesc('tanggal')->get()->map(fn ($r) => ['label' => $r->kode_defect.' — '.$r->kategori, 'date' => $r->tanggal, 'value' => $human($r->status), 'notes' => $r->temuan.' '.($r->instruksi_perbaikan ?? '')]);

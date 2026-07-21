@@ -262,7 +262,7 @@ class MasterMaterialController extends Controller
     {
         $user = auth()->user();
 
-        $query = Gudang::query()->finalized()->where('status', 'aktif');
+        $query = Gudang::query()->where('status', 'aktif');
 
         if ($user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])) {
             $assignedIds = $this->assignedGudangIds($user);

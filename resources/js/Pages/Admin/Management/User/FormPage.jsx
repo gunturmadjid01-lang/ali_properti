@@ -101,7 +101,7 @@ const accountSections = [
         description:
             "Role ditetapkan otomatis sesuai panel; pilih wilayah kerja yang relevan.",
         icon: MapPinned,
-        fields: ["gudang_id", "perumahan_ids"],
+        fields: ["gudang_ids", "perumahan_ids"],
     },
 ];
 
@@ -226,10 +226,10 @@ export default function FormPage({
                             Catatan pilihan perusahaan dan properti
                         </p>
                         {optionNotices.branches && (
-                            <p className="mt-1">• {optionNotices.branches}</p>
+                            <p className="mt-1">{`- ${optionNotices.branches}`}</p>
                         )}
                         {optionNotices.housings && (
-                            <p className="mt-1">• {optionNotices.housings}</p>
+                            <p className="mt-1">{`- ${optionNotices.housings}`}</p>
                         )}
                         <div className="mt-3 flex flex-wrap gap-2">
                             {optionNotices.branches && (

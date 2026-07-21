@@ -18,6 +18,7 @@ use App\Models\SpkKontraktor;
 use App\Models\TahapanPembangunan;
 use App\Models\WorkChangeRequest;
 use App\Services\ApprovalWorkflowService;
+use App\Services\SalesProcessService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
@@ -35,6 +36,8 @@ class FieldSupervisionController extends Controller
     protected array $sections = [
         'defect' => [
             'title' => 'Defect / Punch List',
+            'page' => 'Defect',
+            'permission' => 'field-supervision.defect',
             'model' => FieldDefect::class,
             'code' => 'kode_defect',
             'prefix' => 'DEF',
@@ -43,6 +46,8 @@ class FieldSupervisionController extends Controller
         ],
         'perubahan-pekerjaan' => [
             'title' => 'Perubahan Pekerjaan',
+            'page' => 'WorkChange',
+            'permission' => 'field-supervision.work-change',
             'model' => WorkChangeRequest::class,
             'code' => 'kode_perubahan',
             'prefix' => 'CHG',
@@ -51,6 +56,8 @@ class FieldSupervisionController extends Controller
         ],
         'tenaga-kerja-alat' => [
             'title' => 'Tenaga Kerja & Alat',
+            'page' => 'Manpower',
+            'permission' => 'field-supervision.manpower',
             'model' => SiteManpowerLog::class,
             'code' => 'kode_log',
             'prefix' => 'MNP',
@@ -59,6 +66,8 @@ class FieldSupervisionController extends Controller
         ],
         'k3' => [
             'title' => 'K3 / Safety Report',
+            'page' => 'Safety',
+            'permission' => 'field-supervision.safety',
             'model' => SafetyReport::class,
             'code' => 'kode_k3',
             'prefix' => 'K3',
@@ -67,6 +76,8 @@ class FieldSupervisionController extends Controller
         ],
         'serah-terima-internal' => [
             'title' => 'Serah Terima Internal',
+            'page' => 'Handover',
+            'permission' => 'field-supervision.handover',
             'model' => InternalHandover::class,
             'code' => 'kode_serah_terima',
             'prefix' => 'STI',
@@ -78,6 +89,7 @@ class FieldSupervisionController extends Controller
     public function show(Request $request, string $section): Response
     {
         $config = $this->config($section);
+        $this->authorizeSection($section, 'view');
         $model = $config['model'];
         $search = trim((string) $request->query('search', ''));
         $perumahanId = $request->query('perumahan_id');
@@ -94,9 +106,10 @@ class FieldSupervisionController extends Controller
             ->withQueryString()
             ->through(fn (Model $row) => $this->row($row, $section));
 
-        return Inertia::render('Admin/FieldSupervision/Index', [
+        return Inertia::render("Admin/FieldSupervision/{$config['page']}", [
             'title' => $config['title'],
             'section' => $section,
+            'sections' => $this->sectionNavigation(),
             'baseUrl' => route('admin.field-supervision.show', $section, absolute: false),
             'filters' => ['search' => $search, 'perumahan_id' => $perumahanId, 'detail_rumah_id' => $detailRumahId],
             'rows' => $rows,
@@ -106,10 +119,10 @@ class FieldSupervisionController extends Controller
                 'photo' => $config['photo'],
                 'approval' => $config['approval'],
                 'canApprove' => $config['approval'] && $this->requiresApprovalFor('field-supervision') && $this->canApproveFor('field-supervision'),
-                'canCreate' => $this->canFieldSupervision('create'),
-                'canUpdate' => $this->canFieldSupervision('update'),
-                'canDelete' => $this->canFieldSupervision('delete'),
-                'canLock' => $this->canFieldSupervision('update'),
+                'canCreate' => $this->canSection($section, 'create'),
+                'canUpdate' => $this->canSection($section, 'update'),
+                'canDelete' => $this->canSection($section, 'delete'),
+                'canLock' => $this->canSection($section, 'update'),
                 'canUnlock' => $this->canManageFieldLock(),
             ],
         ]);
@@ -117,8 +130,8 @@ class FieldSupervisionController extends Controller
 
     public function store(Request $request, string $section): RedirectResponse
     {
-        $this->authorizeFieldSupervision('create');
         $config = $this->config($section);
+        $this->authorizeSection($section, 'create');
         $validated = $this->validated($request, $section);
 
         DB::transaction(function () use ($request, $section, $config, $validated): void {
@@ -140,13 +153,15 @@ class FieldSupervisionController extends Controller
             }
         });
 
+        $this->syncUnitProgressState($validated['detail_rumah_id'] ?? null);
+
         return back()->with('success', $config['title'].' berhasil disimpan.');
     }
 
     public function update(Request $request, string $section, string $id): RedirectResponse
     {
-        $this->authorizeFieldSupervision('update');
         $config = $this->config($section);
+        $this->authorizeSection($section, 'update');
         $row = $this->findRow($section, $id);
         abort_if(($row->record_status ?? 'draft') === 'locked', 422, 'Data sudah locked.');
         $validated = $this->validated($request, $section);
@@ -169,18 +184,21 @@ class FieldSupervisionController extends Controller
             }
         });
 
+        $this->syncUnitProgressState($row->detail_rumah_id ?? ($validated['detail_rumah_id'] ?? null));
+
         return back()->with('success', $config['title'].' berhasil diperbarui.');
     }
 
     public function destroy(string $section, string $id): RedirectResponse
     {
-        $this->authorizeFieldSupervision('delete');
+        $this->authorizeSection($section, 'delete');
         $row = $this->findRow($section, $id);
         abort_if(($row->record_status ?? 'draft') === 'locked', 422, 'Data sudah locked.');
         if (isset($row->foto) && $row->foto) {
             Storage::disk('public')->delete($row->foto);
         }
         $row->delete();
+        $this->syncUnitProgressState($row->detail_rumah_id ?? null);
 
         return back()->with('success', 'Data berhasil dihapus.');
     }
@@ -214,6 +232,7 @@ class FieldSupervisionController extends Controller
                     'updated_by' => auth()->id(),
                 ]);
             }
+            $this->syncUnitProgressState($row->detail_rumah_id ?? null);
 
         });
 
@@ -222,7 +241,7 @@ class FieldSupervisionController extends Controller
 
     public function lock(string $section, string $id): RedirectResponse
     {
-        $this->authorizeFieldSupervision('update');
+        $this->authorizeSection($section, 'update');
         $row = $this->findRow($section, $id);
         $row->update(['record_status' => 'locked', 'locked_at' => now(), 'locked_by' => auth()->id()]);
         $key = match ($section) {
@@ -234,6 +253,7 @@ class FieldSupervisionController extends Controller
             default => abort(404),
         };
         $approval = app(ApprovalWorkflowService::class)->submitLocked($row, $key);
+        $this->syncUnitProgressState($row->detail_rumah_id ?? null);
 
         return back()->with('success', $approval->status === 'approved'
             ? 'Data dikunci dan disetujui otomatis.'
@@ -246,6 +266,7 @@ class FieldSupervisionController extends Controller
         $row = $this->findRow($section, $id);
         app(ApprovalWorkflowService::class)->cancelPendingLock($row);
         $row->update(['record_status' => 'draft', 'locked_at' => null, 'locked_by' => null]);
+        $this->syncUnitProgressState($row->detail_rumah_id ?? null);
 
         return back()->with('success', 'Data berhasil dibuka.');
     }
@@ -352,9 +373,9 @@ class FieldSupervisionController extends Controller
             'approved_by_name' => $row->approvedBy?->name ?? '-',
             'record_status' => $row->record_status ?? 'draft',
             'can_approve' => ($row->record_status ?? 'draft') === 'locked' && $config['approval'] && $this->requiresApprovalFor('field-supervision') && ($row->approval_status ?? null) !== 'approved' && $this->canApproveFor('field-supervision'),
-            'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canFieldSupervision('update'),
-            'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && $this->canFieldSupervision('delete'),
-            'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canFieldSupervision('update'),
+            'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSection($section, 'update'),
+            'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSection($section, 'delete'),
+            'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSection($section, 'update'),
             'can_unlock' => $this->canManageFieldLock(),
         ];
     }
@@ -373,6 +394,38 @@ class FieldSupervisionController extends Controller
             || $user->can("field-supervision.{$action}")
             || $user->can('field-supervision.manage')
         );
+    }
+
+    protected function authorizeSection(string $section, string $action): void
+    {
+        abort_unless($this->canSection($section, $action), 403, 'Anda tidak memiliki permission section pengawasan ini.');
+    }
+
+    protected function canSection(string $section, string $action): bool
+    {
+        $user = auth()->user();
+        $permission = $this->config($section)['permission'] ?? null;
+
+        return (bool) $user && (
+            $user->hasRole('super_admin')
+            || ($permission && $user->can("{$permission}.{$action}"))
+            || $user->can("field-supervision.{$action}")
+            || $user->can('field-supervision.manage')
+        );
+    }
+
+    protected function sectionNavigation(): array
+    {
+        return collect($this->sections)
+            ->map(fn (array $section, string $key) => [
+                'key' => $key,
+                'title' => $section['title'],
+                'page' => $section['page'],
+                'permission' => $section['permission'],
+                'link' => route('admin.field-supervision.show', $key, absolute: false),
+            ])
+            ->values()
+            ->all();
     }
 
     protected function canManageFieldLock(): bool
@@ -690,5 +743,14 @@ class FieldSupervisionController extends Controller
             ->map(fn (string $value) => ['value' => $value, 'label' => ucwords(str_replace('_', ' ', $value))])
             ->values()
             ->all();
+    }
+
+    protected function syncUnitProgressState(int|string|null $detailRumahId): void
+    {
+        if (blank($detailRumahId)) {
+            return;
+        }
+
+        app(SalesProcessService::class)->syncLinkedUnitData((int) $detailRumahId);
     }
 }

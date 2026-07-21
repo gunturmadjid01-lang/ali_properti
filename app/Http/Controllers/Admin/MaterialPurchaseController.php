@@ -344,7 +344,7 @@ class MaterialPurchaseController extends Controller
                 'gudang_id' => $gudangId,
             ],
             'options' => [
-                'gudangs' => Gudang::query()->finalized()
+                'gudangs' => Gudang::query()
                     ->where('status', 'aktif')
                     ->orderBy('nama_gudang')
                     ->get(['id', 'nama_gudang'])
@@ -413,8 +413,8 @@ class MaterialPurchaseController extends Controller
     protected function options(): array
     {
         return [
-            'gudangs' => Gudang::query()->finalized()->where('status', 'aktif')->orderBy('nama_gudang')->get(['id', 'nama_gudang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])->values(),
-            'barangMaterials' => BarangMaterial::query()->finalized()
+            'gudangs' => Gudang::query()->where('status', 'aktif')->orderBy('nama_gudang')->get(['id', 'nama_gudang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])->values(),
+            'barangMaterials' => BarangMaterial::query()
                 ->with(['baseUnit:id,name,symbol', 'unitConversions.childUnit:id,name,symbol'])
                 ->orderBy('kode_barang')
                 ->get(['id', 'kode_barang', 'nama_barang', 'satuan', 'harga_hpp', 'base_unit_id'])
@@ -429,7 +429,7 @@ class MaterialPurchaseController extends Controller
                     'unit_options' => app(MaterialUnitConversionService::class)->options($row),
                 ])
                 ->values(),
-            'suppliers' => Supplier::query()->finalized()
+            'suppliers' => Supplier::query()
                 ->where('status', 'aktif')
                 ->orderBy('nama_supplier')
                 ->get(['id', 'kode_supplier', 'nama_supplier', 'phone'])

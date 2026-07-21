@@ -822,9 +822,9 @@ export default function FloatingChat() {
     if (!user) return null;
     return (
         <>
-            <div className="fixed bottom-5 right-4 z-[60] sm:bottom-6 sm:right-6">
+            <div className="fixed right-4 top-1/2 z-[60] -translate-y-1/2 sm:right-6 flex flex-col items-end gap-3">
                 {open && (
-                    <section className="mb-3 flex h-[min(680px,calc(100vh-110px))] w-[calc(100vw-32px)] max-w-[400px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-silver-soft shadow-2xl dark:border-white/10 dark:bg-[#11161c]">
+                    <section className="flex h-[min(680px,calc(100vh-110px))] w-[calc(100vw-32px)] max-w-[400px] flex-col overflow-hidden rounded-2xl border border-white/70 bg-silver-soft shadow-2xl dark:border-white/10 dark:bg-[#11161c]">
                         <header className="bg-gradient-to-r from-ink to-graphite px-4 pb-3 pt-4 text-white dark:from-[#202833] dark:to-[#151a21]">
                             <div className="flex items-center justify-between gap-2">
                                 <div className="flex min-w-0 items-center gap-2">
@@ -1294,12 +1294,15 @@ export default function FloatingChat() {
                 <button
                     type="button"
                     onClick={() => setOpen(!open)}
-                    className="relative ml-auto flex min-h-14 items-center gap-2 rounded-2xl bg-gradient-to-r from-gold to-gold-deep px-5 font-black text-graphite shadow-[0_14px_35px_rgba(153,116,34,.35)] transition hover:-translate-y-0.5"
+                    className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-r from-gold to-gold-deep font-black text-graphite shadow-[0_14px_35px_rgba(153,116,34,.35)] transition hover:-translate-y-0.5 shrink-0"
+                    title={open ? "Tutup chat" : "Buka chat"}
                 >
-                    <MessageCircle size={21} />
-                    <span>{open ? "Tutup" : "Chat"}</span>
+                    <MessageCircle
+                        size={20}
+                        className={`transition-transform ${open ? "rotate-180" : ""}`}
+                    />
                     {unread > 0 && (
-                        <span className="absolute -right-2 -top-2 rounded-full bg-red-600 px-2 py-0.5 text-[10px] text-white ring-2 ring-white">
+                        <span className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 py-0.5 text-[9px] text-white ring-2 ring-white font-bold">
                             {unread > 99 ? "99+" : unread}
                         </span>
                     )}

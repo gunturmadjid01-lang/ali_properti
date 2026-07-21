@@ -42,7 +42,7 @@ class GudangController extends Controller
             'stats' => [
                 'total_gudang' => Gudang::query()->count(),
                 'gudang_aktif' => Gudang::query()->where('status', 'aktif')->count(),
-                'stok_kosong' => SiteMaterialStock::query()->where('qty_available', '<=', 0)->count(),
+                'stok_kosong' => $emptyStock,
                 'permintaan_material' => MaterialRequest::query()->whereIn('status', [MaterialRequest::STATUS_DIAJUKAN, MaterialRequest::STATUS_MENUNGGU_OWNER, MaterialRequest::STATUS_MENUNGGU_STOK])->count(),
                 'pengembalian_diajukan' => MaterialReturn::query()->where('status', MaterialReturn::STATUS_DIAJUKAN)->count(),
                 'pemakaian_hari_ini' => MaterialUsage::query()->whereDate('tanggal', now()->toDateString())->count(),
@@ -84,6 +84,39 @@ class GudangController extends Controller
         ]);
     }
 
+    public function create(): Response
+    {
+        return Inertia::render('Admin/Logistik/GudangForm', [
+            'title' => 'Tambah Gudang Baru',
+            'baseUrl' => route('admin.gudang.index', absolute: false),
+            'gudang' => null,
+            'options' => $this->options(),
+        ]);
+    }
+
+    public function edit(string $id): Response
+    {
+        $gudang = Gudang::query()->findOrFail($id);
+
+        return Inertia::render('Admin/Logistik/GudangForm', [
+            'title' => 'Edit Gudang',
+            'baseUrl' => route('admin.gudang.index', absolute: false),
+            'gudang' => [
+                'id' => $gudang->id,
+                'kode_gudang' => $gudang->kode_gudang,
+                'nama_gudang' => $gudang->nama_gudang,
+                'cabang_id' => (string) $gudang->cabang_id,
+                'perumahan_id' => (string) $gudang->perumahan_id,
+                'penanggung_jawab' => $gudang->penanggung_jawab,
+                'phone' => $gudang->phone,
+                'alamat' => $gudang->alamat,
+                'catatan' => $gudang->catatan,
+                'status' => $gudang->status,
+            ],
+            'options' => $this->options(),
+        ]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
         Gudang::query()->create([
@@ -118,6 +151,79 @@ class GudangController extends Controller
         return back()->with('success', 'Gudang berhasil dihapus.');
     }
 
+    public function manajemen(Request $request): Response
+    {
+        $search = trim((string) $request->query('search', ''));
+        $perumahanId = $request->query('perumahan_id');
+
+        $query = Gudang::query()
+            ->with(['cabang:id,nama_cabang', 'perumahan:id,nama_perusahaan', 'users:id,name,email']);
+
+        if ($search !== '') {
+            $query->where('kode_gudang', 'like', "%{$search}%")
+                ->orWhere('nama_gudang', 'like', "%{$search}%")
+                ->orWhere('penanggung_jawab', 'like', "%{$search}%");
+        }
+
+        if ($perumahanId) {
+            $query->where('perumahan_id', $perumahanId);
+        }
+
+        $gudangs = $query->latest('id')->paginate(15)->withQueryString();
+
+        $perumahans = Perumahan::query()
+            ->select('id', 'nama_perusahaan')
+            ->orderBy('nama_perusahaan')
+            ->get();
+
+        $allUsers = \App\Models\User::query()
+            ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['admin', 'manager', 'user_area_gudang']))
+            ->select('id', 'name', 'email')
+            ->orderBy('name')
+            ->get();
+
+        return Inertia::render('Admin/Logistik/ManajemenGudang', [
+            'title' => 'Manajemen Gudang',
+            'baseUrl' => route('admin.gudang.manajemen', absolute: false),
+            'rows' => $gudangs->through(fn (Gudang $row) => [
+                'id' => $row->id,
+                'kode_gudang' => $row->kode_gudang,
+                'nama_gudang' => $row->nama_gudang,
+                'cabang' => $row->cabang?->nama_cabang ?? '-',
+                'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
+                'penanggung_jawab' => $row->penanggung_jawab,
+                'status' => $row->status,
+                'users' => $row->users->map(fn ($user) => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email])->values(),
+            ]),
+            'filters' => [
+                'search' => $search,
+                'perumahan_id' => $perumahanId,
+            ],
+            'perumahans' => $perumahans,
+            'allUsers' => $allUsers,
+        ]);
+    }
+
+    public function assignUser(string $id, Request $request): RedirectResponse
+    {
+        $gudang = Gudang::query()->findOrFail($id);
+        $userId = $request->integer('user_id');
+
+        $gudang->users()->syncWithoutDetaching([$userId]);
+
+        return back()->with('success', 'Petugas berhasil ditugaskan ke gudang.');
+    }
+
+    public function removeUser(string $id, Request $request): RedirectResponse
+    {
+        $gudang = Gudang::query()->findOrFail($id);
+        $userId = $request->integer('user_id');
+
+        $gudang->users()->detach($userId);
+
+        return back()->with('success', 'Petugas berhasil dihapus dari gudang.');
+    }
+
     protected function payload(Request $request): array
     {
         return $request->validate([
@@ -134,7 +240,7 @@ class GudangController extends Controller
 
     protected function nextCode(): string
     {
-        return 'GDG-'.now()->format('Ym').'-'.str_pad((string) (Gudang::withTrashed()->count() + 1), 4, '0', STR_PAD_LEFT);
+        return 'GDG-' . now()->format('Ym') . '-' . str_pad((string) (Gudang::withTrashed()->count() + 1), 4, '0', STR_PAD_LEFT);
     }
 
     protected function options(): array

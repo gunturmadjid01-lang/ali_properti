@@ -638,7 +638,7 @@ class ReportCenterController extends Controller
     private function filterOptions(): array
     {
         return [
-            'gudangs' => $this->options(Gudang::query()->finalized()->orderBy('nama_gudang')->get(['id', 'nama_gudang']), 'nama_gudang'),
+            'gudangs' => $this->options(Gudang::query()->orderBy('nama_gudang')->get(['id', 'nama_gudang']), 'nama_gudang'),
             'suppliers' => $this->options(Supplier::query()->finalized()->orderBy('nama_supplier')->get(['id', 'nama_supplier']), 'nama_supplier'),
             'users' => $this->options(User::query()->orderBy('name')->get(['id', 'name']), 'name'),
             'perumahans' => $this->options(Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan']), 'nama_perusahaan'),

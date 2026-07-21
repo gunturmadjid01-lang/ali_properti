@@ -211,6 +211,30 @@ test('tahap operasional tidak dapat disimpan ketika data wajib belum lengkap', f
         ->and($step->fresh()->notes)->toBeNull();
 });
 
+test('menyimpan data pelaksanaan tanpa payload checklist tidak menghapus checklist yang sudah dicentang', function () {
+    Role::findOrCreate('super_admin', 'web');
+    $user = User::factory()->create(['phone' => '081200001236']);
+    $user->assignRole('super_admin');
+    $transaction = app(SalesPaymentWorkflowService::class)->processApprovedSpr(approvedWorkflowSpr('cash_bertahap'));
+    $step = SalesProcessStep::where('sales_transaction_id', $transaction->id)->where('code', 'contract_review')->firstOrFail();
+
+    $definition = SalesProcessDefinitions::get($step->code);
+    $checklist = collect($definition['checklist'])->mapWithKeys(fn ($item) => [$item['key'] => true])->all();
+
+    $this->actingAs($user)->put("/admin/penjualan-terintegrasi/tahapan/{$step->id}/checklist", [
+        'checklist' => $checklist,
+    ])->assertRedirect();
+
+    $this->actingAs($user)->put("/admin/penjualan-terintegrasi/tahapan/{$step->id}", [
+        'actual_date' => '2026-01-10',
+        'notes' => 'Checklist sudah lengkap, data pelaksanaan disimpan.',
+        'metadata' => ['contract_number' => 'CN-001', 'contract_version' => 'v1', 'final_price' => 100000000, 'booking_fee' => 5000000, 'down_payment' => 10000000, 'financed_amount' => 85000000, 'installment_count' => 12, 'first_due_date' => '2026-02-01', 'grace_days' => 7, 'penalty_terms' => 'Sesuai ketentuan', 'early_settlement_terms' => 'Sesuai ketentuan', 'cancellation_terms' => 'Sesuai ketentuan'],
+    ])->assertRedirect()->assertSessionHas('success', 'Data pelaksanaan tahap disimpan.');
+
+    $step->refresh()->load('checklistItems');
+    expect($step->checklistItems->where('is_required', true)->where('is_completed', false))->toBeEmpty();
+});
+
 test('definisi proses kritis memiliki input dan dokumen bisnis khusus', function (string $code, string $field, string $document) {
     $definition = SalesProcessDefinitions::get($code);
     expect(collect($definition['fields'])->pluck('name'))->toContain($field)->and(collect($definition['documents'])->pluck('type'))->toContain($document)->and(collect($definition['checklist'])->where('required', true)->count())->toBeGreaterThan(0);

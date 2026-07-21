@@ -197,23 +197,36 @@ export default function Dropdown({
             : null;
 
     return (
-        <div ref={wrapperRef} className={`relative ${className}`}>
+        <div ref={wrapperRef} className={`relative isolate ${className}`}>
             <div className="relative">
                 <button
                     ref={buttonRef}
                     id={id}
                     name={name}
-                    className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border bg-white/90 px-4 pr-16 text-left text-sm font-extrabold text-ink transition hover:bg-silver dark:bg-[#151a20] dark:text-white dark:hover:bg-white/12 ${error ? "border-red-500 dark:border-red-400" : "border-ink/70 dark:border-white/40"} ${buttonClassName}`}
+                    className={`relative z-20 flex min-h-11 w-full cursor-pointer items-center justify-between gap-3 rounded-lg border bg-white/90 px-4 pr-16 text-left text-sm font-extrabold text-ink transition hover:bg-silver dark:bg-[#151a20] dark:text-white dark:hover:bg-white/12 ${error ? "border-red-500 dark:border-red-400" : "border-ink/70 dark:border-white/40"} ${buttonClassName}`}
                     role="combobox"
                     aria-expanded={open}
                     type="button"
                     disabled={disabled}
-                    onClick={() => {
+                    onMouseDown={(event) => {
                         if (disabled) {
                             return;
                         }
-                        setOpen(!open);
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setOpen(true);
                         setSearch("");
+                    }}
+                    onKeyDown={(event) => {
+                        if (disabled) {
+                            return;
+                        }
+
+                        if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setOpen((current) => !current);
+                            setSearch("");
+                        }
                     }}
                 >
                     <span>{selected?.label ?? label}</span>
@@ -222,7 +235,7 @@ export default function Dropdown({
                         size={17}
                     />
                 </button>
-                <span className="absolute inset-y-0 right-9 z-10 flex items-center">
+                <span className="absolute inset-y-0 right-9 z-30 flex items-center">
                     <HelpTooltip
                         text={help ?? fieldHelp({ label })}
                         label={`Bantuan untuk ${label}`}

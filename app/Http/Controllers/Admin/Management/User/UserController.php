@@ -49,8 +49,8 @@ class UserController extends Controller
 
         $rows = User::query()
             ->with($this->relations())
-            ->when($section === 'pegawai', fn (Builder $query) => $query->whereNotNull('employee_number'))
-            ->when($section !== 'pegawai', fn (Builder $query) => $query->where('has_login_access', true)->whereHas('roles', fn (Builder $roles) => $roles->whereIn('name', self::SECTIONS[$section]['roles'])))
+            ->when($section === 'pegawai', fn(Builder $query) => $query->whereNotNull('employee_number'))
+            ->when($section !== 'pegawai', fn(Builder $query) => $query->where('has_login_access', true)->whereHas('roles', fn(Builder $roles) => $roles->whereIn('name', self::SECTIONS[$section]['roles'])))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     foreach ($this->searchableColumns() as $column) {
@@ -63,7 +63,7 @@ class UserController extends Controller
             ->withQueryString()
             ->through(function (User $row) use ($section): array {
                 $formatted = $this->formatRow($row);
-                $formatted['edit_url'] = route($this->routeName().'.edit', ['id' => $row->id, 'section' => $section], false);
+                $formatted['edit_url'] = route($this->routeName() . '.edit', ['id' => $row->id, 'section' => $section], false);
 
                 return $formatted;
             });
@@ -71,8 +71,8 @@ class UserController extends Controller
         return Inertia::render($this->component(), [
             'title' => $this->title(),
             'description' => $this->description(),
-            'baseUrl' => route($this->routeName().'.index', absolute: false),
-            'createUrl' => route($this->routeName().'.create', ['section' => $section], false),
+            'baseUrl' => route($this->routeName() . '.index', absolute: false),
+            'createUrl' => route($this->routeName() . '.create', ['section' => $section], false),
             'routeName' => $this->routeName(),
             'filters' => ['search' => $search, 'section' => $section],
             'rows' => $rows,
@@ -108,7 +108,7 @@ class UserController extends Controller
             $this->syncUserAssignments($user, $payload);
         });
 
-        return to_route($this->routeName().'.index', ['section' => $section])->with('success', $section === 'pegawai' ? 'Data pegawai berhasil ditambahkan.' : 'Akun '.self::SECTIONS[$section]['label'].' berhasil ditambahkan.');
+        return to_route($this->routeName() . '.index', ['section' => $section])->with('success', $section === 'pegawai' ? 'Data pegawai berhasil ditambahkan.' : 'Akun ' . self::SECTIONS[$section]['label'] . ' berhasil ditambahkan.');
     }
 
     public function update(UpdateUserRequest $request, string $id): RedirectResponse
@@ -125,7 +125,7 @@ class UserController extends Controller
             $this->syncUserAssignments($user, $payload);
         });
 
-        return to_route($this->routeName().'.index', ['section' => $section])->with('success', $section === 'pegawai' ? 'Data pegawai berhasil diperbarui.' : 'Akun '.self::SECTIONS[$section]['label'].' berhasil diperbarui.');
+        return to_route($this->routeName() . '.index', ['section' => $section])->with('success', $section === 'pegawai' ? 'Data pegawai berhasil diperbarui.' : 'Akun ' . self::SECTIONS[$section]['label'] . ' berhasil diperbarui.');
     }
 
     protected function formResponse(?User $user = null, string $section = 'marketing'): Response
@@ -153,14 +153,14 @@ class UserController extends Controller
         }
 
         return Inertia::render('Admin/Management/User/FormPage', [
-            'title' => $user ? 'Edit '.self::SECTIONS[$section]['label'] : 'Tambah '.self::SECTIONS[$section]['label'],
+            'title' => $user ? 'Edit ' . self::SECTIONS[$section]['label'] : 'Tambah ' . self::SECTIONS[$section]['label'],
             'description' => $section === 'pegawai'
                 ? 'Kelola identitas, status kerja, BPJS, pajak, dan rekening gaji secara terpisah dari akun aplikasi.'
-                : 'Kelola kredensial login dan penugasan '.self::SECTIONS[$section]['label'].'; role ditetapkan otomatis oleh panel ini.',
-            'baseUrl' => route($this->routeName().'.index', ['section' => $section], false),
+                : 'Kelola kredensial login dan penugasan ' . self::SECTIONS[$section]['label'] . '; role ditetapkan otomatis oleh panel ini.',
+            'baseUrl' => route($this->routeName() . '.index', ['section' => $section], false),
             'actionUrl' => $user
-                ? route($this->routeName().'.update', $user->id, false)
-                : route($this->routeName().'.store', absolute: false),
+                ? route($this->routeName() . '.update', $user->id, false)
+                : route($this->routeName() . '.store', absolute: false),
             'method' => $user ? 'put' : 'post',
             'fields' => $fields,
             'options' => $this->options(),
@@ -176,12 +176,12 @@ class UserController extends Controller
 
     protected function syncUserAssignments(User $user, array $payload): void
     {
-        $assignmentCacheKey = 'assigned-perumahans:'.$user->id.':'.(int) ($user->updated_at?->timestamp ?? 0);
-        $roleIds = collect($payload['role_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->values();
+        $assignmentCacheKey = 'assigned-perumahans:' . $user->id . ':' . (int) ($user->updated_at?->timestamp ?? 0);
+        $roleIds = collect($payload['role_ids'] ?? [])->map(fn($id) => (int) $id)->filter()->values();
         $roles = Role::query()->whereIn('id', $roleIds)->get();
         $roleNames = $roles->pluck('name');
 
-        $gudangIds = collect(filled($payload['gudang_id'] ?? null) ? [$payload['gudang_id']] : ($payload['gudang_ids'] ?? []))->map(fn ($id) => (int) $id)->filter()->values();
+        $gudangIds = collect($payload['gudang_ids'] ?? [])->map(fn($id) => (int) $id)->filter()->values();
         if ($roleNames->intersect(['user_area_gudang', 'admin_gudang'])->isEmpty()) {
             $gudangIds = collect();
         }
@@ -190,7 +190,7 @@ class UserController extends Controller
         $user->update(['gudang_id' => $gudangIds->first()]);
         $user->gudangs()->sync($gudangIds->all());
         $user->perumahans()->sync(
-            collect($payload['perumahan_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->values()->all(),
+            collect($payload['perumahan_ids'] ?? [])->map(fn($id) => (int) $id)->filter()->values()->all(),
         );
         $user->touch();
         Cache::forget($assignmentCacheKey);
@@ -224,7 +224,7 @@ class UserController extends Controller
         $this->abortIfLocked($user);
         $user->delete();
 
-        return back()->with('success', $this->title().' berhasil dihapus.');
+        return back()->with('success', $this->title() . ' berhasil dihapus.');
     }
 
     protected function payload(FormRequest $request, ?Model $row = null): array
@@ -306,9 +306,10 @@ class UserController extends Controller
                 ['name' => 'payroll_bank_account', 'label' => 'Nomor Rekening Gaji', 'type' => 'text', 'showWhen' => 'create_employee_profile'],
                 ['name' => 'payroll_bank_holder', 'label' => 'Nama Pemilik Rekening', 'type' => 'text', 'showWhen' => 'create_employee_profile'],
             ];
-            $fields[] = $section === 'gudang'
-                ? ['name' => 'gudang_id', 'label' => 'Gudang Utama', 'type' => 'select', 'optionsKey' => 'gudang', 'required' => true]
-                : ['name' => 'perumahan_ids', 'label' => 'Penugasan Multi-Perumahan / Properti', 'type' => 'checkboxes', 'optionsKey' => 'perumahan', 'full' => true];
+            if ($section === 'gudang') {
+                $fields[] = ['name' => 'gudang_ids', 'label' => 'Penugasan Gudang (Multi-Select)', 'type' => 'checkboxes', 'optionsKey' => 'gudang', 'required' => true, 'full' => true];
+            }
+            $fields[] = ['name' => 'perumahan_ids', 'label' => 'Penugasan Multi-Perumahan / Properti', 'type' => 'checkboxes', 'optionsKey' => 'perumahan', 'full' => true];
 
             return $fields;
         }
@@ -350,41 +351,42 @@ class UserController extends Controller
             'kantor_cabang_nama' => $row->kantorCabang?->nama_cabang,
             'gudang_id' => (string) ($row->gudang_id ?? ''),
             'gudang_nama' => $row->gudang?->nama_gudang ?? '-',
-            'gudang_ids' => $row->gudangs->pluck('id')->map(fn ($id) => (string) $id)->all(),
+            'gudang_ids' => $row->gudangs->pluck('id')->map(fn($id) => (string) $id)->all(),
             'gudang_text' => $row->gudangs->pluck('nama_gudang')->join(', ') ?: ($row->gudang?->nama_gudang ?? '-'),
-            'role_ids' => $row->roles->pluck('id')->map(fn ($id) => (string) $id)->all(),
-            'perumahan_ids' => $row->perumahans->pluck('id')->map(fn ($id) => (string) $id)->all(),
+            'role_ids' => $row->roles->pluck('id')->map(fn($id) => (string) $id)->all(),
+            'perumahan_ids' => $row->perumahans->pluck('id')->map(fn($id) => (string) $id)->all(),
             'perumahan_text' => $row->perumahans->pluck('nama_perusahaan')->join(', ') ?: '-',
             'roles_text' => $row->roles->pluck('name')->join(', '),
             'password' => '',
             'attendance_pin' => '',
-            'edit_url' => route($this->routeName().'.edit', $row->id, false),
+            'edit_url' => route($this->routeName() . '.edit', $row->id, false),
         ]);
     }
 
     protected function options(): array
     {
         return [
-            'job_positions' => JobPosition::query()->where('is_active', true)->orderBy('name')->get(['name'])->map(fn (JobPosition $position) => ['value' => $position->name, 'label' => $position->name])->values(),
+            'job_positions' => JobPosition::query()->where('is_active', true)->orderBy('name')->get(['name'])->map(fn(JobPosition $position) => ['value' => $position->name, 'label' => $position->name])->values(),
             'cabang' => CabangPerusahaan::query()->finalized()
                 ->orderBy('nama_cabang')
                 ->get(['id', 'nama_cabang'])
-                ->map(fn (CabangPerusahaan $cabang) => ['value' => (string) $cabang->id, 'label' => $cabang->nama_cabang])
+                ->map(fn(CabangPerusahaan $cabang) => ['value' => (string) $cabang->id, 'label' => $cabang->nama_cabang])
                 ->values(),
             'roles' => Role::query()
                 ->orderBy('name')
                 ->get(['id', 'name'])
-                ->map(fn (Role $role) => ['value' => (string) $role->id, 'label' => $role->name])
+                ->map(fn(Role $role) => ['value' => (string) $role->id, 'label' => $role->name])
                 ->values(),
-            'gudang' => Gudang::query()->finalized()
+            'gudang' => Gudang::query()
+                ->where('status', 'aktif')
                 ->orderBy('nama_gudang')
                 ->get(['id', 'nama_gudang'])
-                ->map(fn (Gudang $gudang) => ['value' => (string) $gudang->id, 'label' => $gudang->nama_gudang])
+                ->map(fn(Gudang $gudang) => ['value' => (string) $gudang->id, 'label' => $gudang->nama_gudang])
                 ->values(),
             'perumahan' => Perumahan::query()->finalized()->with('cabang:id,nama_cabang')
                 ->orderBy('nama_perusahaan')
                 ->get(['id', 'nama_perusahaan', 'cabang_id'])
-                ->map(fn (Perumahan $perumahan) => ['value' => (string) $perumahan->id, 'label' => $perumahan->nama_perusahaan.($perumahan->cabang ? ' — '.$perumahan->cabang->nama_cabang : '')])
+                ->map(fn(Perumahan $perumahan) => ['value' => (string) $perumahan->id, 'label' => $perumahan->nama_perusahaan . ($perumahan->cabang ? ' — ' . $perumahan->cabang->nama_cabang : '')])
                 ->values(),
             'employment_types' => [
                 ['value' => 'tetap', 'label' => 'Pegawai Tetap'],
@@ -446,18 +448,17 @@ class UserController extends Controller
             ...$payload,
             'has_login_access' => true,
             'role_ids' => [(string) $role->id],
-            'gudang_id' => $section === 'gudang' ? ($payload['gudang_id'] ?? null) : null,
-            'gudang_ids' => $section === 'gudang' && filled($payload['gudang_id'] ?? null) ? [(string) $payload['gudang_id']] : [],
-            'perumahan_ids' => $section === 'gudang' ? [] : ($payload['perumahan_ids'] ?? []),
+            'gudang_ids' => $section === 'gudang' ? ($payload['gudang_ids'] ?? []) : [],
+            'perumahan_ids' => $payload['perumahan_ids'] ?? [],
         ];
     }
 
     private function tabs(): array
     {
-        return collect(self::SECTIONS)->map(fn (array $config, string $key) => [
+        return collect(self::SECTIONS)->map(fn(array $config, string $key) => [
             'key' => $key,
             'label' => $config['label'],
-            'url' => route($this->routeName().'.index', ['section' => $key], false),
+            'url' => route($this->routeName() . '.index', ['section' => $key], false),
         ])->values()->all();
     }
 
@@ -474,10 +475,10 @@ class UserController extends Controller
             ];
         }
 
-        $roleCount = User::query()->where('has_login_access', true)->whereHas('roles', fn (Builder $query) => $query->whereIn('name', self::SECTIONS[$section]['roles']))->count();
+        $roleCount = User::query()->where('has_login_access', true)->whereHas('roles', fn(Builder $query) => $query->whereIn('name', self::SECTIONS[$section]['roles']))->count();
         $allRoleNames = collect(self::SECTIONS)->except('pegawai')->pluck('roles')->flatten()->all();
         $totalAccounts = User::query()->where('has_login_access', true)
-            ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', $allRoleNames))
+            ->whereHas('roles', fn(Builder $query) => $query->whereIn('name', $allRoleNames))
             ->count();
 
         return [
