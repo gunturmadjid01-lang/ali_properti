@@ -7,9 +7,11 @@ use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\UsesApprovalSettings;
 use App\Http\Controllers\Controller;
 use App\Models\ProgressPembangunan;
+use App\Models\ApprovalRequest;
 use App\Models\SiteReport;
 use App\Models\SiteSchedule;
 use App\Models\TahapanPembangunan;
+use App\Services\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -93,7 +95,9 @@ class SiteReportController extends Controller
                     'approved_by_name' => $row->approvedBy?->name ?? '-',
                     'lampiran_url' => $row->lampiran ? route('media', ['path' => $row->lampiran], false) : null,
                     'approval_status' => $row->approval_status,
-                    'can_approve' => ($row->record_status ?? 'draft') === 'locked' && $this->requiresApprovalFor('site-report') && $row->approval_status !== 'approved' && $this->canApproveFor('site-report'),
+                    'can_approve' => ($approval = $this->approvalFor($row)) ? app(ApprovalWorkflowService::class)->canReview($approval) : false,
+                    'approval_stage' => $approval?->current_step,
+                    'approval_total' => $approval?->total_steps,
                     'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSiteReport('update'),
                     'can_unlock' => $this->canSiteReport('unlock') || $this->currentUserCanManageLockedRecords(),
                     'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSiteReport('update'),
@@ -176,17 +180,24 @@ class SiteReportController extends Controller
 
     public function approve(string $id): RedirectResponse
     {
-        abort_unless($this->requiresApprovalFor('site-report'), 422, 'Laporan ini tidak memerlukan approval.');
-        abort_unless($this->canApproveFor('site-report'), 403, 'Anda tidak memiliki izin approval laporan.');
         $row = SiteReport::query()->findOrFail($id);
-        abort_unless(($row->record_status ?? 'draft') === 'locked', 422, 'Laporan harus di-lock terlebih dahulu.');
-        if ($row->approval_status === 'approved') {
-            return back()->with('success', 'Laporan lapangan sudah disetujui sebelumnya.');
-        }
+        $approval = $this->approvalFor($row);
+        abort_unless($approval && app(ApprovalWorkflowService::class)->canReview($approval), 403, 'Anda bukan reviewer pada tahap aktif.');
+        app(ApprovalWorkflowService::class)->approve($approval);
+        return back()->with('success', 'Approval tahap aktif berhasil diproses.');
+    }
 
-        $row->update(['approval_status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()]);
+    public function reject(Request $request, string $id): RedirectResponse
+    {
+        $approval = $this->approvalFor(SiteReport::query()->findOrFail($id));
+        abort_unless($approval && app(ApprovalWorkflowService::class)->canReview($approval), 403, 'Anda bukan reviewer pada tahap aktif.');
+        app(ApprovalWorkflowService::class)->reject($approval, $request->validate(['note' => ['required', 'string', 'min:3']])['note']);
+        return back()->with('success', 'Laporan dikembalikan menjadi draft.');
+    }
 
-        return back()->with('success', 'Laporan lapangan berhasil disetujui.');
+    private function approvalFor(SiteReport $row): ?ApprovalRequest
+    {
+        return ApprovalRequest::query()->where('model_type', $row::class)->where('model_id', $row->id)->latest('id')->first();
     }
 
     public function lock(string $id): RedirectResponse

@@ -17,8 +17,14 @@ class Journal extends Model
         'nomor_jurnal',
         'tanggal',
         'type',
+        'record_status',
+        'locked_at',
+        'locked_by',
+        'posted_at',
+        'posted_by',
         'source_type',
         'source_id',
+        'cabang_perusahaan_id',
         'perumahan_id',
         'detail_rumah_id',
         'master_bank_id',
@@ -32,6 +38,8 @@ class Journal extends Model
         'tanggal' => 'date',
         'total_debit' => 'float',
         'total_kredit' => 'float',
+        'locked_at' => 'datetime',
+        'posted_at' => 'datetime',
     ];
 
     public function source(): MorphTo
@@ -49,6 +57,11 @@ class Journal extends Model
         return $this->belongsTo(Perumahan::class);
     }
 
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(CabangPerusahaan::class, 'cabang_perusahaan_id');
+    }
+
     public function detailRumah(): BelongsTo
     {
         return $this->belongsTo(DetailRumah::class);
@@ -62,5 +75,10 @@ class Journal extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function latestApproval()
+    {
+        return $this->morphOne(ApprovalRequest::class, 'model')->latestOfMany();
     }
 }

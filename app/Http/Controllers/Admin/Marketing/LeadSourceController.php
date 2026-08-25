@@ -10,6 +10,7 @@ use App\Models\MarketingLeadSource;
 use App\Services\ApprovalWorkflowService;
 use App\Support\CodeGenerator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -62,7 +63,7 @@ class LeadSourceController extends Controller
                 'updated_by_name' => $source->updater?->name ?? '-',
                 'can_edit' => ($source->record_status ?? 'draft') !== 'locked' && $this->hasAnyMarketingPermission($request, ['marketing.lead-source.update', 'marketing-lead-source.update', 'marketing.lead-source.manage']),
                 'can_delete' => ($source->record_status ?? 'draft') !== 'locked' && $this->hasAnyMarketingPermission($request, ['marketing.lead-source.delete', 'marketing-lead-source.delete', 'marketing.lead-source.manage']),
-                'can_lock' => (bool) auth()->check() && ($source->record_status ?? 'draft') !== 'locked',
+                'can_lock' => ($source->record_status ?? 'draft') !== 'locked' && $this->hasAnyMarketingPermission($request, ['marketing.lead-source.manage', 'marketing-lead-source.lock']),
                 'can_unlock' => (($source->record_status ?? 'draft') === 'locked') && $this->currentUserCanManageLockedRecords(),
             ]);
 
@@ -77,10 +78,6 @@ class LeadSourceController extends Controller
                 'canUpdate' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.update', 'marketing-lead-source.update']),
                 'canDelete' => $canManage || $this->hasAnyMarketingPermission($request, ['marketing.lead-source.delete', 'marketing-lead-source.delete']),
                 'canUnlock' => $canManage || $this->currentUserCanManageLockedRecords(),
-            ],
-            'options' => [
-                'kategoriOptions' => $this->kategoriOptions(),
-                'statusOptions' => $this->statusOptions(),
             ],
         ]);
     }
@@ -153,6 +150,27 @@ class LeadSourceController extends Controller
     protected function modelClass(): string
     {
         return MarketingLeadSource::class;
+    }
+
+    protected function abortIfLocked(Model $model): void
+    {
+        abort_if(($model->record_status ?? 'draft') === 'locked', 422, 'Data sudah dikunci. Gunakan Unlock sebelum melakukan perubahan.');
+    }
+
+    protected function authorizeLockPermission(): void
+    {
+        abort_unless($this->hasAnyMarketingPermission(request(), ['marketing.lead-source.manage', 'marketing-lead-source.lock']), 403);
+    }
+
+    protected function currentUserCanManageLockedRecords(): bool
+    {
+        $user = auth()->user();
+
+        return (bool) ($user?->hasRole('super_admin')
+            || $user?->can('marketing.lead-source.manage')
+            || $user?->can('marketing.lead-source.unlock')
+            || $user?->can('marketing-lead-source.manage')
+            || $user?->can('marketing-lead-source.unlock'));
     }
 
     private function validatePayload(Request $request): array

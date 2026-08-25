@@ -16,6 +16,8 @@ class ApprovalRequest extends Model
 
     public const STATUS_REJECTED = 'rejected';
 
+    public const STATUS_REVERSED = 'reversed';
+
     protected $fillable = [
         'module_key',
         'module_label',

@@ -140,6 +140,21 @@ class User extends Authenticatable
 
     public function costumers(): HasMany
     {
+        return $this->hasMany(Costumer::class, 'assigned_marketing_id');
+    }
+
+    public function assignedCostumers(): HasMany
+    {
+        return $this->hasMany(Costumer::class, 'assigned_marketing_id');
+    }
+
+    public function marketingLeads(): HasMany
+    {
+        return $this->hasMany(MarketingLead::class, 'marketing_id');
+    }
+
+    public function createdCustomers(): HasMany
+    {
         return $this->hasMany(Costumer::class, 'created_by');
     }
 
@@ -153,6 +168,16 @@ class User extends Authenticatable
         return $this->hasMany(MarketingSurveySchedule::class, 'marketing_id');
     }
 
+    public function marketingVisits(): HasMany
+    {
+        return $this->hasMany(MarketingVisit::class, 'marketing_id');
+    }
+
+    public function marketingActionPlans(): HasMany
+    {
+        return $this->hasMany(MarketingActionPlan::class, 'marketing_id');
+    }
+
     public function marketingReminders(): HasMany
     {
         return $this->hasMany(MarketingReminder::class, 'user_id');
@@ -161,5 +186,10 @@ class User extends Authenticatable
     public function kprSubmissions(): HasMany
     {
         return $this->hasMany(KprSubmission::class, 'handled_by');
+    }
+
+    public function assignedSalesWorkItems(): HasMany
+    {
+        return $this->hasMany(SalesWorkItem::class, 'assigned_to');
     }
 }

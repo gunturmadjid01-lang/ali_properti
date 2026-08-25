@@ -102,7 +102,7 @@ const cashHelp = [
         details: [
             "Isi kewajiban non-dokumen seperti survei lokasi atau penandatanganan surat.",
             "Syarat Wajib harus dipenuhi sebelum proses dilanjutkan.",
-            "Berkas identitas tetap dikelola dari menu Dokumen Pelanggan.",
+            "Berkas identitas tetap dikelola dari menu Berkas Pelanggan.",
         ],
         example:
             "Pelanggan wajib mengikuti survei lokasi dan menandatangani surat pemesanan.",
@@ -178,7 +178,7 @@ const kprHelp = [
         details: [
             "DP harus lunas memblokir serah terima jika DP tersisa.",
             "Tidak ada tunggakan berarti seluruh angsuran jatuh tempo sudah lunas.",
-            "Dokumen pelanggan dikelola terpusat melalui menu Dokumen Pelanggan.",
+            "File pelanggan dikelola terpusat melalui menu Berkas Pelanggan.",
         ],
         example:
             "DP lunas, kontrak aktif, tidak ada tunggakan, dan seluruh clearance disetujui.",
@@ -889,7 +889,7 @@ export default function MasterWizard({
             <div className="grid gap-6">
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm font-semibold text-blue-900">
                     Dokumen identitas dan berkas customer dikelola satu kali
-                    dari menu <b>Dokumen Pelanggan</b>, sehingga tidak perlu
+                    dari menu <b>Berkas Pelanggan</b>, sehingga tidak perlu
                     dibuat ulang pada setiap skema.
                 </div>
                 <section className="grid gap-3 rounded-lg border p-4">
@@ -1102,7 +1102,7 @@ export default function MasterWizard({
             <div className="grid gap-4">
                 <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm font-semibold text-blue-900">
                     Kelengkapan berkas customer mengikuti menu{" "}
-                    <b>Dokumen Pelanggan</b>. Bagian ini hanya mengatur syarat
+                    <b>Berkas Pelanggan</b>. Bagian ini hanya mengatur syarat
                     rumah boleh diserahterimakan.
                 </div>
                 <Toggle

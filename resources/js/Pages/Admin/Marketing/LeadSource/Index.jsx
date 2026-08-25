@@ -1,4 +1,4 @@
-import { Head, router, useForm } from "@inertiajs/react";
+import { Head, router } from "@inertiajs/react";
 import {
     Edit3,
     Eye,
@@ -7,32 +7,11 @@ import {
     Search,
     Trash2,
     Unlock,
-    X,
 } from "lucide-react";
 import { useState } from "react";
 import Pagination from "../../../../Components/Pagination";
-import {
-    Button,
-    Dropdown,
-    Form,
-    Input,
-    Modal,
-    Textarea,
-    TableActions,
-} from "../../../../Components/UI";
+import { Button, Input, TableActions } from "../../../../Components/UI";
 import AdminLayout from "../../../../Layouts/AdminLayout";
-
-function ErrorSummary({ errors }) {
-    const messages = Object.values(errors ?? {}).filter(Boolean);
-    if (!messages.length) return null;
-    return (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm font-bold text-red-700">
-            {messages.map((message) => (
-                <p key={message}>{message}</p>
-            ))}
-        </div>
-    );
-}
 
 export default function Index({
     title,
@@ -40,50 +19,18 @@ export default function Index({
     baseUrl,
     rows = { data: [], links: [] },
     filters = {},
-    options = {},
     permissions = {},
 }) {
     const [search, setSearch] = useState(filters.search ?? "");
-    const [editing, setEditing] = useState(null);
-    const [detail, setDetail] = useState(null);
-    const form = useForm({
-        nama_sumber: "",
-        kategori: "",
-        keterangan: "",
-        status: "aktif",
-    });
-
-    const resetForm = () => {
-        setEditing(null);
-        form.reset();
-        form.clearErrors();
-        form.setData("status", "aktif");
-    };
-
-    const editRow = (row) => {
-        setEditing(row);
-        form.clearErrors();
-        form.setData({
-            nama_sumber: row.nama_sumber ?? "",
-            kategori: row.kategori === "-" ? "" : (row.kategori ?? ""),
-            keterangan: row.keterangan ?? "",
-            status: row.status ?? "aktif",
-        });
-        window.scrollTo({ top: 0, behavior: "smooth" });
-    };
-
-    const submit = (event) => {
+    const filter = (event) => {
         event.preventDefault();
-        const requestOptions = { preserveScroll: true, onSuccess: resetForm };
-
-        if (editing) {
-            form.put(`${baseUrl}/${editing.id}`, requestOptions);
-            return;
-        }
-
-        form.post(baseUrl, requestOptions);
+        router.get(baseUrl, { search }, { preserveState: true, replace: true });
     };
-    const showForm = false;
+    const remove = (row) => {
+        if (window.confirm(`Hapus sumber lead ${row.nama_sumber}?`)) {
+            router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true });
+        }
+    };
 
     return (
         <>
@@ -91,133 +38,31 @@ export default function Index({
             <div className="grid gap-6">
                 <section className="rounded-lg border border-white/80 bg-white/78 p-6 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">
-                        Marketing
+                        Manager Marketing / Master Data
                     </p>
-                    <h2 className="mt-2 font-display text-3xl font-extrabold">
-                        {title}
-                    </h2>
-                    <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">
-                        {description}
-                    </p>
-                    {permissions.canCreate && (
-                        <Button
-                            className="mt-4"
-                            type="button"
-                            onClick={() => router.visit(`${baseUrl}/create`)}
-                        >
-                            <PlusCircle size={17} /> Tambah Sumber Lead
-                        </Button>
-                    )}
-                </section>
-
-                {showForm && (
-                    <Form
-                        collapsible
-                        title={
-                            editing
-                                ? `Edit ${editing.kode_sumber}`
-                                : "Tambah Sumber Lead"
-                        }
-                        description="Contoh: Facebook Ads, Instagram, Referral, Spanduk, Walk-in, Pameran, atau Agen."
-                        onSubmit={submit}
-                        actions={
-                            <>
-                                {editing && permissions.canUpdate && (
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={resetForm}
-                                    >
-                                        <X size={15} /> Batal
-                                    </Button>
-                                )}
-                                {((editing && permissions.canUpdate) ||
-                                    (!editing && permissions.canCreate)) && (
-                                    <Button
-                                        type="submit"
-                                        disabled={form.processing}
-                                    >
-                                        <PlusCircle size={17} />{" "}
-                                        {editing
-                                            ? "Simpan Perubahan"
-                                            : "Simpan Sumber"}
-                                    </Button>
-                                )}
-                            </>
-                        }
-                    >
-                        <ErrorSummary errors={form.errors} />
-                        <div className="grid gap-4 md:grid-cols-3">
-                            <Input
-                                label="Nama Sumber Lead"
-                                value={form.data.nama_sumber}
-                                error={form.errors.nama_sumber}
-                                onChange={(event) =>
-                                    form.setData(
-                                        "nama_sumber",
-                                        event.target.value,
-                                    )
-                                }
-                            />
-                            <div className="grid gap-2">
-                                <span className="text-sm font-extrabold">
-                                    Kategori
-                                </span>
-                                <Dropdown
-                                    label="Pilih Kategori"
-                                    value={form.data.kategori}
-                                    options={options.kategoriOptions ?? []}
-                                    onChange={(value) =>
-                                        form.setData("kategori", value)
-                                    }
-                                />
-                                {form.errors.kategori && (
-                                    <span className="text-xs font-bold text-red-600">
-                                        {form.errors.kategori}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="grid gap-2">
-                                <span className="text-sm font-extrabold">
-                                    Status
-                                </span>
-                                <Dropdown
-                                    label="Pilih Status"
-                                    value={form.data.status}
-                                    options={options.statusOptions ?? []}
-                                    onChange={(value) =>
-                                        form.setData("status", value)
-                                    }
-                                />
-                                {form.errors.status && (
-                                    <span className="text-xs font-bold text-red-600">
-                                        {form.errors.status}
-                                    </span>
-                                )}
-                            </div>
+                    <div className="mt-2 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                        <div>
+                            <h1 className="text-3xl font-extrabold">{title}</h1>
+                            <p className="mt-2 max-w-3xl text-ink-soft">
+                                {description}
+                            </p>
                         </div>
-                        <Textarea
-                            label="Keterangan"
-                            value={form.data.keterangan}
-                            error={form.errors.keterangan}
-                            onChange={(event) =>
-                                form.setData("keterangan", event.target.value)
-                            }
-                        />
-                    </Form>
-                )}
-
+                        {permissions.canCreate && (
+                            <Button
+                                type="button"
+                                onClick={() =>
+                                    router.visit(`${baseUrl}/create`)
+                                }
+                            >
+                                <PlusCircle size={17} /> Tambah Sumber Lead
+                            </Button>
+                        )}
+                    </div>
+                </section>
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form
                         className="grid gap-3 p-5 md:grid-cols-[1fr_auto]"
-                        onSubmit={(event) => {
-                            event.preventDefault();
-                            router.get(
-                                baseUrl,
-                                { search },
-                                { preserveState: true, replace: true },
-                            );
-                        }}
+                        onSubmit={filter}
                     >
                         <Input
                             label="Cari Kode / Nama / Kategori"
@@ -269,15 +114,9 @@ export default function Index({
                                             {row.status}
                                         </td>
                                         <td className="min-w-44 px-5 py-4 text-xs">
-                                            <span className="font-bold">
-                                                Dibuat:
-                                            </span>{" "}
-                                            {row.created_by_name}
+                                            <b>Dibuat:</b> {row.created_by_name}
                                             <br />
-                                            <span className="font-bold">
-                                                Diubah:
-                                            </span>{" "}
-                                            {row.updated_by_name}
+                                            <b>Diubah:</b> {row.updated_by_name}
                                         </td>
                                         <td className="px-5 py-4 font-bold">
                                             {row.record_status}
@@ -296,44 +135,33 @@ export default function Index({
                                                 >
                                                     <Eye size={14} /> Detail
                                                 </Button>
-                                                {permissions.canUpdate &&
-                                                    row.can_edit && (
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            onClick={() =>
-                                                                router.visit(
-                                                                    `${baseUrl}/${row.id}/edit`,
-                                                                )
-                                                            }
-                                                        >
-                                                            <Edit3 size={14} />{" "}
-                                                            Ubah
-                                                        </Button>
-                                                    )}
-                                                {permissions.canDelete &&
-                                                    row.can_delete && (
-                                                        <Button
-                                                            type="button"
-                                                            size="sm"
-                                                            variant="outline"
-                                                            className="text-red-600"
-                                                            onClick={() =>
-                                                                window.confirm(
-                                                                    "Hapus sumber lead ini?",
-                                                                ) &&
-                                                                router.delete(
-                                                                    `${baseUrl}/${row.id}`,
-                                                                    {
-                                                                        preserveScroll: true,
-                                                                    },
-                                                                )
-                                                            }
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </Button>
-                                                    )}
+                                                {row.can_edit && (
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() =>
+                                                            router.visit(
+                                                                `${baseUrl}/${row.id}/edit`,
+                                                            )
+                                                        }
+                                                    >
+                                                        <Edit3 size={14} /> Ubah
+                                                    </Button>
+                                                )}
+                                                {row.can_delete && (
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="text-red-600"
+                                                        onClick={() =>
+                                                            remove(row)
+                                                        }
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </Button>
+                                                )}
                                                 {row.can_lock && (
                                                     <Button
                                                         type="button"
@@ -392,48 +220,6 @@ export default function Index({
                     <Pagination links={rows.links} />
                 </section>
             </div>
-
-            {false && (
-                <Modal
-                    open={Boolean(detail)}
-                    onClose={() => setDetail(null)}
-                    title={
-                        detail
-                            ? `Detail ${detail.kode_sumber}`
-                            : "Detail Sumber Lead"
-                    }
-                    footer={
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setDetail(null)}
-                        >
-                            Tutup
-                        </Button>
-                    }
-                >
-                    {detail && (
-                        <div className="grid gap-3 text-sm">
-                            <p>
-                                <b>Nama:</b> {detail.nama_sumber}
-                            </p>
-                            <p>
-                                <b>Kategori:</b> {detail.kategori}
-                            </p>
-                            <p>
-                                <b>Status:</b> {detail.status}
-                            </p>
-                            <p>
-                                <b>Jumlah Pelanggan:</b>{" "}
-                                {detail.jumlah_customer}
-                            </p>
-                            <p>
-                                <b>Keterangan:</b> {detail.keterangan || "-"}
-                            </p>
-                        </div>
-                    )}
-                </Modal>
-            )}
         </>
     );
 }

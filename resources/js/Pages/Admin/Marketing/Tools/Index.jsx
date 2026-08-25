@@ -5,6 +5,7 @@ import {
     BarChart3,
     Calculator,
     CircleDollarSign,
+    Clock3,
     Eye,
     FileCheck2,
     Home,
@@ -12,6 +13,7 @@ import {
     Send,
     Target,
     Trophy,
+    UserCheck,
     Users,
     Workflow,
     XCircle,
@@ -185,6 +187,7 @@ function ActivityMonitoring({ data, baseUrl, filters }) {
             "text-emerald-600",
         ],
         ["Survei", data.summary?.survey ?? 0, Eye, "text-amber-600"],
+        ["Kunjungan", data.summary?.visit ?? 0, Eye, "text-violet-600"],
         ["SPR", data.summary?.spr ?? 0, BarChart3, "text-blue-600"],
         [
             "Reminder Terlambat",
@@ -225,8 +228,9 @@ function ActivityMonitoring({ data, baseUrl, filters }) {
                             Aktivitas per Marketing
                         </h2>
                         <p className="text-sm text-ink-soft">
-                            Urutan berdasarkan intensitas tindak lanjut, survei,
-                            SPR, dan kedisiplinan reminder.
+                            Urutan berdasarkan input follow-up, kunjungan,
+                            survei, aktivitas lain, SPR, dan kedisiplinan
+                            reminder.
                         </p>
                     </div>
                     <div className="text-right">
@@ -287,6 +291,13 @@ function ActivityMonitoring({ data, baseUrl, filters }) {
                                         <b>{row.survey}</b> Survei
                                     </span>
                                     <span>
+                                        <b>{row.visit}</b> Kunjungan
+                                    </span>
+                                    <span>
+                                        <b>{row.other_activity}</b> Aktivitas
+                                        lain
+                                    </span>
+                                    <span>
                                         <b>{row.spr}</b> SPR
                                     </span>
                                 </div>
@@ -326,6 +337,93 @@ function ActivityMonitoring({ data, baseUrl, filters }) {
                             Belum ada aktivitas marketing pada periode ini.
                         </p>
                     )}
+                </div>
+            </Card>
+            <Card className="overflow-hidden">
+                <div className="border-b border-silver-deep/50 p-5 dark:border-white/10">
+                    <h2 className="text-lg font-extrabold">
+                        Rincian Laporan Aktivitas
+                    </h2>
+                    <p className="text-sm text-ink-soft">
+                        Input calon customer, follow-up, kunjungan, survei, dan
+                        aktivitas lain dalam periode terpilih.
+                    </p>
+                </div>
+                <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm">
+                        <thead className="bg-silver-soft text-left text-xs uppercase text-ink-soft">
+                            <tr>
+                                <th className="p-4">Tanggal</th>
+                                <th>Marketing</th>
+                                <th>Jenis</th>
+                                <th>Customer</th>
+                                <th>Hasil</th>
+                                <th>Lokasi / Bukti</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-silver-deep/50 dark:divide-white/10">
+                            {(data.recent_activities ?? []).map((row) => (
+                                <tr key={row.id}>
+                                    <td className="p-4 whitespace-nowrap">
+                                        {row.date || "-"}
+                                    </td>
+                                    <td className="font-bold">
+                                        {row.marketing || "-"}
+                                    </td>
+                                    <td>{row.type}</td>
+                                    <td>{row.customer || "Aktivitas umum"}</td>
+                                    <td className="max-w-sm py-3 text-ink-soft">
+                                        {row.result || "-"}
+                                    </td>
+                                    <td>
+                                        <div className="flex flex-col gap-1">
+                                            {row.location && (
+                                                <span>{row.location}</span>
+                                            )}
+                                            {row.map_url && (
+                                                <a
+                                                    className="font-bold text-blue-700"
+                                                    href={row.map_url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                >
+                                                    Buka peta
+                                                </a>
+                                            )}
+                                            {row.evidence_url && (
+                                                <a
+                                                    className="font-bold text-gold-deep"
+                                                    href={row.evidence_url}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                >
+                                                    Lihat bukti
+                                                </a>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="pr-4">
+                                        {String(row.status || "-").replaceAll(
+                                            "_",
+                                            " ",
+                                        )}
+                                    </td>
+                                </tr>
+                            ))}
+                            {!data.recent_activities?.length && (
+                                <tr>
+                                    <td
+                                        colSpan="7"
+                                        className="p-10 text-center font-bold text-ink-soft"
+                                    >
+                                        Belum ada laporan aktivitas pada periode
+                                        ini.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </Card>
         </div>
@@ -848,7 +946,7 @@ function SimpleTable({ rows = [], columns = [] }) {
 }
 
 function Distribution({ data, baseUrl, permissions = {} }) {
-    const form = useForm({ costumer_id: "", user_id: "" });
+    const form = useForm({ marketing_lead_id: "", user_id: "", reason: "" });
     const submit = (event) => {
         event.preventDefault();
         form.post("/admin/marketing/tools/distribusi-lead/assign", {
@@ -861,19 +959,27 @@ function Distribution({ data, baseUrl, permissions = {} }) {
             {permissions.canCreate && (
                 <Card className="p-4">
                     <form
-                        className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end"
+                        className="grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end"
                         onSubmit={submit}
                     >
                         <Dropdown
                             label="Lead"
-                            value={form.data.costumer_id}
+                            value={form.data.marketing_lead_id}
                             options={(data.rows ?? []).map((row) => ({
                                 value: String(row.id),
-                                label: `${row.customer} - ${row.telepon ?? "-"}`,
+                                label: `${row.lead} - ${row.telepon ?? "-"}`,
                             }))}
                             onChange={(value) =>
-                                form.setData("costumer_id", value)
+                                form.setData("marketing_lead_id", value)
                             }
+                        />
+                        <Input
+                            label="Alasan penugasan / pemindahan"
+                            value={form.data.reason}
+                            onChange={(event) =>
+                                form.setData("reason", event.target.value)
+                            }
+                            error={form.errors.reason}
                         />
                         <Dropdown
                             label="Marketing"
@@ -891,7 +997,7 @@ function Distribution({ data, baseUrl, permissions = {} }) {
                 rows={data.rows}
                 columns={[
                     { key: "kode", label: "Kode" },
-                    { key: "customer", label: "Pelanggan" },
+                    { key: "lead", label: "Lead" },
                     { key: "telepon", label: "Telepon" },
                     { key: "sumber", label: "Sumber" },
                     { key: "status", label: "Status" },
@@ -938,6 +1044,14 @@ function Leaderboard({ data, baseUrl, filters, permissions = {} }) {
             "text-sky-600",
         ],
         ["Lead", data.summary?.lead ?? 0, Target, "text-orange-600"],
+        ["Qualified", data.summary?.qualified ?? 0, UserCheck, "text-blue-600"],
+        [
+            "Respons Sesuai SLA",
+            data.summary?.sla_met ?? 0,
+            Clock3,
+            "text-emerald-600",
+        ],
+        ["Lead Lost", data.summary?.lost ?? 0, XCircle, "text-red-600"],
         ["Survei", data.summary?.survey ?? 0, Eye, "text-orange-600"],
         ["SPR", data.summary?.spr ?? 0, FileCheck2, "text-blue-600"],
         ["Closing", data.summary?.closing ?? 0, BarChart3, "text-emerald-600"],
@@ -1068,6 +1182,11 @@ function Leaderboard({ data, baseUrl, filters, permissions = {} }) {
                     <div className="mt-5 grid gap-3">
                         {[
                             ["Lead", data.summary?.lead, "bg-orange-600"],
+                            [
+                                "Qualified",
+                                data.summary?.qualified,
+                                "bg-blue-500",
+                            ],
                             ["Survei", data.summary?.survey, "bg-orange-500"],
                             ["SPR", data.summary?.spr, "bg-blue-600"],
                             [
@@ -1131,6 +1250,9 @@ function Leaderboard({ data, baseUrl, filters, permissions = {} }) {
                     { key: "rank", label: "Rank" },
                     { key: "name", label: "Marketing" },
                     { key: "lead", label: "Lead" },
+                    { key: "qualified", label: "Qualified" },
+                    { key: "sla_met", label: "SLA Tercapai" },
+                    { key: "lost", label: "Lost" },
                     { key: "survey", label: "Survei" },
                     { key: "spr", label: "SPR" },
                     { key: "closing", label: "Closing" },
@@ -1175,7 +1297,7 @@ export default function Index({
             <SimpleTable
                 rows={data.rows}
                 columns={[
-                    { key: "customer", label: "Pelanggan" },
+                    { key: "lead", label: "Lead" },
                     { key: "telepon", label: "Telepon" },
                     { key: "sumber", label: "Sumber" },
                     { key: "status", label: "Status" },
@@ -1203,7 +1325,7 @@ export default function Index({
             <SimpleTable
                 rows={data.rows}
                 columns={[
-                    { key: "customer", label: "Pelanggan" },
+                    { key: "lead", label: "Lead" },
                     { key: "telepon", label: "Telepon" },
                     { key: "marketing", label: "Marketing" },
                     { key: "status", label: "Status" },

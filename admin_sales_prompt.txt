@@ -1,0 +1,2232 @@
+# PROMPT REFACTOR MENYELURUH MODUL ADMIN SALES DAN MONITORING PENJUALAN SISTEM PROPERTI
+
+Lakukan refactor menyeluruh terhadap seluruh modul penjualan yang sudah ada pada aplikasi manajemen properti saat ini agar alur kerja Admin Sales, Marketing, Manager, Owner, dan role lainnya menjadi jelas, saling terhubung, mudah digunakan, serta menghasilkan laporan yang dapat dipertanggungjawabkan.
+
+Jangan membuat aplikasi baru dari awal.
+
+Pelajari terlebih dahulu:
+
+- Struktur project.
+- Framework yang digunakan.
+- Database dan migration.
+- Model dan relasi.
+- Controller, service, repository, dan request validation.
+- Route.
+- Middleware.
+- Role dan permission.
+- Modul Marketing.
+- Modul Admin Sales.
+- Modul Customer.
+- Modul Lead.
+- Modul Follow-up.
+- Modul Kunjungan Marketing.
+- Modul Perumahan dan Unit.
+- Modul Reservasi.
+- Modul Booking Fee.
+- Modul SPR.
+- Modul KPR Bank.
+- Modul KPR Developer.
+- Modul Cash Bertahap.
+- Modul Penjualan Cash.
+- Modul Pembayaran Customer.
+- Modul Dokumen Customer.
+- Modul Akad.
+- Modul Laporan.
+- Modul Notifikasi.
+- Modul Audit Log.
+
+Gunakan teknologi, pola coding, struktur halaman, dan desain yang sudah digunakan pada aplikasi.
+
+Jangan menghapus fitur lama yang masih digunakan tanpa memastikan penggantinya sudah tersedia.
+
+Lakukan migration secara aman agar data lama tidak rusak.
+
+---
+
+# 1. TUJUAN UTAMA REFACTOR
+
+Refactor ini bertujuan agar:
+
+1. Marketing tetap menjadi pihak yang mencari dan menangani calon customer.
+2. Marketing dapat memasukkan lead yang diperoleh dari usahanya sendiri.
+3. Admin Sales mengelola lead yang masuk dari kanal perusahaan.
+4. Admin Sales tidak mengambil alih pekerjaan follow-up Marketing.
+5. Admin Sales menjadi pengendali administrasi proses penjualan.
+6. Seluruh data penjualan saling terhubung.
+7. Tidak ada input data customer yang berulang pada setiap modul.
+8. Tidak ada data marketing, customer, perumahan, dan unit yang disimpan hanya sebagai teks apabila sudah tersedia di database.
+9. Setiap perubahan proses mempunyai riwayat.
+10. Manager, Owner, dan role yang diberi permission dapat melihat laporan kerja Marketing dan Admin Sales.
+11. Laporan dapat difilter berdasarkan tanggal, Marketing, Admin Sales, perumahan, unit, status, metode pembayaran, dan filter relevan lainnya.
+12. Seluruh angka pada dashboard dapat dibuka sampai ke detail data sumbernya.
+13. Halaman daftar data, halaman form, halaman detail, dan halaman laporan dibuat terpisah.
+14. Input yang berupa pilihan harus menggunakan dropdown, radio button, checkbox, atau komponen pilihan yang sesuai.
+15. Sistem dapat menunjukkan Marketing yang aktif, Marketing yang tidak melakukan follow-up, serta customer yang terbengkalai.
+16. Sistem dapat menunjukkan pekerjaan Admin Sales yang belum diselesaikan, tertunda, atau terlambat.
+17. Manager dan Owner dapat melihat kondisi proses penjualan tanpa harus meminta laporan manual melalui pesan atau Excel terpisah.
+
+---
+
+# 2. PRINSIP PEMBAGIAN TUGAS
+
+Gunakan pembagian tugas berikut:
+
+## 2.1 Marketing
+
+Marketing bertugas:
+
+- Mencari lead.
+- Menginput lead hasil pencarian sendiri.
+- Menghubungi customer.
+- Melakukan follow-up.
+- Mengatur kunjungan.
+- Melakukan kunjungan.
+- Mengisi laporan kunjungan.
+- Mengajak customer melakukan survei lokasi.
+- Menawarkan unit.
+- Mengumpulkan data awal customer.
+- Mengajukan reservasi.
+- Mengajukan SPR.
+- Membantu customer melengkapi dokumen.
+- Menindaklanjuti proses penjualan.
+- Menjaga komunikasi dengan customer.
+- Memperbarui perkembangan customer.
+
+Marketing tidak bertugas:
+
+- Memverifikasi administrasi final.
+- Memverifikasi pembayaran final apabila kewenangannya berada pada bagian lain.
+- Menghapus aktivitas yang sudah masuk laporan.
+- Mengubah hasil kunjungan setelah diverifikasi tanpa riwayat revisi.
+- Mengambil lead marketing lain tanpa proses perpindahan.
+- Menyetujui SPR apabila kewenangan tersebut berada pada Manager atau Owner.
+- Mengubah status unit menjadi terjual secara langsung.
+
+## 2.2 Admin Sales
+
+Admin Sales bertugas:
+
+- Mengelola lead yang masuk dari kanal perusahaan.
+- Memverifikasi lead yang masuk dari website.
+- Memverifikasi lead yang masuk dari WhatsApp perusahaan.
+- Memverifikasi lead yang masuk dari kantor.
+- Memeriksa lead dari iklan perusahaan.
+- Memeriksa kemungkinan customer duplikat.
+- Membagikan lead perusahaan kepada Marketing.
+- Memantau apakah lead sudah ditindaklanjuti.
+- Memeriksa kelengkapan data customer.
+- Memeriksa kelengkapan laporan kunjungan.
+- Memantau follow-up yang terlambat.
+- Memantau customer tanpa aktivitas.
+- Mengelola administrasi reservasi.
+- Memeriksa booking fee.
+- Mengelola administrasi SPR.
+- Memeriksa dokumen customer.
+- Mengelola checklist dokumen.
+- Memantau proses KPR.
+- Memantau proses Cash Bertahap.
+- Memantau proses KPR Developer.
+- Memantau pembayaran customer.
+- Mengatur jadwal akad.
+- Mengatur kebutuhan administrasi serah terima.
+- Mengembalikan data yang tidak lengkap kepada Marketing.
+- Menyiapkan data operasional untuk Manager dan Owner.
+- Membuat atau mengekspor laporan sesuai permission.
+
+Admin Sales tidak boleh:
+
+- Mengisi follow-up atas nama Marketing.
+- Membuat laporan kunjungan atas nama Marketing.
+- Mengubah waktu check-in atau check-out Marketing.
+- Menghapus riwayat aktivitas Marketing.
+- Mengambil alih lead Marketing tanpa riwayat dan alasan.
+- Menyetujui proses yang menjadi kewenangan Manager atau Owner.
+- Mengubah status pembayaran menjadi lunas apabila bukan kewenangannya.
+- Menghapus transaksi penjualan.
+- Mengubah status unit menjadi terjual tanpa alur transaksi.
+- Mengubah bukti aktivitas Marketing tanpa audit log.
+
+## 2.3 Manager
+
+Manager bertugas:
+
+- Mengawasi aktivitas Marketing.
+- Mengawasi pekerjaan Admin Sales.
+- Membagikan atau memindahkan lead apabila diperlukan.
+- Menyetujui proses sesuai kewenangan.
+- Memverifikasi laporan kunjungan apabila diperlukan.
+- Melihat customer terbengkalai.
+- Melihat pekerjaan terlambat.
+- Melihat target dan realisasi.
+- Melihat laporan per Marketing.
+- Melihat laporan per Admin Sales.
+- Melihat laporan per perumahan.
+- Melihat laporan berdasarkan periode.
+- Memberikan evaluasi.
+- Mengambil keputusan berdasarkan data.
+
+## 2.4 Owner
+
+Owner bertugas:
+
+- Melihat ringkasan seluruh proses penjualan.
+- Melihat laporan seluruh perumahan.
+- Melihat laporan seluruh cabang apabila tersedia.
+- Melihat kinerja Marketing.
+- Melihat kinerja Admin Sales.
+- Melihat penjualan, pembayaran, target, dan realisasi.
+- Melihat customer tidak aktif.
+- Melihat proses yang tertunda.
+- Melihat tingkat konversi.
+- Melihat penyebab pembatalan.
+- Melihat audit aktivitas.
+- Mencetak dan mengekspor laporan.
+- Memberikan persetujuan jika alur perusahaan mengharuskannya.
+
+## 2.5 Role lainnya
+
+Jangan menulis hak akses hanya berdasarkan nama role.
+
+Gunakan sistem permission.
+
+Role lain yang diberikan permission laporan harus dapat mengakses laporan sesuai batasan permission-nya.
+
+Contohnya:
+
+- Kepala Cabang.
+- Finance.
+- Direktur.
+- Auditor Internal.
+- Staf Administrasi.
+- Supervisor jika suatu saat ditambahkan.
+
+---
+
+# 3. SUMBER LEAD DAN PENANGGUNG JAWAB INPUT
+
+Pisahkan lead menjadi dua kategori utama:
+
+## 3.1 Lead Marketing
+
+Lead Marketing merupakan lead yang diperoleh melalui usaha pribadi Marketing, seperti:
+
+- Referensi pribadi.
+- Facebook pribadi.
+- Instagram pribadi.
+- TikTok pribadi.
+- WhatsApp pribadi.
+- Canvassing.
+- Pembagian brosur.
+- Kunjungan instansi.
+- Relasi.
+- Customer lama.
+- Komunitas.
+- Aktivitas promosi pribadi.
+
+Lead Marketing diinput oleh Marketing yang memperoleh lead tersebut.
+
+Sistem otomatis mengisi:
+
+- Pembuat lead.
+- Marketing penanggung jawab.
+- Jenis kepemilikan lead: Marketing.
+- Tanggal lead diperoleh.
+- Sumber lead.
+- Status awal.
+- Waktu batas respons pertama.
+
+## 3.2 Lead Perusahaan
+
+Lead Perusahaan berasal dari:
+
+- Website perusahaan.
+- Form landing page.
+- WhatsApp perusahaan.
+- Telepon kantor.
+- Customer datang ke kantor.
+- Media sosial perusahaan.
+- Facebook Ads.
+- Instagram Ads.
+- TikTok Ads.
+- Marketplace properti.
+- Pameran perusahaan.
+- Program promosi perusahaan.
+- Referensi perusahaan.
+- Kanal resmi lainnya.
+
+Lead Perusahaan dapat masuk melalui:
+
+1. Integrasi otomatis.
+2. Input Admin Sales.
+3. Import Excel atau CSV.
+4. API dari website atau kanal lain.
+
+Lead dari website tidak boleh diinput ulang secara manual apabila integrasi otomatis tersedia.
+
+Admin Sales bertugas:
+
+- Memeriksa data.
+- Menandai spam.
+- Memeriksa duplikasi.
+- Melengkapi data dasar apabila diperlukan.
+- Membagikan lead kepada Marketing.
+- Memantau waktu respons Marketing.
+
+## 3.3 Data sumber lead
+
+Setiap lead wajib memiliki:
+
+- `lead_source_id`
+- `lead_source_channel`
+- `ownership_type`
+- `created_by`
+- `assigned_marketing_id`
+- `assigned_by`
+- `assigned_at`
+- `first_response_at`
+- `response_deadline_at`
+- `assignment_status`
+- `lead_status`
+- `priority`
+- `campaign_id` jika tersedia
+- `branch_id` jika sistem menggunakan cabang
+- `housing_project_id`
+- `housing_unit_id` jika sudah ada unit yang diminati
+
+Gunakan penamaan kolom sesuai standar project.
+
+---
+
+# 4. MODUL YANG WAJIB DIREFACTOR
+
+Refactor seluruh modul berikut agar terintegrasi.
+
+---
+
+# 4.1 DASHBOARD ADMIN SALES
+
+Buat dashboard khusus Admin Sales.
+
+Dashboard menampilkan:
+
+## Lead
+
+- Lead perusahaan hari ini.
+- Lead belum diverifikasi.
+- Lead belum dibagikan.
+- Lead terindikasi duplikat.
+- Lead belum dihubungi Marketing.
+- Lead melewati batas waktu respons.
+- Lead per sumber.
+- Lead per perumahan.
+- Lead per Marketing.
+
+## Follow-up
+
+- Follow-up Marketing hari ini.
+- Follow-up terlambat.
+- Customer tanpa follow-up.
+- Customer tidak aktif.
+- Customer tanpa rencana tindak lanjut.
+- Customer yang statusnya tidak berubah terlalu lama.
+
+## Kunjungan
+
+- Jadwal kunjungan hari ini.
+- Kunjungan sedang berlangsung.
+- Kunjungan selesai.
+- Kunjungan belum dibuat laporan.
+- Laporan kunjungan menunggu pemeriksaan.
+- Laporan kunjungan perlu diperbaiki.
+- Kunjungan dibatalkan.
+- Kunjungan tidak terlaksana.
+
+## Customer dan dokumen
+
+- Customer dengan data belum lengkap.
+- Customer dengan dokumen belum lengkap.
+- Dokumen kedaluwarsa.
+- Dokumen perlu diperbaiki.
+- Customer tanpa metode pembayaran.
+- Customer tanpa unit pilihan.
+
+## Reservasi
+
+- Reservasi baru.
+- Reservasi menunggu pemeriksaan.
+- Booking fee belum diperiksa.
+- Reservasi hampir kedaluwarsa.
+- Reservasi kedaluwarsa.
+- Reservasi dibatalkan.
+
+## SPR
+
+- SPR baru.
+- SPR belum lengkap.
+- SPR menunggu pemeriksaan.
+- SPR dikembalikan.
+- SPR menunggu persetujuan.
+- SPR disetujui.
+- SPR ditolak.
+
+## Proses pembayaran
+
+- Customer Cash.
+- Customer Cash Bertahap.
+- Customer KPR Bank.
+- Customer KPR Developer.
+- Pembayaran jatuh tempo.
+- Bukti pembayaran menunggu pemeriksaan.
+- Pembayaran terlambat.
+- Kekurangan pembayaran.
+
+## KPR dan akad
+
+- Berkas KPR belum lengkap.
+- Pengajuan KPR menunggu dikirim.
+- KPR sedang diproses bank.
+- KPR disetujui.
+- KPR ditolak.
+- Jadwal OTS.
+- Jadwal akad.
+- Akad mendatang.
+- Akad yang belum selesai administrasinya.
+
+## Tugas Admin Sales
+
+- Tugas hari ini.
+- Tugas terlambat.
+- Tugas belum selesai.
+- Data yang dikembalikan ke Marketing.
+- Data menunggu persetujuan Manager.
+- Notifikasi penting.
+
+Setiap kartu ringkasan wajib dapat diklik untuk membuka daftar data sumbernya.
+
+---
+
+# 4.2 MODUL LEAD MASUK
+
+Buat halaman terpisah:
+
+- Daftar Lead.
+- Tambah Lead.
+- Detail Lead.
+- Edit Lead.
+- Verifikasi Lead.
+- Pembagian Lead.
+- Riwayat Pembagian Lead.
+- Import Lead.
+- Lead Duplikat.
+- Laporan Lead.
+
+Admin Sales dapat menginput lead perusahaan secara manual apabila lead berasal dari:
+
+- Customer datang ke kantor.
+- Telepon kantor.
+- WhatsApp perusahaan yang belum terintegrasi.
+- Pameran perusahaan.
+- Referensi perusahaan.
+- Sumber resmi lain.
+
+Form lead wajib menggunakan dropdown untuk:
+
+- Sumber lead.
+- Kanal lead.
+- Perumahan.
+- Tipe unit.
+- Unit.
+- Metode pembayaran yang diminati.
+- Prioritas.
+- Status lead.
+- Marketing penanggung jawab.
+- Cabang jika tersedia.
+- Campaign jika tersedia.
+
+Gunakan dependent dropdown:
+
+- Pilih perumahan.
+- Tampilkan tipe unit pada perumahan tersebut.
+- Tampilkan unit yang sesuai.
+- Jangan tampilkan unit dari perumahan lain.
+
+Sebelum menyimpan, periksa duplikasi berdasarkan:
+
+- Nomor telepon.
+- Email.
+- NIK.
+- Kombinasi nama dan nomor telepon.
+
+Apabila ditemukan data serupa, tampilkan:
+
+- Nama customer.
+- Nomor telepon.
+- Marketing penanggung jawab.
+- Status terakhir.
+- Tanggal aktivitas terakhir.
+- Tombol melihat detail.
+- Tombol mengajukan perpindahan.
+- Tombol menandai sebagai data berbeda dengan alasan.
+
+---
+
+# 4.3 MODUL PEMBAGIAN LEAD
+
+Admin Sales atau role yang memiliki permission dapat membagikan lead perusahaan.
+
+Data pembagian:
+
+- Lead.
+- Marketing penerima.
+- Tanggal pembagian.
+- Batas waktu respons.
+- Catatan.
+- Pembagi lead.
+- Status pembagian.
+
+Setiap perpindahan Marketing wajib mempunyai:
+
+- Marketing lama.
+- Marketing baru.
+- Alasan.
+- Pengguna yang memindahkan.
+- Waktu perpindahan.
+- Catatan Manager jika diperlukan.
+
+Jangan hanya memperbarui `marketing_id`.
+
+Buat tabel atau mekanisme riwayat pembagian lead.
+
+Status pembagian:
+
+- Belum dibagikan.
+- Sudah dibagikan.
+- Diterima Marketing.
+- Ditolak dengan alasan.
+- Dipindahkan.
+- Dikembalikan.
+- Selesai.
+
+---
+
+# 4.4 MODUL MONITORING FOLLOW-UP
+
+Admin Sales tidak mengisi follow-up Marketing.
+
+Admin Sales hanya:
+
+- Melihat follow-up.
+- Memeriksa kelengkapan.
+- Menandai follow-up bermasalah.
+- Mengingatkan Marketing.
+- Mengembalikan catatan yang tidak lengkap.
+- Melihat follow-up terlambat.
+- Melihat customer tanpa aktivitas.
+
+Buat halaman:
+
+- Semua Follow-up.
+- Follow-up Hari Ini.
+- Follow-up Terlambat.
+- Customer Belum Dihubungi.
+- Customer Tidak Aktif.
+- Customer Tanpa Rencana Tindak Lanjut.
+- Riwayat Follow-up Customer.
+- Laporan Follow-up.
+
+Kolom tabel:
+
+- Tanggal.
+- Marketing.
+- Customer.
+- Perumahan.
+- Media follow-up.
+- Hasil.
+- Status customer.
+- Tindak lanjut.
+- Tanggal tindak lanjut.
+- Status tepat waktu atau terlambat.
+- Durasi tidak aktif.
+- Aktivitas terakhir.
+
+Admin Sales dapat memberikan catatan pemeriksaan, tetapi tidak boleh mengganti isi laporan Marketing secara diam-diam.
+
+---
+
+# 4.5 MODUL JADWAL DAN LAPORAN KUNJUNGAN
+
+Buat halaman Admin Sales:
+
+- Jadwal Kunjungan Seluruh Marketing.
+- Kunjungan Hari Ini.
+- Kunjungan Berlangsung.
+- Kunjungan Selesai.
+- Kunjungan Belum Dilaporkan.
+- Pemeriksaan Laporan Kunjungan.
+- Laporan Perlu Perbaikan.
+- Riwayat Kunjungan.
+- Laporan Kunjungan.
+
+Admin Sales memeriksa:
+
+- Customer atau tujuan.
+- Jenis kunjungan.
+- Tujuan kunjungan.
+- Waktu check-in.
+- Waktu check-out.
+- Durasi.
+- Lokasi.
+- Foto.
+- Hasil.
+- Perkembangan customer.
+- Rencana tindak lanjut.
+- Jadwal berikutnya.
+
+Status pemeriksaan Admin Sales:
+
+- Menunggu pemeriksaan.
+- Lengkap.
+- Perlu perbaikan.
+- Tidak sesuai.
+- Diteruskan ke Manager.
+- Selesai administrasi.
+
+Verifikasi akhir dapat diberikan kepada Manager atau role dengan permission.
+
+Marketing tetap menjadi pihak yang:
+
+- Membuat jadwal.
+- Check-in.
+- Check-out.
+- Mengisi hasil.
+- Mengunggah dokumentasi.
+- Mengisi tindak lanjut.
+
+---
+
+# 4.6 MODUL DATA CUSTOMER
+
+Jangan membuat data customer baru pada setiap proses.
+
+Gunakan satu data customer utama.
+
+Buat halaman:
+
+- Daftar Customer.
+- Tambah Customer.
+- Detail Customer.
+- Edit Customer.
+- Kelengkapan Data.
+- Kelengkapan Dokumen.
+- Timeline Customer.
+- Unit yang Diminati.
+- Riwayat Marketing.
+- Riwayat Status.
+- Riwayat Follow-up.
+- Riwayat Kunjungan.
+- Riwayat Reservasi.
+- Riwayat SPR.
+- Riwayat Pembayaran.
+- Riwayat KPR.
+- Riwayat Penjualan.
+
+Admin Sales dapat melengkapi data administrasi, tetapi perubahan data penting harus dicatat.
+
+Data customer minimal:
+
+- Nomor customer.
+- Nama lengkap.
+- NIK.
+- Nomor telepon.
+- Email.
+- Alamat.
+- Tempat lahir.
+- Tanggal lahir.
+- Status pernikahan.
+- Pekerjaan.
+- Perusahaan.
+- Pendapatan.
+- Nama pasangan.
+- Kontak darurat.
+- Marketing penanggung jawab.
+- Sumber lead.
+- Perumahan diminati.
+- Unit diminati.
+- Metode pembayaran diminati.
+- Status customer.
+- Tingkat ketertarikan.
+- Cabang.
+- Catatan.
+
+Gunakan dropdown untuk:
+
+- Status pernikahan.
+- Pekerjaan atau kategori pekerjaan.
+- Marketing.
+- Sumber lead.
+- Perumahan.
+- Unit.
+- Metode pembayaran.
+- Status customer.
+- Tingkat ketertarikan.
+- Cabang.
+
+---
+
+# 4.7 MODUL DOKUMEN CUSTOMER
+
+Refactor modul dokumen agar menggunakan checklist berdasarkan jenis proses.
+
+Buat master:
+
+- Jenis dokumen.
+- Kategori customer.
+- Metode pembayaran.
+- Tahapan proses.
+- Wajib atau opsional.
+- Masa berlaku.
+- Format file.
+- Ukuran maksimum.
+- Status aktif.
+
+Contoh template dokumen KPR:
+
+- KTP customer.
+- KTP pasangan.
+- Kartu Keluarga.
+- Buku nikah.
+- NPWP.
+- Slip gaji.
+- Surat keterangan kerja.
+- Rekening koran.
+- Dokumen usaha.
+- SIUP atau NIB jika diperlukan.
+- Dokumen tambahan bank.
+
+Status dokumen:
+
+- Belum diunggah.
+- Sudah diunggah.
+- Menunggu pemeriksaan.
+- Valid.
+- Perlu perbaikan.
+- Ditolak.
+- Kedaluwarsa.
+- Tidak wajib.
+
+Admin Sales dapat:
+
+- Memeriksa dokumen.
+- Memberikan catatan.
+- Mengembalikan dokumen.
+- Menandai lengkap.
+- Memantau kekurangan dokumen.
+
+Jangan meminta Admin Sales mengetik nama dokumen secara manual setiap customer.
+
+---
+
+# 4.8 MODUL RESERVASI UNIT
+
+Refactor reservasi agar terhubung dengan:
+
+- Customer.
+- Marketing.
+- Admin Sales pemeriksa.
+- Perumahan.
+- Unit.
+- Tipe unit.
+- Harga unit.
+- Program promo.
+- Follow-up terkait.
+- Kunjungan terkait.
+- Booking fee.
+- Bukti pembayaran.
+- Masa berlaku.
+- Status reservasi.
+- Riwayat persetujuan.
+
+Alur:
+
+1. Marketing mengajukan reservasi.
+2. Sistem memeriksa unit.
+3. Admin Sales memeriksa data.
+4. Bukti booking fee diperiksa.
+5. Reservasi diteruskan untuk persetujuan sesuai alur.
+6. Unit diberi status sesuai aturan bisnis.
+7. Reservasi dapat diteruskan ke SPR.
+
+Status reservasi:
+
+- Draft.
+- Diajukan.
+- Menunggu pemeriksaan Admin Sales.
+- Perlu perbaikan.
+- Menunggu pembayaran booking fee.
+- Pembayaran menunggu verifikasi.
+- Menunggu persetujuan.
+- Disetujui.
+- Ditolak.
+- Kedaluwarsa.
+- Dibatalkan.
+- Diteruskan ke SPR.
+
+Admin Sales tidak boleh langsung menandai unit terjual.
+
+---
+
+# 4.9 MODUL BOOKING FEE
+
+Buat halaman:
+
+- Daftar Booking Fee.
+- Detail Booking Fee.
+- Bukti Pembayaran.
+- Pemeriksaan Booking Fee.
+- Booking Fee Belum Dibayar.
+- Booking Fee Menunggu Verifikasi.
+- Booking Fee Terverifikasi.
+- Booking Fee Bermasalah.
+- Laporan Booking Fee.
+
+Booking fee terhubung ke:
+
+- Customer.
+- Marketing.
+- Reservasi.
+- Perumahan.
+- Unit.
+- Nominal tagihan.
+- Nominal pembayaran.
+- Tanggal pembayaran.
+- Metode pembayaran.
+- Rekening tujuan.
+- Bukti pembayaran.
+- Status verifikasi.
+- Pengguna pemeriksa.
+
+Jika verifikasi final dilakukan Finance, Admin Sales hanya melakukan pemeriksaan administrasi awal.
+
+---
+
+# 4.10 MODUL SPR
+
+Refactor SPR agar menjadi proses lanjutan dari customer atau reservasi.
+
+Buat halaman:
+
+- Daftar SPR.
+- Tambah SPR.
+- Detail SPR.
+- Edit SPR.
+- Pemeriksaan SPR.
+- SPR Belum Lengkap.
+- SPR Perlu Perbaikan.
+- SPR Menunggu Persetujuan.
+- Riwayat Persetujuan.
+- Laporan SPR.
+
+SPR harus terhubung ke:
+
+- Customer.
+- Marketing.
+- Admin Sales pemeriksa.
+- Perumahan.
+- Unit.
+- Reservasi.
+- Harga.
+- Diskon.
+- Promo.
+- Booking fee.
+- DP.
+- Metode pembayaran.
+- Tenor.
+- Bank jika KPR.
+- Dokumen.
+- Status.
+- Riwayat proses.
+
+Admin Sales memeriksa:
+
+- Data customer.
+- Unit.
+- Harga.
+- Promo.
+- Metode pembayaran.
+- Dokumen.
+- Booking fee.
+- DP.
+- Skema pembayaran.
+- Kelengkapan form.
+
+Admin Sales dapat:
+
+- Menyatakan administrasi lengkap.
+- Mengembalikan ke Marketing.
+- Meneruskan ke Manager atau Owner.
+
+Admin Sales tidak menyetujui SPR kecuali memiliki permission persetujuan.
+
+---
+
+# 4.11 MODUL KPR BANK
+
+Refactor proses KPR Bank agar terhubung dengan SPR.
+
+Buat tahapan:
+
+1. Persiapan dokumen.
+2. Dokumen belum lengkap.
+3. Dokumen lengkap.
+4. Pengajuan ke bank.
+5. Pemeriksaan bank.
+6. SLIK.
+7. Survei atau OTS.
+8. Analisis bank.
+9. Permintaan dokumen tambahan.
+10. Disetujui.
+11. Ditolak.
+12. Menunggu akad.
+13. Akad.
+14. Pencairan.
+15. Selesai.
+
+Data:
+
+- Customer.
+- Marketing.
+- Admin Sales.
+- SPR.
+- Perumahan.
+- Unit.
+- Bank.
+- Plafon.
+- Tenor.
+- Suku bunga jika diperlukan.
+- Tanggal pengajuan.
+- Status.
+- Catatan bank.
+- Jadwal OTS.
+- Hasil OTS.
+- Jadwal akad.
+- Status pencairan.
+- Dokumen.
+
+Admin Sales bertugas:
+
+- Memeriksa checklist.
+- Mengirim atau mencatat pengajuan.
+- Memantau proses.
+- Mencatat hasil dari bank.
+- Mengingatkan Marketing.
+- Menjadwalkan proses.
+- Mengelola administrasi akad.
+
+---
+
+# 4.12 MODUL KPR DEVELOPER
+
+Refactor KPR Developer agar terhubung dengan:
+
+- Customer.
+- SPR.
+- Marketing.
+- Admin Sales.
+- Perumahan.
+- Unit.
+- Harga.
+- DP.
+- Tenor.
+- Angsuran.
+- Tanggal jatuh tempo.
+- Denda.
+- Jadwal pembayaran.
+- Riwayat pembayaran.
+- Status kontrak.
+
+Admin Sales bertugas memeriksa administrasi dan memantau jadwal.
+
+Verifikasi pembayaran final mengikuti permission Finance atau role terkait.
+
+---
+
+# 4.13 MODUL CASH BERTAHAP
+
+Refactor Cash Bertahap agar sistem otomatis membentuk jadwal angsuran.
+
+Jangan meminta Admin Sales mengetik seluruh cicilan secara manual apabila dapat dibuat otomatis.
+
+Form menggunakan:
+
+- Customer.
+- SPR.
+- Perumahan.
+- Unit.
+- Harga.
+- DP.
+- Sisa pembayaran.
+- Jumlah tahap.
+- Frekuensi pembayaran.
+- Tanggal mulai.
+- Metode denda.
+- Nilai denda.
+- Tanggal jatuh tempo.
+
+Sistem menghasilkan:
+
+- Nomor tahap.
+- Tanggal jatuh tempo.
+- Nominal.
+- Status.
+- Tanggal pembayaran.
+- Kekurangan.
+- Denda.
+
+Admin Sales memantau:
+
+- Angsuran mendatang.
+- Angsuran jatuh tempo.
+- Angsuran terlambat.
+- Bukti pembayaran.
+- Kekurangan pembayaran.
+
+---
+
+# 4.14 MODUL PENJUALAN CASH
+
+Refactor penjualan Cash agar terhubung dengan:
+
+- Customer.
+- Marketing.
+- Admin Sales.
+- SPR.
+- Perumahan.
+- Unit.
+- Harga.
+- Diskon.
+- Booking fee.
+- DP.
+- Pelunasan.
+- Bukti pembayaran.
+- Status verifikasi.
+- Status transaksi.
+
+Admin Sales memeriksa kelengkapan administrasi.
+
+Keputusan pelunasan final mengikuti role berwenang.
+
+---
+
+# 4.15 MODUL PEMBAYARAN CUSTOMER
+
+Satu pembayaran harus terhubung ke transaksi sumber.
+
+Jangan membuat pembayaran tanpa referensi yang jelas.
+
+Pembayaran dapat berasal dari:
+
+- Booking fee.
+- DP.
+- Cash.
+- Cash Bertahap.
+- KPR Developer.
+- Biaya akad.
+- Biaya administrasi.
+- Pembayaran lainnya yang sah.
+
+Data pembayaran:
+
+- Customer.
+- Marketing.
+- Perumahan.
+- Unit.
+- Transaksi sumber.
+- Jenis tagihan.
+- Nominal tagihan.
+- Nominal dibayar.
+- Tanggal.
+- Metode pembayaran.
+- Rekening.
+- Bukti.
+- Status verifikasi.
+- Pengguna pemeriksa.
+- Pengguna verifikasi final.
+- Catatan.
+
+Status:
+
+- Belum dibayar.
+- Dibayar sebagian.
+- Menunggu pemeriksaan.
+- Perlu perbaikan.
+- Terverifikasi.
+- Ditolak.
+- Lunas.
+- Terlambat.
+
+---
+
+# 4.16 MODUL JADWAL AKAD
+
+Buat halaman:
+
+- Daftar Jadwal Akad.
+- Tambah Jadwal Akad.
+- Detail Jadwal Akad.
+- Edit Jadwal Akad.
+- Akad Hari Ini.
+- Akad Mendatang.
+- Akad Selesai.
+- Akad Dijadwalkan Ulang.
+- Laporan Akad.
+
+Data:
+
+- Customer.
+- Marketing.
+- Admin Sales.
+- SPR.
+- Bank.
+- Notaris.
+- Tanggal.
+- Waktu.
+- Lokasi.
+- Dokumen wajib.
+- Status kesiapan.
+- Status akad.
+- Catatan.
+- Hasil.
+
+Admin Sales memantau kesiapan dokumen dan jadwal.
+
+---
+
+# 4.17 MODUL SERAH TERIMA
+
+Jika modul serah terima sudah ada, hubungkan dengan:
+
+- Customer.
+- Transaksi.
+- SPR.
+- Perumahan.
+- Unit.
+- Marketing.
+- Admin Sales.
+- Status pembayaran.
+- Status bangunan.
+- Dokumen serah terima.
+- Jadwal serah terima.
+- Berita acara.
+- Kunci.
+- Catatan.
+
+Jangan membuat data customer atau unit baru.
+
+---
+
+# 5. TIMELINE CUSTOMER TERPUSAT
+
+Buat timeline terpusat pada detail customer.
+
+Timeline menampilkan:
+
+- Lead dibuat.
+- Lead diverifikasi.
+- Lead dibagikan.
+- Lead dipindahkan.
+- Marketing menghubungi customer.
+- Follow-up.
+- Jadwal kunjungan.
+- Check-in.
+- Check-out.
+- Hasil kunjungan.
+- Survei lokasi.
+- Perubahan minat.
+- Perubahan status customer.
+- Reservasi.
+- Booking fee.
+- SPR.
+- Dokumen.
+- Proses KPR.
+- Pembayaran.
+- Jadwal akad.
+- Akad.
+- Closing.
+- Serah terima.
+- Pembatalan.
+- Catatan Admin Sales.
+- Catatan Manager.
+- Persetujuan.
+- Revisi data.
+
+Setiap aktivitas menampilkan:
+
+- Waktu.
+- Pengguna.
+- Role.
+- Jenis aktivitas.
+- Status sebelumnya.
+- Status baru.
+- Catatan.
+- Lampiran.
+- Link menuju detail sumber.
+
+Timeline tidak boleh dibuat melalui input ulang laporan.
+
+Timeline harus terbentuk dari aktivitas pada modul terkait.
+
+---
+
+# 6. WORK QUEUE ADMIN SALES
+
+Buat sistem daftar pekerjaan atau work queue untuk Admin Sales.
+
+Setiap pekerjaan memiliki:
+
+- Jenis pekerjaan.
+- Data sumber.
+- Customer.
+- Marketing.
+- Perumahan.
+- Unit.
+- Tanggal dibuat.
+- Batas waktu.
+- Prioritas.
+- Status.
+- Penanggung jawab.
+- Tanggal selesai.
+- Catatan.
+
+Contoh pekerjaan:
+
+- Verifikasi lead.
+- Membagikan lead.
+- Memeriksa data customer.
+- Memeriksa laporan kunjungan.
+- Memeriksa dokumen.
+- Memeriksa reservasi.
+- Memeriksa booking fee.
+- Memeriksa SPR.
+- Mengirim berkas KPR.
+- Memperbarui status KPR.
+- Menjadwalkan akad.
+- Memeriksa kelengkapan transaksi.
+
+Status pekerjaan:
+
+- Baru.
+- Diproses.
+- Menunggu Marketing.
+- Menunggu Customer.
+- Menunggu Manager.
+- Menunggu Owner.
+- Menunggu Finance.
+- Perlu perbaikan.
+- Selesai.
+- Terlambat.
+- Dibatalkan.
+
+Dengan work queue ini, Manager dan Owner dapat mengetahui Admin Sales bekerja atau tidak.
+
+---
+
+# 7. LAPORAN KINERJA ADMIN SALES
+
+Buat laporan khusus Admin Sales.
+
+Laporan menampilkan:
+
+- Jumlah lead yang diverifikasi.
+- Jumlah lead yang dibagikan.
+- Kecepatan pembagian lead.
+- Lead yang belum dibagikan.
+- Lead duplikat yang ditangani.
+- Customer yang diperiksa.
+- Dokumen yang diperiksa.
+- Laporan kunjungan yang diperiksa.
+- Reservasi yang diproses.
+- Booking fee yang diperiksa.
+- SPR yang diproses.
+- Berkas KPR yang diproses.
+- Jadwal akad yang dikelola.
+- Tugas selesai.
+- Tugas terlambat.
+- Rata-rata waktu penyelesaian.
+- Data yang dikembalikan karena tidak lengkap.
+- Proses yang masih tertunda.
+- Persentase penyelesaian pekerjaan.
+
+Jangan menilai Admin Sales dari jumlah input saja.
+
+Nilai juga:
+
+- Ketepatan waktu.
+- Kelengkapan data.
+- Akurasi pemeriksaan.
+- Jumlah revisi.
+- Jumlah pekerjaan terlambat.
+- Waktu respons.
+- Penyelesaian administrasi.
+
+---
+
+# 8. DASHBOARD MANAGER DAN OWNER
+
+Buat dashboard terpisah atau dashboard berdasarkan permission.
+
+Manager dan Owner dapat melihat:
+
+## 8.1 Ringkasan Marketing
+
+- Total lead per Marketing.
+- Lead pribadi Marketing.
+- Lead dari perusahaan.
+- Lead sudah dihubungi.
+- Lead belum dihubungi.
+- Rata-rata waktu respons.
+- Follow-up.
+- Follow-up terlambat.
+- Kunjungan.
+- Kunjungan selesai.
+- Kunjungan dibatalkan.
+- Customer potensial.
+- Survei lokasi.
+- Reservasi.
+- SPR.
+- Closing.
+- Customer batal.
+- Customer tidak aktif.
+- Nilai penjualan.
+- Target.
+- Realisasi.
+
+## 8.2 Ringkasan Admin Sales
+
+- Lead masuk dari perusahaan.
+- Lead diverifikasi.
+- Lead belum diverifikasi.
+- Lead sudah dibagikan.
+- Lead belum dibagikan.
+- Laporan kunjungan diperiksa.
+- Dokumen diperiksa.
+- Reservasi diproses.
+- SPR diproses.
+- Proses KPR aktif.
+- Jadwal akad.
+- Tugas selesai.
+- Tugas terlambat.
+- Pekerjaan tertunda.
+- Rata-rata waktu penyelesaian.
+
+## 8.3 Ringkasan Penjualan
+
+- Total customer.
+- Total reservasi.
+- Total booking fee.
+- Total SPR.
+- Total KPR Bank.
+- Total KPR Developer.
+- Total Cash Bertahap.
+- Total Cash.
+- Total akad.
+- Total closing.
+- Total unit terjual.
+- Nilai transaksi.
+- Nilai pembayaran.
+- Piutang customer.
+- Pembayaran jatuh tempo.
+- Pembayaran terlambat.
+
+## 8.4 Funnel penjualan
+
+Tampilkan funnel:
+
+- Lead.
+- Sudah dihubungi.
+- Potensial.
+- Kunjungan.
+- Survei lokasi.
+- Reservasi.
+- SPR.
+- Persetujuan.
+- Akad.
+- Closing.
+
+Funnel dapat dilihat:
+
+- Keseluruhan.
+- Per Marketing.
+- Per perumahan.
+- Per sumber lead.
+- Per periode.
+- Per metode pembayaran.
+
+## 8.5 Perbandingan Marketing
+
+Tampilkan tabel:
+
+- Marketing.
+- Lead pribadi.
+- Lead perusahaan.
+- Total lead.
+- Lead dihubungi.
+- Waktu respons.
+- Follow-up.
+- Follow-up terlambat.
+- Kunjungan.
+- Survei.
+- Reservasi.
+- SPR.
+- Closing.
+- Nilai penjualan.
+- Customer tidak aktif.
+- Rasio konversi.
+- Pencapaian target.
+
+## 8.6 Perbandingan Admin Sales
+
+Jika terdapat lebih dari satu Admin Sales, tampilkan:
+
+- Admin Sales.
+- Lead diverifikasi.
+- Lead dibagikan.
+- Dokumen diperiksa.
+- Reservasi diproses.
+- SPR diproses.
+- Berkas KPR diproses.
+- Tugas selesai.
+- Tugas terlambat.
+- Rata-rata waktu penyelesaian.
+
+---
+
+# 9. PUSAT LAPORAN PENJUALAN
+
+Buat menu khusus:
+
+## Pusat Laporan
+
+Pusat laporan minimal memiliki:
+
+1. Laporan Lead.
+2. Laporan Pembagian Lead.
+3. Laporan Respons Marketing.
+4. Laporan Follow-up.
+5. Laporan Customer Tidak Aktif.
+6. Laporan Kunjungan.
+7. Laporan Aktivitas Marketing.
+8. Laporan Kinerja Marketing.
+9. Laporan Aktivitas Admin Sales.
+10. Laporan Kinerja Admin Sales.
+11. Laporan Kelengkapan Customer.
+12. Laporan Dokumen Customer.
+13. Laporan Reservasi.
+14. Laporan Booking Fee.
+15. Laporan SPR.
+16. Laporan KPR Bank.
+17. Laporan KPR Developer.
+18. Laporan Cash Bertahap.
+19. Laporan Penjualan Cash.
+20. Laporan Pembayaran.
+21. Laporan Tunggakan.
+22. Laporan Jadwal Akad.
+23. Laporan Closing.
+24. Laporan Pembatalan.
+25. Laporan Konversi.
+26. Laporan Sumber Lead.
+27. Laporan Perumahan.
+28. Laporan Unit.
+29. Laporan Target dan Realisasi.
+30. Laporan Audit Aktivitas.
+
+---
+
+# 10. FILTER LAPORAN
+
+Semua laporan wajib memiliki filter yang sesuai.
+
+Minimal sediakan:
+
+- Tanggal mulai.
+- Tanggal selesai.
+- Hari ini.
+- Minggu ini.
+- Bulan ini.
+- Tahun ini.
+- Marketing.
+- Admin Sales.
+- Perumahan.
+- Unit.
+- Tipe unit.
+- Cabang.
+- Sumber lead.
+- Jenis kepemilikan lead.
+- Status lead.
+- Status customer.
+- Status follow-up.
+- Hasil follow-up.
+- Jenis kunjungan.
+- Status kunjungan.
+- Status verifikasi kunjungan.
+- Status dokumen.
+- Status reservasi.
+- Status booking fee.
+- Status SPR.
+- Metode pembayaran.
+- Bank.
+- Status KPR.
+- Status pembayaran.
+- Status akad.
+- Status transaksi.
+- Alasan pembatalan.
+- Status pekerjaan Admin Sales.
+- Status keterlambatan.
+
+Tambahkan:
+
+- Terapkan filter.
+- Reset filter.
+- Preview.
+- Cetak.
+- Export Excel.
+- Export PDF jika tersedia.
+
+Filter aktif harus tampil pada:
+
+- Halaman laporan.
+- Preview.
+- Hasil cetak.
+- File export.
+
+Filter harus tetap aktif saat pagination.
+
+---
+
+# 11. DRILL-DOWN LAPORAN
+
+Setiap angka pada dashboard harus dapat diklik.
+
+Contoh:
+
+- Klik “12 lead belum dibagikan” membuka 12 lead tersebut.
+- Klik “8 follow-up terlambat” membuka daftar follow-up.
+- Klik “5 laporan kunjungan belum diperiksa” membuka data terkait.
+- Klik “3 SPR perlu perbaikan” membuka daftar SPR.
+- Klik “10 tugas Admin Sales terlambat” membuka daftar tugas.
+- Klik jumlah closing membuka transaksi terkait.
+- Klik nama Marketing membuka detail kinerjanya.
+- Klik nama Admin Sales membuka detail pekerjaannya.
+
+Jangan membuat angka dashboard tanpa detail sumber.
+
+---
+
+# 12. DROPDOWN DAN KEMUDAHAN FORM
+
+Semua data pilihan wajib menggunakan dropdown atau komponen pilihan yang sesuai.
+
+Gunakan dropdown untuk:
+
+- Sumber lead.
+- Kepemilikan lead.
+- Marketing.
+- Admin Sales.
+- Perumahan.
+- Tipe unit.
+- Unit.
+- Prioritas.
+- Status.
+- Tingkat ketertarikan.
+- Media follow-up.
+- Hasil follow-up.
+- Jenis kunjungan.
+- Tujuan kunjungan.
+- Hasil kunjungan.
+- Status dokumen.
+- Jenis dokumen.
+- Status reservasi.
+- Metode pembayaran.
+- Bank.
+- Tenor.
+- Status SPR.
+- Status KPR.
+- Status pembayaran.
+- Status akad.
+- Alasan pembatalan.
+- Status pekerjaan.
+- Cabang.
+- Role pemeriksa.
+- Role persetujuan.
+
+Gunakan searchable dropdown untuk:
+
+- Customer.
+- Marketing.
+- Admin Sales.
+- Perumahan.
+- Unit.
+- Bank.
+- Reservasi.
+- SPR.
+- Transaksi.
+
+Gunakan dependent dropdown:
+
+- Perumahan → tipe unit.
+- Perumahan → unit.
+- Customer → perumahan yang diminati.
+- Customer → unit pilihan.
+- Customer → Marketing.
+- Reservasi → SPR.
+- SPR → metode pembayaran.
+- Metode pembayaran → detail form.
+- Bank → produk KPR jika tersedia.
+
+Jika memilih “Lainnya”, baru tampilkan input teks.
+
+Jangan meminta pengguna mengetik status manual.
+
+---
+
+# 13. HALAMAN DATA DAN FORM HARUS TERPISAH
+
+Setiap modul minimal mempunyai:
+
+- Halaman daftar.
+- Halaman tambah.
+- Halaman detail.
+- Halaman edit.
+- Halaman pemeriksaan.
+- Halaman laporan.
+- Halaman preview.
+- Halaman cetak jika diperlukan.
+
+Contoh:
+
+- `/admin-sales/leads`
+- `/admin-sales/leads/create`
+- `/admin-sales/leads/{id}`
+- `/admin-sales/leads/{id}/edit`
+- `/admin-sales/leads/{id}/verify`
+- `/admin-sales/leads/reports`
+
+Jangan mengandalkan modal besar untuk semua proses.
+
+Modal hanya digunakan untuk tindakan sederhana, misalnya:
+
+- Konfirmasi.
+- Ubah status sederhana.
+- Tambah catatan singkat.
+
+Form utama harus menggunakan halaman terpisah.
+
+---
+
+# 14. ROLE DAN PERMISSION
+
+Buat permission rinci.
+
+Contoh:
+
+## Lead
+
+- `lead-view`
+- `lead-view-all`
+- `lead-create`
+- `lead-update`
+- `lead-delete`
+- `lead-verify`
+- `lead-assign`
+- `lead-transfer`
+- `lead-import`
+- `lead-report-view`
+- `lead-report-export`
+
+## Follow-up
+
+- `follow-up-view`
+- `follow-up-view-all`
+- `follow-up-create`
+- `follow-up-update`
+- `follow-up-monitor`
+- `follow-up-report-view`
+
+## Kunjungan
+
+- `visit-view`
+- `visit-view-all`
+- `visit-create`
+- `visit-check-in`
+- `visit-check-out`
+- `visit-report-create`
+- `visit-report-review`
+- `visit-report-verify`
+- `visit-report-view`
+
+## Customer
+
+- `customer-view`
+- `customer-view-all`
+- `customer-create`
+- `customer-update`
+- `customer-document-review`
+- `customer-timeline-view`
+
+## Reservasi
+
+- `reservation-view`
+- `reservation-create`
+- `reservation-review`
+- `reservation-approve`
+- `reservation-report-view`
+
+## SPR
+
+- `spr-view`
+- `spr-create`
+- `spr-update`
+- `spr-review`
+- `spr-approve`
+- `spr-report-view`
+
+## KPR
+
+- `mortgage-view`
+- `mortgage-create`
+- `mortgage-update`
+- `mortgage-review`
+- `mortgage-report-view`
+
+## Pembayaran
+
+- `payment-view`
+- `payment-review`
+- `payment-verify`
+- `payment-report-view`
+
+## Admin Sales
+
+- `admin-sales-dashboard-view`
+- `admin-sales-work-queue-view`
+- `admin-sales-work-queue-manage`
+- `admin-sales-report-view`
+- `admin-sales-report-export`
+
+## Laporan Manajemen
+
+- `marketing-performance-report-view`
+- `admin-sales-performance-report-view`
+- `sales-management-report-view`
+- `sales-financial-report-view`
+- `sales-audit-report-view`
+- `sales-report-export`
+- `sales-report-print`
+
+Sesuaikan nama dengan standar project.
+
+---
+
+# 15. STATUS DAN RIWAYAT
+
+Setiap perubahan status wajib mempunyai riwayat.
+
+Terapkan pada:
+
+- Lead.
+- Customer.
+- Follow-up.
+- Kunjungan.
+- Dokumen.
+- Reservasi.
+- Booking fee.
+- SPR.
+- KPR.
+- Pembayaran.
+- Akad.
+- Closing.
+- Tugas Admin Sales.
+
+Riwayat menyimpan:
+
+- Status lama.
+- Status baru.
+- Pengguna.
+- Role.
+- Tanggal.
+- Alasan.
+- Catatan.
+- Sumber perubahan.
+
+Jangan hanya menyimpan status terbaru.
+
+---
+
+# 16. NOTIFIKASI
+
+Integrasikan dengan notifikasi aplikasi yang sudah ada.
+
+Notifikasi untuk Marketing:
+
+- Lead baru diberikan.
+- Batas respons hampir lewat.
+- Follow-up hari ini.
+- Follow-up terlambat.
+- Jadwal kunjungan.
+- Laporan perlu diperbaiki.
+- Dokumen customer kurang.
+- Reservasi perlu diperbaiki.
+- SPR perlu diperbaiki.
+
+Notifikasi untuk Admin Sales:
+
+- Lead perusahaan masuk.
+- Lead belum dibagikan.
+- Lead belum dihubungi.
+- Laporan kunjungan masuk.
+- Dokumen masuk.
+- Reservasi masuk.
+- Booking fee masuk.
+- SPR masuk.
+- Proses KPR perlu diperbarui.
+- Jadwal akad mendekat.
+- Tugas terlambat.
+
+Notifikasi untuk Manager atau Owner:
+
+- Lead banyak belum ditindaklanjuti.
+- Marketing tanpa aktivitas.
+- Follow-up terlambat tinggi.
+- Customer potensial terbengkalai.
+- Admin Sales memiliki banyak tugas terlambat.
+- SPR menunggu persetujuan.
+- Reservasi menunggu persetujuan.
+- Pembayaran bermasalah.
+- KPR ditolak.
+- Target tidak tercapai.
+
+---
+
+# 17. AUDIT LOG
+
+Audit seluruh aktivitas penting.
+
+Audit menyimpan:
+
+- Modul.
+- ID data.
+- Jenis aktivitas.
+- Pengguna.
+- Role.
+- Nilai lama.
+- Nilai baru.
+- Tanggal dan waktu.
+- IP address jika tersedia.
+- Perangkat jika tersedia.
+- Alasan.
+- Catatan.
+
+Audit wajib untuk:
+
+- Input lead.
+- Verifikasi lead.
+- Pembagian lead.
+- Perpindahan Marketing.
+- Perubahan customer.
+- Pemeriksaan follow-up.
+- Pemeriksaan laporan kunjungan.
+- Perubahan dokumen.
+- Reservasi.
+- Booking fee.
+- SPR.
+- KPR.
+- Pembayaran.
+- Akad.
+- Pembatalan.
+- Penghapusan.
+- Export laporan.
+- Perubahan permission.
+- Perubahan target.
+- Perubahan konfigurasi.
+
+---
+
+# 18. DATABASE DAN RELASI
+
+Pelajari tabel yang ada.
+
+Gunakan tabel lama apabila masih sesuai.
+
+Jangan membuat tabel baru dengan fungsi yang sama.
+
+Jika dibutuhkan, tambahkan atau refactor tabel yang setara dengan:
+
+- `lead_sources`
+- `leads`
+- `lead_assignments`
+- `lead_assignment_histories`
+- `customers`
+- `customer_status_histories`
+- `customer_activities`
+- `follow_ups`
+- `visit_schedules`
+- `visit_reports`
+- `customer_document_requirements`
+- `customer_documents`
+- `reservations`
+- `booking_fees`
+- `sprs`
+- `mortgage_applications`
+- `developer_mortgages`
+- `installment_schedules`
+- `customer_payments`
+- `closing_schedules`
+- `sales_work_items`
+- `sales_activity_logs`
+- `marketing_targets`
+- `marketing_evaluations`
+- `admin_sales_evaluations`
+- `cancellation_reasons`
+- `audit_logs`
+
+Gunakan:
+
+- Foreign key.
+- Index.
+- Unique constraint.
+- Soft delete.
+- Created by.
+- Updated by.
+- Verified by.
+- Approved by.
+- Timestamp.
+
+Tambahkan index untuk:
+
+- Tanggal.
+- Marketing.
+- Admin Sales.
+- Customer.
+- Perumahan.
+- Unit.
+- Status.
+- Jenis aktivitas.
+- Metode pembayaran.
+- Sumber lead.
+
+---
+
+# 19. VALIDASI
+
+Terapkan validasi frontend dan backend.
+
+Contoh:
+
+- Nomor telepon wajib.
+- Lead perusahaan wajib memiliki sumber.
+- Lead yang dibagikan wajib memiliki Marketing.
+- Perpindahan lead wajib memiliki alasan.
+- Follow-up wajib memiliki hasil.
+- Kunjungan selesai wajib memiliki laporan.
+- Dokumen ditolak wajib memiliki catatan.
+- Reservasi wajib memiliki customer dan unit.
+- Unit harus tersedia.
+- SPR wajib memiliki metode pembayaran.
+- KPR wajib memiliki bank.
+- Pembatalan wajib memiliki alasan.
+- Check-out tidak boleh sebelum check-in.
+- Tanggal selesai tidak boleh sebelum tanggal mulai.
+- Status lunas tidak boleh diberikan jika nominal belum terpenuhi.
+- Data yang sudah disetujui tidak boleh diedit tanpa proses revisi.
+
+Pesan validasi harus jelas dan menggunakan bahasa Indonesia yang mudah dipahami.
+
+---
+
+# 20. PERFORMA QUERY
+
+Pastikan seluruh dashboard dan laporan efisien.
+
+Gunakan:
+
+- Eager loading.
+- Pagination.
+- Query scope.
+- Filter service.
+- Aggregate query.
+- Index database.
+- Select kolom yang dibutuhkan.
+- Chunk untuk export.
+- Cache master data jika sesuai.
+- Queue untuk export besar jika project mendukung.
+
+Hindari:
+
+- N+1 query.
+- Query di dalam loop.
+- Mengambil seluruh data tanpa pagination.
+- Menghitung laporan satu per satu dengan query terpisah.
+- Menyimpan hasil laporan secara duplikat tanpa kebutuhan.
+
+---
+
+# 21. EXPORT DAN CETAK
+
+Semua laporan penting harus mendukung:
+
+- Preview.
+- Cetak.
+- Export Excel.
+- Export PDF jika tersedia.
+
+Hasil laporan menampilkan:
+
+- Nama perusahaan.
+- Logo jika tersedia.
+- Judul laporan.
+- Periode.
+- Filter aktif.
+- Tanggal cetak.
+- Nama pengguna.
+- Ringkasan.
+- Detail data.
+- Total.
+- Nomor halaman jika mendukung.
+
+Data export harus mengikuti filter aktif.
+
+---
+
+# 22. TAHAPAN PENGERJAAN CODEX
+
+Kerjakan secara bertahap.
+
+## Tahap 1: Audit
+
+Periksa semua modul dan buat daftar:
+
+- Modul yang sudah benar.
+- Modul yang tumpang tindih.
+- Modul yang duplikat.
+- Tabel yang tidak terhubung.
+- Form yang masih menggunakan input teks.
+- Halaman yang masih bercampur.
+- Laporan yang belum memiliki filter.
+- Permission yang terlalu umum.
+- Query yang bermasalah.
+
+## Tahap 2: Desain alur
+
+Buat rancangan:
+
+- Lead Marketing.
+- Lead Perusahaan.
+- Tugas Marketing.
+- Tugas Admin Sales.
+- Persetujuan Manager.
+- Monitoring Owner.
+- Status.
+- Relasi.
+- Timeline.
+- Work queue.
+- Laporan.
+
+## Tahap 3: Database
+
+Buat migration aman.
+
+Jangan merusak data lama.
+
+Tambahkan:
+
+- Foreign key.
+- Index.
+- Status history.
+- Assignment history.
+- Audit.
+- Work queue.
+- Master dropdown.
+
+## Tahap 4: Backend
+
+Refactor:
+
+- Model.
+- Relation.
+- Request validation.
+- Controller.
+- Service.
+- Repository.
+- Policy.
+- Permission.
+- Notification.
+- Report query.
+- Export.
+- Audit.
+
+## Tahap 5: Frontend
+
+Refactor:
+
+- Dashboard.
+- Halaman daftar.
+- Halaman tambah.
+- Halaman detail.
+- Halaman edit.
+- Halaman pemeriksaan.
+- Halaman laporan.
+- Filter.
+- Dropdown.
+- Dependent dropdown.
+- Pagination.
+- Preview.
+- Cetak.
+
+## Tahap 6: Integrasi
+
+Hubungkan:
+
+- Lead.
+- Customer.
+- Marketing.
+- Admin Sales.
+- Follow-up.
+- Kunjungan.
+- Dokumen.
+- Reservasi.
+- Booking fee.
+- SPR.
+- KPR.
+- Cash Bertahap.
+- KPR Developer.
+- Pembayaran.
+- Akad.
+- Closing.
+- Laporan.
+
+## Tahap 7: Testing
+
+Uji:
+
+1. Marketing dapat menginput lead pribadi.
+2. Admin Sales dapat menginput lead kantor.
+3. Lead website masuk otomatis jika integrasi tersedia.
+4. Admin Sales dapat membagikan lead.
+5. Riwayat pembagian tersimpan.
+6. Marketing hanya melihat lead miliknya.
+7. Admin Sales tidak dapat mengisi follow-up Marketing.
+8. Manager melihat seluruh aktivitas.
+9. Owner melihat laporan sesuai permission.
+10. Customer tidak duplikat.
+11. Data customer digunakan lintas modul.
+12. Unit digunakan lintas modul.
+13. Reservasi terhubung ke SPR.
+14. SPR terhubung ke pembayaran.
+15. KPR terhubung ke SPR.
+16. Laporan mengikuti filter.
+17. Angka dashboard dapat dibuka.
+18. Export mengikuti filter.
+19. Permission bekerja.
+20. Audit tercatat.
+21. Data lama tetap dapat digunakan.
+22. Query tidak mengalami N+1.
+23. Build berhasil.
+24. Test berhasil.
+
+---
+
+# 23. OUTPUT YANG WAJIB DIBERIKAN CODEX
+
+Jangan hanya memberikan analisis atau contoh kode.
+
+Lakukan implementasi penuh.
+
+Berikan:
+
+- Migration.
+- Seeder.
+- Master data.
+- Model.
+- Relasi.
+- Request validation.
+- Controller.
+- Service.
+- Repository jika digunakan.
+- Route.
+- Middleware.
+- Permission.
+- Notification.
+- Audit log.
+- Dashboard.
+- Halaman data.
+- Halaman form.
+- Halaman detail.
+- Halaman pemeriksaan.
+- Halaman laporan.
+- Filter.
+- Export.
+- Preview.
+- Testing.
+- Dokumentasi.
+
+Setelah implementasi, berikan ringkasan:
+
+1. File dibuat.
+2. File diubah.
+3. Tabel baru.
+4. Tabel direfactor.
+5. Relasi ditambahkan.
+6. Permission ditambahkan.
+7. Route ditambahkan.
+8. Modul lama yang dipertahankan.
+9. Modul lama yang diganti.
+10. Cara menjalankan migration.
+11. Cara menjalankan seeder.
+12. Cara menjalankan test.
+13. Cara menguji alur Marketing.
+14. Cara menguji alur Admin Sales.
+15. Cara menguji laporan Manager dan Owner.
+16. Risiko yang masih perlu diperiksa manual.
+
+---
+
+# 24. KRITERIA KEBERHASILAN
+
+Refactor dianggap berhasil apabila:
+
+1. Marketing dapat menginput lead yang dicari sendiri.
+2. Admin Sales dapat mengelola lead perusahaan.
+3. Lead website tidak perlu diinput ulang jika sudah terintegrasi.
+4. Semua lead memiliki sumber yang jelas.
+5. Semua lead memiliki riwayat pembagian.
+6. Admin Sales tidak mengambil alih follow-up Marketing.
+7. Admin Sales dapat memantau follow-up.
+8. Admin Sales dapat memeriksa laporan kunjungan.
+9. Admin Sales dapat mengelola administrasi customer.
+10. Admin Sales dapat mengelola reservasi dan SPR.
+11. Admin Sales dapat memantau KPR dan pembayaran.
+12. Seluruh data customer saling terhubung.
+13. Seluruh data unit saling terhubung.
+14. Reservasi, SPR, pembayaran, dan closing menggunakan customer dan unit yang sama.
+15. Halaman data dan form terpisah.
+16. Semua pilihan menggunakan dropdown yang sesuai.
+17. Manager dapat melihat laporan Marketing.
+18. Manager dapat melihat laporan Admin Sales.
+19. Owner dapat melihat laporan keseluruhan.
+20. Role lain dapat melihat laporan berdasarkan permission.
+21. Laporan dapat difilter berdasarkan tanggal.
+22. Laporan dapat difilter berdasarkan Marketing.
+23. Laporan dapat difilter berdasarkan Admin Sales.
+24. Laporan dapat difilter berdasarkan perumahan dan unit.
+25. Laporan dapat difilter berdasarkan status.
+26. Laporan dapat diekspor dan dicetak.
+27. Angka dashboard dapat dibuka ke detail data.
+28. Customer yang tidak ditindaklanjuti dapat diketahui.
+29. Pekerjaan Admin Sales yang terlambat dapat diketahui.
+30. Marketing yang tidak aktif dapat diketahui.
+31. Tidak ada duplikasi data.
+32. Audit log berjalan.
+33. Permission berjalan.
+34. Data lama tidak rusak.
+35. Tidak ada error pada migration, build, route, dan testing.
+
+Prioritaskan integritas data, pembagian tanggung jawab yang jelas, kemudahan penggunaan, laporan manajemen, keamanan permission, audit aktivitas, dan performa query.

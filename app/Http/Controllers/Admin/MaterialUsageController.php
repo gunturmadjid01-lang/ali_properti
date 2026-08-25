@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Controller;
 use App\Models\DetailRumah;
+use App\Models\ApprovalRequest;
 use App\Models\MaterialUsage;
 use App\Models\Perumahan;
 use App\Models\ProgressPembangunan;
 use App\Models\SiteMaterialStock;
 use App\Services\MaterialHppRealizationService;
+use App\Services\MaterialUnitConversionService;
 use App\Services\MaterialWorkflowService;
+use App\Services\ApprovalWorkflowService;
 use App\Services\TahapanOptionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -22,7 +25,10 @@ use Inertia\Response;
 
 class MaterialUsageController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock {
+        lock as protected traitLock;
+        unlock as protected traitUnlock;
+    }
 
     public function index(Request $request): Response
     {
@@ -32,6 +38,8 @@ class MaterialUsageController extends Controller
         $perumahanId = $request->query('perumahan_id');
         $detailRumahId = $request->query('detail_rumah_id');
         $tahapanId = $request->query('tahapan_pembangunan_id');
+        $qualityUpgradeId = $request->query('quality_upgrade_contract_id');
+        $qualityUpgrade = $qualityUpgradeId ? \App\Models\QualityUpgradeContract::query()->with('unit')->findOrFail($qualityUpgradeId) : null;
 
         return Inertia::render('Admin/MaterialUsage/Index', [
             'title' => 'Pemakaian Material',
@@ -40,7 +48,7 @@ class MaterialUsageController extends Controller
                 'canCreate' => $this->canMaterialUsage('create'),
                 'canUpdate' => $this->canMaterialUsage('update'),
                 'canDelete' => $this->canMaterialUsage('delete'),
-                'canLock' => $this->canMaterialUsage('update'),
+                'canLock' => $this->canMaterialUsage('lock'),
                 'canUnlock' => $this->currentUserCanManageLockedRecords(),
             ],
             'filters' => [
@@ -48,6 +56,7 @@ class MaterialUsageController extends Controller
                 'perumahan_id' => $perumahanId,
                 'detail_rumah_id' => $detailRumahId,
                 'tahapan_pembangunan_id' => $tahapanId,
+                'quality_upgrade_contract_id' => $qualityUpgradeId,
             ],
             'rows' => MaterialUsage::query()
                 ->with([
@@ -55,7 +64,7 @@ class MaterialUsageController extends Controller
                     'detailRumah:id,kode_nlok,nomor_rumah',
                     'tahapanPembangunan:id,nama_tahapan',
                     'progressPembangunan:id,nama_progress,persentase,tanggal',
-                    'details.barangMaterial:id,nama_barang',
+                    'details.barangMaterial:id,nama_barang,base_unit_id,satuan',
                     'creator:id,name',
                     'updater:id,name',
                 ])
@@ -65,11 +74,14 @@ class MaterialUsageController extends Controller
                 ->when($perumahanId, fn (Builder $query) => $query->where('perumahan_id', $perumahanId))
                 ->when($detailRumahId, fn (Builder $query) => $query->where('detail_rumah_id', $detailRumahId))
                 ->when($tahapanId, fn (Builder $query) => $query->where('tahapan_pembangunan_id', $tahapanId))
+                ->when($qualityUpgradeId, fn (Builder $query) => $query->where('quality_upgrade_contract_id', $qualityUpgradeId))
                 ->latest('tanggal')
                 ->latest('id')
                 ->paginate(10)
                 ->withQueryString()
-                ->through(fn (MaterialUsage $row) => [
+                ->through(function (MaterialUsage $row) {
+                    $approval = ApprovalRequest::query()->where(['module_key' => 'material-usage', 'action' => 'lock', 'model_type' => MaterialUsage::class, 'model_id' => $row->id])->latest('id')->first();
+                    return [
                     'id' => $row->id,
                     'kode_pemakaian' => $row->kode_pemakaian,
                     'tanggal' => optional($row->tanggal)->format('Y-m-d'),
@@ -77,6 +89,8 @@ class MaterialUsageController extends Controller
                     'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
                     'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
                     'progress_pembangunan_id' => (string) ($row->progress_pembangunan_id ?? ''),
+                    'quality_upgrade_contract_id' => (string) ($row->quality_upgrade_contract_id ?? ''),
+                    'quality_upgrade_contract_item_id' => (string) ($row->quality_upgrade_contract_item_id ?? ''),
                     'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
                     'unit' => $row->detailRumah
                         ? trim($row->detailRumah->kode_nlok.' '.$row->detailRumah->nomor_rumah)
@@ -85,23 +99,34 @@ class MaterialUsageController extends Controller
                     'progress' => $row->progressPembangunan
                         ? ($row->progressPembangunan->nama_progress ?: 'Progress').' - '.$row->progressPembangunan->persentase.'% - '.optional($row->progressPembangunan->tanggal)->format('Y-m-d')
                         : '-',
-                    'items_text' => $row->details->map(fn ($detail) => "{$detail->barangMaterial?->nama_barang} {$detail->qty} {$detail->satuan}")->join(', '),
+                    'items_text' => $row->details->map(fn ($detail) => "{$detail->barangMaterial?->nama_barang} ".($detail->input_qty ?? $detail->qty)." {$detail->satuan}")->join(', '),
                     'items' => $row->details->map(fn ($detail) => [
                         'site_material_stock_id' => (string) $detail->site_material_stock_id,
-                        'qty' => $detail->qty,
+                        'qty' => $detail->input_qty ?? $detail->qty,
+                        'material_unit_id' => (string) ($detail->input_unit_id ?? $detail->barangMaterial?->base_unit_id ?? ''),
                         'satuan' => $detail->satuan,
                     ])->values(),
                     'keterangan' => $row->keterangan,
                     'foto_url' => $row->foto ? route('media', ['path' => $row->foto], false) : null,
                     'record_status' => $row->record_status ?? 'draft',
+                    'approval_stage' => $approval?->status === ApprovalRequest::STATUS_PENDING ? "Tahap {$approval->current_step}/{$approval->total_steps}" : ($approval?->status ?? 'Belum diajukan'),
+                    'can_review' => $approval?->status === ApprovalRequest::STATUS_PENDING && app(ApprovalWorkflowService::class)->canReview($approval),
                     'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canMaterialUsage('update'),
                     'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && $this->canMaterialUsage('delete'),
-                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canMaterialUsage('update'),
+                    'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canMaterialUsage('lock'),
                     'can_unlock' => $this->currentUserCanManageLockedRecords(),
                     'created_by_name' => $row->creator?->name ?? '-',
                     'updated_by_name' => $row->updater?->name ?? '-',
-                ]),
+                    ];
+                }),
             'options' => $this->options(),
+            'qualityUpgrade' => $qualityUpgrade ? [
+                'id' => (string) $qualityUpgrade->id,
+                'label' => $qualityUpgrade->contract_no,
+                'perumahan_id' => (string) $qualityUpgrade->unit?->perumahan_id,
+                'detail_rumah_id' => (string) $qualityUpgrade->detail_rumah_id,
+                'items' => $qualityUpgrade->items()->get(['id', 'name'])->map(fn ($item) => ['value' => (string) $item->id, 'label' => $item->name]),
+            ] : null,
             'siteStockRows' => SiteMaterialStock::query()
                 ->with([
                     'gudang:id,nama_gudang',
@@ -137,10 +162,9 @@ class MaterialUsageController extends Controller
         $validated = $this->validatePayload($request);
         $this->ensureProgressMatches($validated);
 
-        $usage = $workflow->recordUsage($validated, $request->file('foto'));
-        $hppRealization->syncFromUsage($usage);
+        $workflow->recordUsage($validated, $request->file('foto'));
 
-        return back()->with('success', 'Pemakaian material berhasil dicatat dan sisa material lokasi telah diperbarui.');
+        return back()->with('success', 'Draft pemakaian material berhasil dicatat. Stok akan dikurangi setelah approval final.');
     }
 
     public function update(Request $request, string $id, MaterialWorkflowService $workflow, MaterialHppRealizationService $hppRealization): RedirectResponse
@@ -155,8 +179,7 @@ class MaterialUsageController extends Controller
             Storage::disk('public')->delete($usage->foto);
         }
 
-        $usage = $workflow->updateUsage($usage, $validated, $request->file('foto'));
-        $hppRealization->syncFromUsage($usage);
+        $workflow->updateUsage($usage, $validated, $request->file('foto'));
 
         return back()->with('success', 'Pemakaian material berhasil diperbarui.');
     }
@@ -170,10 +193,7 @@ class MaterialUsageController extends Controller
 
             $hppRealization->removeForUsage($usage);
 
-            foreach ($usage->details as $detail) {
-                $detail->siteMaterialStock()->increment('qty_available', $detail->qty);
-                $detail->siteMaterialStock()->decrement('qty_used', $detail->qty);
-            }
+            app(MaterialWorkflowService::class)->reverseUsage($usage);
 
             if ($usage->foto) {
                 Storage::disk('public')->delete($usage->foto);
@@ -188,6 +208,53 @@ class MaterialUsageController extends Controller
     protected function modelClass(): string
     {
         return MaterialUsage::class;
+    }
+
+    public function lock(string $id): RedirectResponse
+    {
+        $this->authorizeMaterialUsage('lock');
+
+        return $this->traitLock($id);
+    }
+
+    public function unlock(string $id): RedirectResponse
+    {
+        $this->authorizeMaterialUsage('unlock');
+
+        return $this->traitUnlock($id);
+    }
+
+    public function approve(string $id, ApprovalWorkflowService $workflow): RedirectResponse
+    {
+        $approval = $this->pendingApproval($id);
+        abort_unless($workflow->canReview($approval), 403, 'Role Anda tidak terdaftar pada tahap approval aktif.');
+        $workflow->approve($approval);
+
+        return back()->with('success', 'Tahap approval pemakaian material berhasil diproses.');
+    }
+
+    public function reject(Request $request, string $id, ApprovalWorkflowService $workflow): RedirectResponse
+    {
+        $approval = $this->pendingApproval($id);
+        abort_unless($workflow->canReview($approval), 403, 'Role Anda tidak terdaftar pada tahap approval aktif.');
+        $workflow->reject($approval, $request->string('note')->toString());
+
+        return back()->with('success', 'Pemakaian material ditolak.');
+    }
+
+    protected function beforeUnlock(MaterialUsage $usage): void
+    {
+        $contractId = $usage->quality_upgrade_contract_id;
+        app(\App\Services\QualityUpgradeContractService::class)->reverseMaterialHpp($usage);
+        app(MaterialWorkflowService::class)->reverseUsage($usage);
+        if ($contractId) {
+            app(\App\Services\QualityUpgradeContractService::class)->syncMaterialCost($contractId);
+        }
+    }
+
+    private function pendingApproval(string $id): ApprovalRequest
+    {
+        return ApprovalRequest::query()->where(['module_key' => 'material-usage', 'action' => 'lock', 'model_type' => MaterialUsage::class, 'model_id' => $id, 'status' => ApprovalRequest::STATUS_PENDING])->latest('id')->firstOrFail();
     }
 
     private function authorizePengawas(): void
@@ -216,12 +283,15 @@ class MaterialUsageController extends Controller
             'perumahan_id' => ['required', 'exists:perumahans,id'],
             'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
             'tahapan_pembangunan_id' => ['required', 'exists:tahapan_pembangunans,id'],
-            'progress_pembangunan_id' => ['required', 'exists:progress_pembangunans,id'],
+            'progress_pembangunan_id' => ['nullable', 'required_without:quality_upgrade_contract_id', 'exists:progress_pembangunans,id'],
+            'quality_upgrade_contract_id' => ['nullable', 'exists:quality_upgrade_contracts,id'],
+            'quality_upgrade_contract_item_id' => ['nullable', 'required_with:quality_upgrade_contract_id', 'exists:quality_upgrade_contract_items,id'],
             'keterangan' => ['required', 'string'],
             'foto' => ['nullable', 'image', 'max:4096'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.site_material_stock_id' => ['required', 'exists:site_material_stocks,id'],
             'items.*.qty' => ['required', 'numeric', 'min:0.01'],
+            'items.*.material_unit_id' => ['required', 'exists:material_units,id'],
             'items.*.satuan' => ['nullable', 'string'],
         ], [
             'progress_pembangunan_id.required' => 'Progress pembangunan wajib dipilih agar pemakaian material tersinkron.',
@@ -230,6 +300,13 @@ class MaterialUsageController extends Controller
 
     private function ensureProgressMatches(array $validated): void
     {
+        if (! empty($validated['quality_upgrade_contract_id'])) {
+            $contract = \App\Models\QualityUpgradeContract::query()->with('items')->findOrFail($validated['quality_upgrade_contract_id']);
+            abort_unless($contract->business_status === 'active', 422, 'Kontrak Penambahan Mutu belum aktif.');
+            abort_unless((int) $contract->detail_rumah_id === (int) ($validated['detail_rumah_id'] ?? 0), 422, 'Unit tidak sesuai dengan kontrak Penambahan Mutu.');
+            abort_unless($contract->items->contains('id', (int) $validated['quality_upgrade_contract_item_id']), 422, 'Item pekerjaan tidak sesuai dengan kontrak.');
+            return;
+        }
         $progress = ProgressPembangunan::query()
             ->with(['detailRumah:id,perumahan_id', 'siteSchedule:id,perumahan_id,detail_rumah_id,tahapan_pembangunan_id'])
             ->findOrFail($validated['progress_pembangunan_id']);
@@ -264,7 +341,7 @@ class MaterialUsageController extends Controller
                     'tahapan_pembangunan_id' => (string) $row->tahapan_pembangunan_id,
                     'site_schedule_id' => (string) ($row->site_schedule_id ?? ''),
                 ])->values(),
-            'siteStocks' => SiteMaterialStock::query()->with(['barangMaterial:id,nama_barang,satuan', 'gudang:id,nama_gudang'])->where('qty_available', '>', 0)->get()
+            'siteStocks' => SiteMaterialStock::query()->with(['barangMaterial.baseUnit', 'barangMaterial.unitConversions.childUnit', 'gudang:id,nama_gudang'])->where('qty_available', '>', 0)->get()
                 ->map(fn ($row) => [
                     'value' => (string) $row->id,
                     'label' => "{$row->barangMaterial?->nama_barang} - sisa {$row->qty_available} {$row->barangMaterial?->satuan}",
@@ -272,6 +349,8 @@ class MaterialUsageController extends Controller
                     'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
                     'tahapan_pembangunan_id' => (string) ($row->tahapan_pembangunan_id ?? ''),
                     'satuan' => $row->barangMaterial?->satuan,
+                    'base_unit_id' => (string) ($row->barangMaterial?->base_unit_id ?? ''),
+                    'unit_options' => $row->barangMaterial ? app(MaterialUnitConversionService::class)->options($row->barangMaterial) : [],
                     'qty_available' => $row->qty_available,
                     'gudang' => $row->gudang?->nama_gudang,
                 ])->values(),

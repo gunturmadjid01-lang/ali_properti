@@ -172,5 +172,7 @@ export default function Form({ title, actionUrl, housing, periods, owners }) {
     );
 }
 Form.layout = (page) => (
-    <AdminLayout title={page.props.title}>{page}</AdminLayout>
+    <AdminLayout title={page?.props?.title ?? "Form Pembayaran Air"}>
+        {page}
+    </AdminLayout>
 );

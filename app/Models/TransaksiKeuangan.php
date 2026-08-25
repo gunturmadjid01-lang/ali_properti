@@ -22,6 +22,11 @@ class TransaksiKeuangan extends Model
         'source_id',
         'nomor_referensi',
         'status',
+        'record_status',
+        'locked_at',
+        'locked_by',
+        'posted_at',
+        'posted_by',
         'tanggal',
         'nominal',
         'keterangan',
@@ -31,6 +36,8 @@ class TransaksiKeuangan extends Model
     protected $casts = [
         'tanggal' => 'date',
         'nominal' => 'float',
+        'locked_at' => 'datetime',
+        'posted_at' => 'datetime',
     ];
 
     public function cabang(): BelongsTo
@@ -66,5 +73,12 @@ class TransaksiKeuangan extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function latestApproval()
+    {
+        return $this->morphOne(ApprovalRequest::class, 'model')
+            ->ofMany('id', 'max')
+            ->where('module_key', 'financial-transaction');
     }
 }

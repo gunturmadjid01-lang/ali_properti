@@ -121,6 +121,8 @@ export default function Dropdown({
                       ref={menuRef}
                       className={`overflow-hidden rounded-lg border border-ink/70 bg-white p-1 dark:border-white/40 dark:bg-graphite ${menuClassName}`}
                       style={menuStyle}
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
                   >
                       {searchable && (
                           <label className="mb-1 flex min-h-10 items-center gap-2 rounded-md border border-silver-deep/60 bg-silver-soft px-3 text-sm font-bold text-ink-soft dark:border-white/10 dark:bg-white/8 dark:text-white/70">
@@ -208,13 +210,11 @@ export default function Dropdown({
                     aria-expanded={open}
                     type="button"
                     disabled={disabled}
-                    onMouseDown={(event) => {
+                    onClick={() => {
                         if (disabled) {
                             return;
                         }
-                        event.preventDefault();
-                        event.stopPropagation();
-                        setOpen(true);
+                        setOpen((current) => !current);
                         setSearch("");
                     }}
                     onKeyDown={(event) => {

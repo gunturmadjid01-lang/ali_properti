@@ -18,6 +18,7 @@ class PaymentSchedule extends Model
         return $this->belongsTo(SalesTransaction::class);
     }
     public function housingReservation() { return $this->belongsTo(HousingReservation::class); }
+    public function qualityUpgradeContract() { return $this->belongsTo(QualityUpgradeContract::class); }
 
     public function source()
     {

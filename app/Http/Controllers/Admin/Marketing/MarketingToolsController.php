@@ -9,7 +9,12 @@ use App\Models\BankKredit;
 use App\Models\Costumer;
 use App\Models\CostumerFollowUp;
 use App\Models\DetailRumah;
+use App\Models\MarketingActionPlan;
+use App\Models\MarketingLead;
+use App\Models\MarketingLeadAssignment;
 use App\Models\MarketingReminder;
+use App\Models\MarketingSurveySchedule;
+use App\Models\MarketingVisit;
 use App\Models\Perumahan;
 use App\Models\SalesProcessStep;
 use App\Models\SalesTransaction;
@@ -59,8 +64,9 @@ class MarketingToolsController extends Controller
         $this->abortUnlessMarketingAccess($request, ['supervisor_marketing'], 'marketing.lead-distribution.manage', 403, 'Hanya supervisor marketing yang dapat distribusi lead.');
 
         $validated = $request->validate([
-            'costumer_id' => ['required', 'exists:costumers,id'],
+            'marketing_lead_id' => ['required', 'exists:marketing_leads,id'],
             'user_id' => ['required', 'exists:users,id'],
+            'reason' => ['required', 'string', 'min:5', 'max:1000'],
         ]);
         $activePerumahanId = $this->shouldScopeToActivePerumahan($request)
             ? $this->ensureActivePerumahan($request)
@@ -72,14 +78,29 @@ class MarketingToolsController extends Controller
             ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('perumahans', fn (Builder $query) => $query->whereKey($id)))
             ->firstOrFail();
 
-        Costumer::query()
-            ->whereKey($validated['costumer_id'])
+        $lead = MarketingLead::query()
+            ->whereKey($validated['marketing_lead_id'])
+            ->whereNotIn('stage', ['converted', 'lost'])
             ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))
-            ->firstOrFail()
-            ->update([
-                'created_by' => $marketing->id,
-                'updated_by' => $request->user()?->id,
-            ]);
+            ->firstOrFail();
+        $previousMarketingId = $lead->marketing_id;
+        $lead->update([
+            'marketing_id' => $marketing->id,
+            'assigned_at' => now(),
+            'assignment_status' => 'offered',
+            'first_response_due_at' => now()->addHours(2),
+            'updated_by' => $request->user()?->id,
+        ]);
+        MarketingLeadAssignment::query()->create([
+            'marketing_lead_id' => $lead->id,
+            'from_marketing_id' => $previousMarketingId,
+            'to_marketing_id' => $marketing->id,
+            'reason' => $validated['reason'],
+            'status' => 'offered',
+            'assigned_by' => $request->user()?->id,
+            'assigned_at' => now(),
+            'response_due_at' => now()->addHours(2),
+        ]);
 
         return back()->with('success', 'Lead berhasil didistribusikan ke '.$marketing->name.'.');
     }
@@ -214,24 +235,22 @@ class MarketingToolsController extends Controller
     protected function hotLeadData(Request $request): array
     {
         return [
-            'rows' => $this->customerQuery($request)
-                ->with(['followUps' => fn ($query) => $query->latest('tanggal_follow_up'), 'leadSource:id,nama_sumber'])
-                ->where(function (Builder $query): void {
-                    $query->whereIn('status_lead', ['negosiasi', 'survey_lokasi', 'spr'])
-                        ->orWhereHas('followUps', fn (Builder $query) => $query->whereIn('progress_kemampuan', ['high', 'very_high']));
-                })
+            'rows' => $this->leadQuery($request)
+                ->with(['followUps' => fn ($query) => $query->latest('tanggal_follow_up'), 'source:id,nama_sumber'])
+                ->whereNotIn('stage', ['converted', 'lost'])
+                ->where(fn (Builder $query) => $query->where('interest_level', 'hot')->orWhere('stage', 'qualified'))
                 ->latest('id')
                 ->limit(150)
                 ->get()
-                ->map(fn (Costumer $customer) => [
-                    'id' => $customer->id,
-                    'customer' => $customer->nama,
-                    'telepon' => $customer->telepon,
-                    'sumber' => $customer->leadSource?->nama_sumber ?? '-',
-                    'status' => $this->statusLabel($customer->status_lead),
-                    'progress' => $customer->followUps->first()?->progress_kemampuan ?? '-',
-                    'catatan' => $customer->followUps->first()?->catatan ?? '-',
-                    'last_follow_up' => optional($customer->followUps->first()?->tanggal_follow_up)->format('d/m/Y'),
+                ->map(fn (MarketingLead $lead) => [
+                    'id' => $lead->id,
+                    'lead' => $lead->name,
+                    'telepon' => $lead->phone,
+                    'sumber' => $lead->source?->nama_sumber ?? ($lead->source_channel ?: '-'),
+                    'status' => $this->leadStageLabel($lead->stage),
+                    'progress' => $lead->interest_level,
+                    'catatan' => $lead->followUps->first()?->catatan ?? $lead->notes ?? '-',
+                    'last_follow_up' => optional($lead->followUps->first()?->tanggal_follow_up)->format('d/m/Y'),
                 ])
                 ->values(),
         ];
@@ -242,21 +261,22 @@ class MarketingToolsController extends Controller
         $this->abortUnlessMarketingAccess($request, ['supervisor_marketing'], 'marketing.lead-distribution.view');
 
         return [
-            'rows' => $this->customerQuery($request)
-                ->with(['leadSource:id,nama_sumber', 'creator:id,name'])
-                ->orderByRaw('CASE WHEN created_by IS NULL THEN 0 ELSE 1 END')
+            'rows' => $this->leadQuery($request)
+                ->with(['source:id,nama_sumber', 'marketing:id,name'])
+                ->whereNotIn('stage', ['converted', 'lost'])
+                ->orderByRaw('CASE WHEN marketing_id IS NULL THEN 0 ELSE 1 END')
                 ->latest('id')
                 ->limit(200)
                 ->get()
-                ->map(fn (Costumer $customer) => [
-                    'id' => $customer->id,
-                    'kode' => $customer->kode_costumer,
-                    'customer' => $customer->nama,
-                    'telepon' => $customer->telepon,
-                    'sumber' => $customer->leadSource?->nama_sumber ?? '-',
-                    'status' => $this->statusLabel($customer->status_lead),
-                    'marketing' => $customer->creator?->name ?? 'Belum dibagi',
-                    'created_at' => optional($customer->created_at)->format('d/m/Y H:i'),
+                ->map(fn (MarketingLead $lead) => [
+                    'id' => $lead->id,
+                    'kode' => $lead->lead_no,
+                    'lead' => $lead->name,
+                    'telepon' => $lead->phone,
+                    'sumber' => $lead->source?->nama_sumber ?? ($lead->source_channel ?: '-'),
+                    'status' => $this->leadStageLabel($lead->stage),
+                    'marketing' => $lead->marketing?->name ?? 'Belum dibagi',
+                    'created_at' => optional($lead->created_at)->format('d/m/Y H:i'),
                 ])
                 ->values(),
             'marketingOptions' => $this->marketingOptions(),
@@ -265,7 +285,7 @@ class MarketingToolsController extends Controller
 
     protected function activityData(Request $request): array
     {
-        $this->abortUnlessMarketingAccess($request, ['owner', 'manager', 'supervisor_marketing'], 'marketing.activity.view');
+        $this->abortUnlessMarketingAccess($request, ['owner', 'manager', 'supervisor_marketing'], 'marketing.activity.view-all');
         $dateFrom = $request->query('date_from') ?: now()->startOfMonth()->toDateString();
         $dateTo = $request->query('date_to') ?: now()->toDateString();
         $periodStart = Carbon::parse($dateFrom)->startOfDay();
@@ -279,7 +299,7 @@ class MarketingToolsController extends Controller
 
         $rows = User::query()
             ->withCount([
-                'costumers as lead_count' => fn (Builder $query) => $query
+                'marketingLeads as lead_count' => fn (Builder $query) => $query
                     ->whereBetween('created_at', [$periodStart, $periodEnd])
                     ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
                 'costumerFollowUps as follow_up_count' => fn (Builder $query) => $query
@@ -287,6 +307,12 @@ class MarketingToolsController extends Controller
                     ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('costumer', fn (Builder $query) => $query->where('perumahan_id', $id))),
                 'surveySchedules as survey_count' => fn (Builder $query) => $query
                     ->whereBetween('tanggal_survey', [$periodStart, $periodEnd])
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
+                'marketingVisits as visit_count' => fn (Builder $query) => $query
+                    ->whereBetween('planned_at', [$periodStart, $periodEnd])
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
+                'marketingActionPlans as other_activity_count' => fn (Builder $query) => $query
+                    ->whereBetween('start_at', [$periodStart, $periodEnd])
                     ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
                 'sprs as spr_count' => fn (Builder $query) => $query
                     ->whereBetween('tanggal_spr', [$periodStart, $periodEnd])
@@ -306,6 +332,8 @@ class MarketingToolsController extends Controller
                 $lead = (int) $user->lead_count;
                 $followUp = (int) $user->follow_up_count;
                 $survey = (int) $user->survey_count;
+                $visit = (int) $user->visit_count;
+                $otherActivity = (int) $user->other_activity_count;
                 $spr = (int) $user->spr_count;
                 $overdue = (int) $user->overdue_reminder_count;
 
@@ -315,13 +343,41 @@ class MarketingToolsController extends Controller
                     'lead' => $lead,
                     'follow_up' => $followUp,
                     'survey' => $survey,
+                    'visit' => $visit,
+                    'other_activity' => $otherActivity,
                     'spr' => $spr,
                     'overdue' => $overdue,
                     'follow_up_rate' => $lead > 0 ? round(min(100, ($followUp / $lead) * 100), 1) : 0,
                     'spr_conversion' => $lead > 0 ? round(($spr / $lead) * 100, 1) : 0,
-                    'activity_score' => max(0, ($followUp * 2) + ($survey * 5) + ($spr * 12) - ($overdue * 3)),
+                    'activity_score' => max(0, ($followUp * 2) + ($visit * 5) + ($survey * 5) + ($otherActivity * 2) + ($spr * 12) - ($overdue * 3)),
                 ];
             })->sortByDesc('activity_score')->values();
+
+        $recentActivities = collect()
+            ->concat(MarketingLead::query()->with('marketing:id,name')->whereBetween('created_at', [$periodStart, $periodEnd])
+                ->when($selectedMarketingId, fn (Builder $query, int $id) => $query->where('marketing_id', $id))
+                ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))->latest()->limit(100)->get()
+                ->map(fn (MarketingLead $row) => ['id' => 'lead-'.$row->id, 'date' => $row->created_at?->format('d/m/Y H:i'), 'marketing' => $row->marketing?->name, 'type' => 'Lead Baru', 'customer' => $row->name, 'result' => $row->source_channel, 'status' => $this->leadStageLabel($row->stage)]))
+            ->concat(CostumerFollowUp::query()->with(['user:id,name', 'costumer:id,nama,perumahan_id'])->whereBetween('tanggal_follow_up', [$periodStart, $periodEnd])
+                ->when($selectedMarketingId, fn (Builder $query, int $id) => $query->where('user_id', $id))
+                ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('costumer', fn (Builder $customer) => $customer->where('perumahan_id', $id)))->latest()->limit(100)->get()
+                ->map(fn (CostumerFollowUp $row) => ['id' => 'follow-'.$row->id, 'date' => $row->tanggal_follow_up?->format('d/m/Y'), 'marketing' => $row->user?->name, 'type' => 'Follow-up', 'customer' => $row->costumer?->nama, 'result' => $row->catatan, 'status' => $row->status]))
+            ->concat(MarketingVisit::query()->with(['marketing:id,name', 'costumer:id,nama'])->whereBetween('planned_at', [$periodStart, $periodEnd])
+                ->when($selectedMarketingId, fn (Builder $query, int $id) => $query->where('marketing_id', $id))->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))->latest('planned_at')->limit(100)->get()
+                ->map(function (MarketingVisit $row): array {
+                    $latitude = $row->check_out_latitude ?? $row->check_in_latitude;
+                    $longitude = $row->check_out_longitude ?? $row->check_in_longitude;
+                    $photo = $row->check_out_photo_path ?? $row->check_in_photo_path;
+
+                    return ['id' => 'visit-'.$row->id, 'date' => ($row->finished_at ?? $row->started_at ?? $row->planned_at)?->format('d/m/Y H:i'), 'marketing' => $row->marketing?->name, 'type' => 'Kunjungan', 'customer' => $row->costumer?->nama, 'result' => $row->result ?: $row->objective, 'status' => $row->status, 'verification_status' => $row->verification_status, 'location' => $row->location, 'map_url' => $latitude !== null && $longitude !== null ? "https://www.google.com/maps?q={$latitude},{$longitude}" : null, 'evidence_url' => $photo ? asset('storage/'.$photo) : null];
+                }))
+            ->concat(MarketingSurveySchedule::query()->with(['marketing:id,name', 'costumer:id,nama'])->whereBetween('tanggal_survey', [$periodStart, $periodEnd])
+                ->when($selectedMarketingId, fn (Builder $query, int $id) => $query->where('marketing_id', $id))->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))->latest('tanggal_survey')->limit(100)->get()
+                ->map(fn (MarketingSurveySchedule $row) => ['id' => 'survey-'.$row->id, 'date' => $row->tanggal_survey?->format('d/m/Y H:i'), 'marketing' => $row->marketing?->name, 'type' => 'Survei', 'customer' => $row->costumer?->nama, 'result' => $row->hasil_survey ?: $row->catatan, 'status' => $row->status]))
+            ->concat(MarketingActionPlan::query()->with(['marketing:id,name', 'costumer:id,nama'])->whereBetween('start_at', [$periodStart, $periodEnd])
+                ->when($selectedMarketingId, fn (Builder $query, int $id) => $query->where('marketing_id', $id))->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))->latest('start_at')->limit(100)->get()
+                ->map(fn (MarketingActionPlan $row) => ['id' => 'activity-'.$row->id, 'date' => $row->start_at?->format('d/m/Y H:i'), 'marketing' => $row->marketing?->name, 'type' => 'Aktivitas Lain', 'customer' => $row->costumer?->nama, 'result' => $row->actual_result ?: $row->objective, 'status' => $row->status]))
+            ->sortByDesc('date')->take(200)->values();
 
         return [
             'date_from' => $dateFrom,
@@ -330,11 +386,14 @@ class MarketingToolsController extends Controller
             'can_view_all' => $canViewAll,
             'selected_marketing_id' => $selectedMarketingId ? (string) $selectedMarketingId : '',
             'marketing_options' => collect($this->marketingOptions())->prepend(['value' => '', 'label' => 'Seluruh Marketing'])->values(),
+            'recent_activities' => $recentActivities,
             'summary' => [
                 'marketing' => $rows->count(),
                 'lead' => $rows->sum('lead'),
                 'follow_up' => $rows->sum('follow_up'),
                 'survey' => $rows->sum('survey'),
+                'visit' => $rows->sum('visit'),
+                'other_activity' => $rows->sum('other_activity'),
                 'spr' => $rows->sum('spr'),
                 'overdue' => $rows->sum('overdue'),
                 'top_activity' => $rows->first()['name'] ?? '-',
@@ -345,23 +404,21 @@ class MarketingToolsController extends Controller
     protected function agingLeadData(Request $request): array
     {
         return [
-            'rows' => $this->customerQuery($request)
-                ->withMax('leadActivities', 'activity_at')
-                ->with('creator:id,name')
+            'rows' => $this->leadQuery($request)
+                ->with('marketing:id,name')
+                ->whereNotIn('stage', ['converted', 'lost'])
                 ->latest('id')
                 ->limit(200)
                 ->get()
-                ->map(function (Costumer $customer): array {
-                    $last = $customer->lead_activities_max_activity_at
-                        ? Carbon::parse($customer->lead_activities_max_activity_at)
-                        : $customer->created_at;
+                ->map(function (MarketingLead $lead): array {
+                    $last = $lead->last_activity_at ?: $lead->created_at;
 
                     return [
-                        'id' => $customer->id,
-                        'customer' => $customer->nama,
-                        'telepon' => $customer->telepon,
-                        'marketing' => $customer->creator?->name ?? '-',
-                        'status' => $this->statusLabel($customer->status_lead),
+                        'id' => $lead->id,
+                        'lead' => $lead->name,
+                        'telepon' => $lead->phone,
+                        'marketing' => $lead->marketing?->name ?? '-',
+                        'status' => $this->leadStageLabel($lead->stage),
                         'last_activity' => optional($last)->format('d/m/Y H:i'),
                         'age_days' => $last ? $last->diffInDays(now()) : 0,
                     ];
@@ -395,8 +452,20 @@ class MarketingToolsController extends Controller
             ->when($selectedMarketingId, fn (Builder $query, int $id) => $query->whereKey($id))
             ->when($activePerumahanId, fn (Builder $query, int $id) => $query->whereHas('perumahans', fn (Builder $query) => $query->whereKey($id)))
             ->withCount([
-                'costumers as lead_count' => fn (Builder $query) => $query
+                'marketingLeads as lead_count' => fn (Builder $query) => $query
                     ->whereBetween('created_at', [$from, $to])
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
+                'marketingLeads as qualified_count' => fn (Builder $query) => $query
+                    ->whereBetween('qualified_at', [$from, $to])
+                    ->whereIn('qualification_status', ['submitted', 'qualified'])
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
+                'marketingLeads as sla_met_count' => fn (Builder $query) => $query
+                    ->whereBetween('first_contacted_at', [$from, $to])
+                    ->whereNotNull('first_response_due_at')
+                    ->whereColumn('first_contacted_at', '<=', 'first_response_due_at')
+                    ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
+                'marketingLeads as lost_count' => fn (Builder $query) => $query
+                    ->where('stage', 'lost')->whereBetween('updated_at', [$from, $to])
                     ->when($activePerumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)),
                 'surveySchedules as survey_count' => fn (Builder $query) => $query
                     ->whereBetween('tanggal_survey', [$from, $to])
@@ -425,12 +494,16 @@ class MarketingToolsController extends Controller
                 $failed = (clone $transactions)->where('status', 'closed_lost')->count();
                 $completedStages = SalesProcessStep::whereIn('sales_transaction_id', $transactionIds)->where('status', 'completed')->count();
                 $stageSummary = SalesProcessStep::whereIn('sales_transaction_id', $transactionIds)->whereIn('status', ['available', 'in_progress', 'pending_approval'])->selectRaw('code, count(*) total')->groupBy('code')->pluck('total', 'code')->all();
-                $score = ((int) $user->closing_count * 50) + ($completedStages * 2) + ($active * 3) - ($failed * 15);
+                $qualityScore = ((int) $user->qualified_count * 8) + ((int) $user->sla_met_count * 4) - ((int) $user->lost_count * 2);
+                $score = ((int) $user->closing_count * 50) + ($completedStages * 2) + ($active * 3) + $qualityScore - ($failed * 15);
 
                 return [
                     'id' => $user->id,
                     'name' => $user->name,
                     'lead' => (int) $user->lead_count,
+                    'qualified' => (int) $user->qualified_count,
+                    'sla_met' => (int) $user->sla_met_count,
+                    'lost' => (int) $user->lost_count,
                     'survey' => (int) $user->survey_count,
                     'spr' => (int) $user->spr_count,
                     'closing' => (int) $user->closing_count,
@@ -453,6 +526,9 @@ class MarketingToolsController extends Controller
             'summary' => [
                 'marketing' => $rows->count(),
                 'lead' => $rows->sum('lead'),
+                'qualified' => $rows->sum('qualified'),
+                'sla_met' => $rows->sum('sla_met'),
+                'lost' => $rows->sum('lost'),
                 'survey' => $rows->sum('survey'),
                 'spr' => $rows->sum('spr'),
                 'closing' => $rows->sum('closing'),
@@ -485,7 +561,7 @@ class MarketingToolsController extends Controller
         $search = trim((string) $request->query('search', ''));
 
         return Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->when($search !== '', fn (Builder $query) => $query->where(function (Builder $query) use ($search): void {
                 $query->where('nama', 'like', "%{$search}%")
@@ -565,6 +641,21 @@ class MarketingToolsController extends Controller
         return $status ?? '-';
     }
 
+    protected function leadStageLabel(?string $stage): string
+    {
+        return collect([
+            'new' => 'Lead Baru', 'contacted' => 'Sudah Dihubungi', 'nurturing' => 'Dalam Follow-up',
+            'qualified' => 'Qualified', 'postponed' => 'Ditunda', 'lost' => 'Tidak Potensial', 'converted' => 'Menjadi Customer',
+        ])->get($stage, $stage ?? '-');
+    }
+
+    protected function leadQuery(Request $request): Builder
+    {
+        return MarketingLead::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanId($request)));
+    }
+
     protected function shouldScopeToCurrentMarketing(Request $request): bool
     {
         $user = $request->user();
@@ -596,7 +687,7 @@ class MarketingToolsController extends Controller
                 'canUnlock' => (bool) $user?->can('marketing.lead-distribution.unlock') || $user?->can('marketing.lead-distribution.manage'),
             ],
             'monitoring-aktivitas' => [
-                'canView' => $this->hasMarketingAccess($request, ['owner', 'manajer_pimpro', 'supervisor_marketing'], 'marketing.activity.view'),
+                'canView' => $this->hasMarketingAccess($request, ['owner', 'manager', 'manajer_pimpro', 'supervisor_marketing'], 'marketing.activity.view-all'),
                 'canCreate' => false,
                 'canUpdate' => false,
                 'canDelete' => false,
@@ -623,7 +714,7 @@ class MarketingToolsController extends Controller
     {
         return match ($section) {
             'distribusi-lead' => ['supervisor_marketing'],
-            'monitoring-aktivitas' => ['owner', 'manajer_pimpro', 'supervisor_marketing'],
+            'monitoring-aktivitas' => ['owner', 'manager', 'manajer_pimpro', 'supervisor_marketing'],
             'leaderboard-sales' => ['owner', 'manager', 'manajer_pimpro', 'supervisor_marketing', 'marketing', 'area_marketing'],
             default => ['marketing', 'area_marketing', 'supervisor_marketing', 'manager', 'owner', 'manajer_pimpro', 'pengawas'],
         };
@@ -633,7 +724,7 @@ class MarketingToolsController extends Controller
     {
         return match ($section) {
             'distribusi-lead' => 'marketing.lead-distribution.manage',
-            'monitoring-aktivitas' => 'marketing.activity.view',
+            'monitoring-aktivitas' => 'marketing.activity.view-all',
             'leaderboard-sales' => 'marketing.leaderboard.view',
             default => null,
         };

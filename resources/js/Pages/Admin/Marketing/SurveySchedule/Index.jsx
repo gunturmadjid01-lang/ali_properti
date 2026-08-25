@@ -1,39 +1,24 @@
-import { Head, router, useForm } from "@inertiajs/react";
+import { Head, router } from "@inertiajs/react";
 import {
     CalendarCheck,
     CheckCircle2,
     Edit3,
-    Eye,
+    Home,
     Lock,
+    MapPin,
     Search,
     Trash2,
     Unlock,
-    X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import Pagination from "../../../../Components/Pagination";
 import {
     Button,
     Dropdown,
-    Form,
     Input,
-    Modal,
-    Textarea,
     TableActions,
 } from "../../../../Components/UI";
 import AdminLayout from "../../../../Layouts/AdminLayout";
-
-function ErrorSummary({ errors }) {
-    const messages = Object.values(errors ?? {}).filter(Boolean);
-    if (!messages.length) return null;
-    return (
-        <div className="rounded-lg border border-red-300 bg-red-50 p-4 text-sm font-bold text-red-700">
-            {messages.map((message) => (
-                <p key={message}>{message}</p>
-            ))}
-        </div>
-    );
-}
 
 export default function Index({
     title,
@@ -42,157 +27,40 @@ export default function Index({
     rows = { data: [], links: [] },
     filters = {},
     options = {},
+    permissions = {},
 }) {
     const [search, setSearch] = useState(filters.search ?? "");
     const [status, setStatus] = useState(filters.status ?? "");
-    const [filterPerumahan, setFilterPerumahan] = useState(
-        filters.perumahan_id ?? "",
-    );
-    const [filterUnit, setFilterUnit] = useState(filters.detail_rumah_id ?? "");
+    const [perumahanId, setPerumahanId] = useState(filters.perumahan_id ?? "");
+    const [unitId, setUnitId] = useState(filters.detail_rumah_id ?? "");
     const [dateFrom, setDateFrom] = useState(filters.date_from ?? "");
     const [dateTo, setDateTo] = useState(filters.date_to ?? "");
-    const [editing, setEditing] = useState(null);
-    const [detail, setDetail] = useState(null);
-    const [statusEditing, setStatusEditing] = useState(null);
-
-    const form = useForm({
-        costumer_id: "",
-        perumahan_id: "",
-        detail_rumah_id: "",
-        tanggal_survey: "",
-        metode_survey: "kunjungan_lokasi",
-        status: "dijadwalkan",
-        hasil_survey: "",
-        catatan: "",
-        rencana_follow_up_at: "",
-    });
-
-    const statusForm = useForm({
-        status: "dijadwalkan",
-        tanggal_survey: "",
-        hasil_survey: "",
-        catatan: "",
-        rencana_follow_up_at: "",
-    });
-
-    const perumahans = options.perumahans ?? [];
-    const detailRumahs = options.detailRumahs ?? [];
-    const unitOptions = useMemo(
+    const units = useMemo(
         () =>
-            detailRumahs.filter(
-                (row) =>
-                    !form.data.perumahan_id ||
-                    row.perumahan_id === String(form.data.perumahan_id),
+            (options.detailRumahs ?? []).filter(
+                (unit) =>
+                    !perumahanId || unit.perumahan_id === String(perumahanId),
             ),
-        [detailRumahs, form.data.perumahan_id],
+        [options.detailRumahs, perumahanId],
     );
-    const filterUnitOptions = useMemo(
-        () =>
-            detailRumahs.filter(
-                (row) =>
-                    !filterPerumahan ||
-                    row.perumahan_id === String(filterPerumahan),
-            ),
-        [detailRumahs, filterPerumahan],
-    );
-    const statusFilterOptions = [
-        { value: "", label: "Semua Status" },
-        ...(options.statusOptions ?? []),
-    ];
-
-    const resetForm = () => {
-        setEditing(null);
-        form.reset();
-        form.clearErrors();
-        form.setData({
-            costumer_id: "",
-            perumahan_id: "",
-            detail_rumah_id: "",
-            tanggal_survey: "",
-            metode_survey: "kunjungan_lokasi",
-            status: "dijadwalkan",
-            hasil_survey: "",
-            catatan: "",
-            rencana_follow_up_at: "",
-        });
-    };
-
-    const editRow = (row) => {
-        setEditing(row);
-        form.clearErrors();
-        form.setData({
-            costumer_id: row.costumer_id ?? "",
-            perumahan_id: row.perumahan_id ?? "",
-            detail_rumah_id: row.detail_rumah_id ?? "",
-            tanggal_survey: row.tanggal_survey ?? "",
-            metode_survey: row.metode_survey ?? "kunjungan_lokasi",
-            status: row.status ?? "dijadwalkan",
-            hasil_survey: row.hasil_survey ?? "",
-            catatan: row.catatan ?? "",
-            rencana_follow_up_at: row.rencana_follow_up_at ?? "",
-        });
-        window.scrollTo({ top: 0, behavior: "smooth" });
-    };
-
-    const openStatusModal = (row) => {
-        setStatusEditing(row);
-        statusForm.clearErrors();
-        statusForm.setData({
-            status: row.status ?? "dijadwalkan",
-            tanggal_survey: row.tanggal_survey ?? "",
-            hasil_survey: row.hasil_survey ?? "",
-            catatan: row.catatan ?? "",
-            rencana_follow_up_at: row.rencana_follow_up_at ?? "",
-        });
-    };
-
-    const closeStatusModal = () => {
-        setStatusEditing(null);
-        statusForm.clearErrors();
-    };
-
-    const submitStatus = (event) => {
-        event.preventDefault();
-
-        if (!statusEditing) {
-            return;
-        }
-
-        statusForm.put(`${baseUrl}/${statusEditing.id}/status`, {
-            preserveScroll: true,
-            onSuccess: closeStatusModal,
-        });
-    };
-
-    const submit = (event) => {
-        event.preventDefault();
-        const requestOptions = { preserveScroll: true, onSuccess: resetForm };
-
-        if (editing) {
-            form.put(`${baseUrl}/${editing.id}`, requestOptions);
-            return;
-        }
-
-        form.post(baseUrl, requestOptions);
-    };
-
-    const filterRows = (event) => {
+    const filter = (event) => {
         event.preventDefault();
         router.get(
             baseUrl,
             {
                 search,
                 status,
-                perumahan_id: filterPerumahan,
-                detail_rumah_id: filterUnit,
+                perumahan_id: perumahanId,
+                detail_rumah_id: unitId,
                 date_from: dateFrom,
                 date_to: dateTo,
             },
-            {
-                preserveState: true,
-                replace: true,
-            },
+            { preserveState: true, replace: true },
         );
+    };
+    const remove = (row) => {
+        if (window.confirm(`Hapus jadwal survey ${row.kode_survey}?`))
+            router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true });
     };
 
     return (
@@ -201,226 +69,85 @@ export default function Index({
             <div className="grid gap-6">
                 <section className="rounded-lg border border-white/80 bg-white/78 p-6 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-ink-soft">
-                        Marketing
+                        Marketing / Tahap 4
                     </p>
-                    <h2 className="mt-2 font-display text-3xl font-extrabold">
-                        {title}
-                    </h2>
-                    <p className="mt-2 max-w-3xl leading-7 text-ink-soft dark:text-white/60">
-                        {description}
-                    </p>
-                </section>
-
-                <Form
-                    collapsible
-                    title={
-                        editing
-                            ? `Edit ${editing.kode_survey}`
-                            : "Tambah Jadwal Survei"
-                    }
-                    description="Catat rencana customer datang melihat lokasi/unit, lalu update hasil survey setelah kunjungan selesai."
-                    onSubmit={submit}
-                    actions={
-                        <>
-                            {editing && (
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={resetForm}
-                                >
-                                    <X size={15} /> Batal
-                                </Button>
-                            )}
-                            <Button type="submit" disabled={form.processing}>
-                                <CalendarCheck size={17} />{" "}
-                                {editing ? "Simpan Perubahan" : "Simpan Survei"}
+                    <div className="mt-2 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                            <h1 className="text-3xl font-extrabold">{title}</h1>
+                            <p className="mt-2 max-w-3xl text-ink-soft">
+                                {description}
+                            </p>
+                        </div>
+                        {permissions.canCreate && (
+                            <Button
+                                type="button"
+                                onClick={() =>
+                                    router.visit(`${baseUrl}/create`)
+                                }
+                            >
+                                <CalendarCheck size={17} /> Tambah Jadwal Survey
                             </Button>
-                        </>
-                    }
-                >
-                    <ErrorSummary errors={form.errors} />
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">
-                                Pelanggan
-                            </span>
-                            <Dropdown
-                                label="Pilih Pelanggan"
-                                value={form.data.costumer_id}
-                                options={options.customers ?? []}
-                                onChange={(value) =>
-                                    form.setData("costumer_id", value)
-                                }
-                            />
-                            {form.errors.costumer_id && (
-                                <span className="text-xs font-bold text-red-600">
-                                    {form.errors.costumer_id}
-                                </span>
-                            )}
-                        </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">
-                                Perumahan
-                            </span>
-                            <Dropdown
-                                label="Pilih Perumahan"
-                                value={form.data.perumahan_id}
-                                options={perumahans}
-                                onChange={(value) =>
-                                    form.setData({
-                                        ...form.data,
-                                        perumahan_id: value,
-                                        detail_rumah_id: "",
-                                    })
-                                }
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">
-                                Unit Diminati
-                            </span>
-                            <Dropdown
-                                label="Opsional"
-                                value={form.data.detail_rumah_id}
-                                options={unitOptions}
-                                onChange={(_, selected) =>
-                                    form.setData({
-                                        ...form.data,
-                                        detail_rumah_id: selected?.value ?? "",
-                                        perumahan_id:
-                                            selected?.perumahan_id ??
-                                            form.data.perumahan_id,
-                                    })
-                                }
-                            />
-                        </div>
+                        )}
                     </div>
-                    <div className="grid gap-4 md:grid-cols-3">
-                        <Input
-                            label="Tanggal Survei"
-                            type="datetime-local"
-                            value={form.data.tanggal_survey}
-                            error={form.errors.tanggal_survey}
-                            onChange={(event) =>
-                                form.setData(
-                                    "tanggal_survey",
-                                    event.target.value,
-                                )
-                            }
+                    <div className="mt-5 grid gap-3 md:grid-cols-3">
+                        <Info
+                            icon={Home}
+                            title="Khusus survey unit"
+                            text="Dipakai saat customer melihat perumahan atau unit yang diminati."
                         />
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">
-                                Metode Survei
-                            </span>
-                            <Dropdown
-                                label="Pilih Metode"
-                                value={form.data.metode_survey}
-                                options={options.methodOptions ?? []}
-                                onChange={(value) =>
-                                    form.setData("metode_survey", value)
-                                }
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">
-                                Status
-                            </span>
-                            <Dropdown
-                                label="Pilih Status"
-                                value={form.data.status}
-                                options={options.statusOptions ?? []}
-                                onChange={(value) =>
-                                    form.setData("status", value)
-                                }
-                            />
-                        </div>
-                    </div>
-                    <p className="rounded-lg bg-silver-soft px-4 py-3 text-sm font-bold text-ink-soft dark:bg-white/6 dark:text-white/60">
-                        Marketing pendamping otomatis menggunakan user yang
-                        membuat jadwal survey.
-                    </p>
-                    <div className="grid gap-4 md:grid-cols-2">
-                        <Textarea
-                            label="Hasil Survei"
-                            value={form.data.hasil_survey}
-                            error={form.errors.hasil_survey}
-                            onChange={(event) =>
-                                form.setData("hasil_survey", event.target.value)
-                            }
+                        <Info
+                            icon={MapPin}
+                            title="Bukan kunjungan bebas"
+                            text="Canvassing, event, dan kunjungan ke rumah customer dicatat pada menu Kunjungan Customer."
                         />
-                        <Textarea
-                            label="Catatan"
-                            value={form.data.catatan}
-                            error={form.errors.catatan}
-                            onChange={(event) =>
-                                form.setData("catatan", event.target.value)
-                            }
+                        <Info
+                            icon={CheckCircle2}
+                            title="Hasil terpisah"
+                            text="Jadwal dibuat dahulu; hasil, keberatan, dan tindak lanjut diisi melalui halaman Hasil Survey."
                         />
                     </div>
-                    <Input
-                        label="Rencana Tindak Lanjut Berikutnya"
-                        type="datetime-local"
-                        value={form.data.rencana_follow_up_at}
-                        error={form.errors.rencana_follow_up_at}
-                        onChange={(event) =>
-                            form.setData(
-                                "rencana_follow_up_at",
-                                event.target.value,
-                            )
-                        }
-                    />
-                </Form>
+                </section>
 
                 <section className="overflow-hidden rounded-lg border border-white/80 bg-white/78 shadow-soft dark:border-white/10 dark:bg-white/8">
                     <form
                         className="grid gap-3 p-5 xl:grid-cols-[1.2fr_1fr_1fr_1fr_150px_150px_auto]"
-                        onSubmit={filterRows}
+                        onSubmit={filter}
                     >
                         <Input
                             label="Cari Survei / Pelanggan"
                             value={search}
                             onChange={(event) => setSearch(event.target.value)}
                         />
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">
-                                Status
-                            </span>
-                            <Dropdown
-                                value={status}
-                                label="Semua Status"
-                                options={statusFilterOptions}
-                                onChange={setStatus}
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">
-                                Perumahan
-                            </span>
-                            <Dropdown
-                                value={filterPerumahan}
-                                label="Semua Perumahan"
-                                options={[
-                                    { value: "", label: "Semua Perumahan" },
-                                    ...perumahans,
-                                ]}
-                                onChange={(value) => {
-                                    setFilterPerumahan(value);
-                                    setFilterUnit("");
-                                }}
-                            />
-                        </div>
-                        <div className="grid gap-2">
-                            <span className="text-sm font-extrabold">Unit</span>
-                            <Dropdown
-                                value={filterUnit}
-                                label="Semua Unit"
-                                options={[
-                                    { value: "", label: "Semua Unit" },
-                                    ...filterUnitOptions,
-                                ]}
-                                onChange={setFilterUnit}
-                            />
-                        </div>
+                        <Select
+                            label="Status"
+                            value={status}
+                            options={[
+                                { value: "", label: "Semua Status" },
+                                ...(options.statusOptions ?? []),
+                            ]}
+                            onChange={setStatus}
+                        />
+                        <Select
+                            label="Perumahan"
+                            value={perumahanId}
+                            options={[
+                                { value: "", label: "Semua Perumahan" },
+                                ...(options.perumahans ?? []),
+                            ]}
+                            onChange={(value) => {
+                                setPerumahanId(value);
+                                setUnitId("");
+                            }}
+                        />
+                        <Select
+                            label="Unit"
+                            value={unitId}
+                            options={[
+                                { value: "", label: "Semua Unit" },
+                                ...units,
+                            ]}
+                            onChange={setUnitId}
+                        />
                         <Input
                             label="Dari"
                             type="date"
@@ -447,13 +174,13 @@ export default function Index({
                                 <tr>
                                     {[
                                         "Kode",
-                                        "Tanggal",
-                                        "Pelanggan",
+                                        "Jadwal",
+                                        "Customer",
                                         "Lokasi",
                                         "Marketing",
                                         "Status",
                                         "Tindak Lanjut",
-                                        "Audit",
+                                        "Kunci",
                                         "Aksi",
                                     ].map((label) => (
                                         <th className="px-5 py-4" key={label}>
@@ -471,17 +198,17 @@ export default function Index({
                                         <td className="px-5 py-4">
                                             {row.tanggal_survey_display}
                                         </td>
-                                        <td className="px-5 py-4 font-bold">
-                                            {row.customer}
+                                        <td className="px-5 py-4">
+                                            <b>{row.customer}</b>
                                             <br />
-                                            <span className="text-xs font-semibold text-ink-soft">
+                                            <span className="text-xs text-ink-soft">
                                                 {row.telepon}
                                             </span>
                                         </td>
                                         <td className="px-5 py-4">
                                             {row.perumahan}
                                             <br />
-                                            <span className="text-xs font-semibold text-ink-soft">
+                                            <span className="text-xs text-ink-soft">
                                                 {row.unit}
                                             </span>
                                         </td>
@@ -495,55 +222,41 @@ export default function Index({
                                             {row.rencana_follow_up_display ||
                                                 "-"}
                                         </td>
-                                        <td className="min-w-44 px-5 py-4 text-xs">
-                                            <span className="font-bold">
-                                                Dibuat:
-                                            </span>{" "}
-                                            {row.created_by_name}
-                                            <br />
-                                            <span className="font-bold">
-                                                Diubah:
-                                            </span>{" "}
-                                            {row.updated_by_name}
-                                            <br />
-                                            <span className="font-bold">
-                                                Kunci:
-                                            </span>{" "}
+                                        <td className="px-5 py-4">
                                             {row.record_status}
                                         </td>
                                         <td className="px-5 py-4">
                                             <TableActions>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() =>
-                                                        setDetail(row)
-                                                    }
-                                                >
-                                                    <Eye size={14} /> Detail
-                                                </Button>
-                                                <Button
-                                                    type="button"
-                                                    size="sm"
-                                                    variant="outline"
-                                                    onClick={() =>
-                                                        openStatusModal(row)
-                                                    }
-                                                >
-                                                    <CheckCircle2 size={14} />{" "}
-                                                    Update Status
-                                                </Button>
                                                 {row.can_edit && (
                                                     <Button
                                                         type="button"
                                                         size="sm"
                                                         variant="outline"
                                                         onClick={() =>
-                                                            editRow(row)
+                                                            router.visit(
+                                                                `${baseUrl}/${row.id}/hasil`,
+                                                            )
+                                                        }
+                                                    >
+                                                        <CheckCircle2
+                                                            size={14}
+                                                        />{" "}
+                                                        Hasil Survey
+                                                    </Button>
+                                                )}
+                                                {row.can_edit && (
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() =>
+                                                            router.visit(
+                                                                `${baseUrl}/${row.id}/edit`,
+                                                            )
                                                         }
                                                     >
                                                         <Edit3 size={14} /> Ubah
+                                                        Jadwal
                                                     </Button>
                                                 )}
                                                 {row.can_delete && (
@@ -553,15 +266,7 @@ export default function Index({
                                                         variant="outline"
                                                         className="text-red-600"
                                                         onClick={() =>
-                                                            window.confirm(
-                                                                "Hapus jadwal survey ini?",
-                                                            ) &&
-                                                            router.delete(
-                                                                `${baseUrl}/${row.id}`,
-                                                                {
-                                                                    preserveScroll: true,
-                                                                },
-                                                            )
+                                                            remove(row)
                                                         }
                                                     >
                                                         <Trash2 size={14} />
@@ -624,178 +329,32 @@ export default function Index({
                     <Pagination links={rows.links} />
                 </section>
             </div>
-
-            <Modal
-                open={Boolean(detail)}
-                onClose={() => setDetail(null)}
-                title={
-                    detail ? `Detail ${detail.kode_survey}` : "Detail Survei"
-                }
-                footer={
-                    <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setDetail(null)}
-                    >
-                        Tutup
-                    </Button>
-                }
-            >
-                {detail && (
-                    <div className="grid gap-3 text-sm">
-                        <p>
-                            <b>Pelanggan:</b> {detail.customer} (
-                            {detail.kode_customer})
-                        </p>
-                        <p>
-                            <b>Telepon:</b> {detail.telepon}
-                        </p>
-                        <p>
-                            <b>Jadwal:</b> {detail.tanggal_survey_display}
-                        </p>
-                        <p>
-                            <b>Lokasi:</b> {detail.perumahan} - {detail.unit}
-                        </p>
-                        <p>
-                            <b>Metode:</b> {detail.metode_survey_label}
-                        </p>
-                        <p>
-                            <b>Status:</b> {detail.status_label}
-                        </p>
-                        <p>
-                            <b>Marketing:</b> {detail.marketing}
-                        </p>
-                        <p>
-                            <b>Hasil:</b> {detail.hasil_survey || "-"}
-                        </p>
-                        <p>
-                            <b>Catatan:</b> {detail.catatan || "-"}
-                        </p>
-                        <p>
-                            <b>Tindak Lanjut Berikutnya:</b>{" "}
-                            {detail.rencana_follow_up_display || "-"}
-                        </p>
-                    </div>
-                )}
-            </Modal>
-
-            <Modal
-                open={Boolean(statusEditing)}
-                onClose={closeStatusModal}
-                title={
-                    statusEditing
-                        ? `Update Status ${statusEditing.kode_survey}`
-                        : "Update Status Survei"
-                }
-                footer={
-                    <>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={closeStatusModal}
-                        >
-                            Batal
-                        </Button>
-                        <Button
-                            type="button"
-                            disabled={statusForm.processing}
-                            onClick={submitStatus}
-                        >
-                            <CheckCircle2 size={16} />{" "}
-                            {statusForm.processing
-                                ? "Menyimpan..."
-                                : "Simpan Status"}
-                        </Button>
-                    </>
-                }
-            >
-                <form className="grid gap-4" onSubmit={submitStatus}>
-                    <ErrorSummary errors={statusForm.errors} />
-                    {statusEditing && (
-                        <div className="rounded-lg border border-silver-deep/70 bg-silver-soft p-4 text-sm dark:border-white/10 dark:bg-white/6">
-                            <p className="font-extrabold">
-                                {statusEditing.customer}
-                            </p>
-                            <p className="mt-1 text-ink-soft dark:text-white/60">
-                                {statusEditing.tanggal_survey_display} -{" "}
-                                {statusEditing.perumahan} - {statusEditing.unit}
-                            </p>
-                            <p className="mt-1 text-xs font-bold text-ink-soft dark:text-white/45">
-                                Lock jadwal: {statusEditing.record_status}
-                            </p>
-                        </div>
-                    )}
-                    <div className="grid gap-2">
-                        <span className="text-sm font-extrabold">
-                            Status Survei
-                        </span>
-                        <Dropdown
-                            label="Pilih Status"
-                            value={statusForm.data.status}
-                            options={options.statusOptions ?? []}
-                            onChange={(value) =>
-                                statusForm.setData("status", value)
-                            }
-                        />
-                        {statusForm.errors.status && (
-                            <span className="text-xs font-bold text-red-600">
-                                {statusForm.errors.status}
-                            </span>
-                        )}
-                    </div>
-                    {statusForm.data.status === "reschedule" && (
-                        <Input
-                            label="Tanggal dan Jam Survei Baru"
-                            type="datetime-local"
-                            value={statusForm.data.tanggal_survey}
-                            error={statusForm.errors.tanggal_survey}
-                            onChange={(event) =>
-                                statusForm.setData(
-                                    "tanggal_survey",
-                                    event.target.value,
-                                )
-                            }
-                        />
-                    )}
-                    <Textarea
-                        label="Hasil Survei"
-                        value={statusForm.data.hasil_survey}
-                        error={statusForm.errors.hasil_survey}
-                        onChange={(event) =>
-                            statusForm.setData(
-                                "hasil_survey",
-                                event.target.value,
-                            )
-                        }
-                    />
-                    <Textarea
-                        label="Catatan"
-                        value={statusForm.data.catatan}
-                        error={statusForm.errors.catatan}
-                        onChange={(event) =>
-                            statusForm.setData("catatan", event.target.value)
-                        }
-                    />
-                    <Input
-                        label="Rencana Tindak Lanjut Berikutnya"
-                        type="datetime-local"
-                        value={statusForm.data.rencana_follow_up_at}
-                        error={statusForm.errors.rencana_follow_up_at}
-                        onChange={(event) =>
-                            statusForm.setData(
-                                "rencana_follow_up_at",
-                                event.target.value,
-                            )
-                        }
-                    />
-                </form>
-            </Modal>
         </>
     );
 }
 
+function Info({ icon: Icon, title, text }) {
+    return (
+        <div className="rounded-2xl border border-silver-deep/60 bg-silver-soft/70 p-4 text-sm">
+            <div className="flex items-center gap-2 font-black">
+                <Icon size={17} /> {title}
+            </div>
+            <p className="mt-2 text-ink-soft">{text}</p>
+        </div>
+    );
+}
+
+function Select({ label, value, options, onChange }) {
+    return (
+        <div className="grid gap-2">
+            <span className="text-sm font-extrabold">{label}</span>
+            <Dropdown value={value} options={options} onChange={onChange} />
+        </div>
+    );
+}
+
 Index.layout = (page) => (
-    <AdminLayout title={page?.props?.title ?? "Jadwal Survei"}>
+    <AdminLayout title={page?.props?.title ?? "Jadwal Survey"}>
         {page}
     </AdminLayout>
 );

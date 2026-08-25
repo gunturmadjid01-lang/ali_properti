@@ -1416,7 +1416,7 @@ export default function SprForm({
                         dari {currentBerkas.length} dokumen dipilih
                     </p>
                     <p className="mt-1 text-xs font-semibold text-ink-soft dark:text-white/55">
-                        Dokumen berasal dari Repositori Dokumen Pelanggan.
+                        Dokumen berasal dari Berkas Pelanggan.
                         Berkas baru yang diunggah di sini otomatis masuk ke
                         repository.
                     </p>
@@ -1755,7 +1755,7 @@ export default function SprForm({
                         target="_blank"
                         rel="noreferrer"
                     >
-                        Buka Repositori Dokumen Pelanggan di halaman baru
+                        Buka Berkas Pelanggan di halaman baru
                     </a>
                 </div>
             </Modal>

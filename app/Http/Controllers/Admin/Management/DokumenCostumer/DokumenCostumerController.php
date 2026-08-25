@@ -111,7 +111,7 @@ class DokumenCostumerController extends Controller
 
     protected function title(): string
     {
-        return 'Master Dokumen Pelanggan';
+        return 'Jenis Dokumen Pelanggan';
     }
 
     protected function description(): string

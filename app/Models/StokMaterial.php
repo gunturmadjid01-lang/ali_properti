@@ -15,10 +15,14 @@ class StokMaterial extends Model
         'gudang_id',
         'cabang_id',
         'qty',
+        'average_unit_cost',
+        'inventory_value',
     ];
 
     protected $casts = [
         'qty' => 'float',
+        'average_unit_cost' => 'float',
+        'inventory_value' => 'float',
     ];
 
     public function barangMaterial(): BelongsTo

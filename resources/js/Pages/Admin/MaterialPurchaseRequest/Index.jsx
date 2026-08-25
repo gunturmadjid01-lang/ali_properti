@@ -220,6 +220,9 @@ export default function Index({
                                     </td>
                                     <td className="px-3 py-2 font-black uppercase">
                                         {row.status_label}
+                                        <div className="mt-1 text-[10px] normal-case text-ink-soft dark:text-white/55">
+                                            {row.approval_stage}
+                                        </div>
                                     </td>
                                     <td className="px-3 py-2">
                                         {row.items_count} item
@@ -248,6 +251,56 @@ export default function Index({
                                             </Button>
                                             {isLocked(row) ? (
                                                 <>
+                                                    {row.can_approve && (
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            onClick={() =>
+                                                                post(
+                                                                    `${baseUrl}/${row.id}/approve`,
+                                                                )
+                                                            }
+                                                        >
+                                                            <CheckCircle2
+                                                                size={15}
+                                                            />{" "}
+                                                            Setujui
+                                                        </Button>
+                                                    )}
+                                                    {row.can_approve && (
+                                                        <Button
+                                                            type="button"
+                                                            size="sm"
+                                                            variant="danger"
+                                                            onClick={() =>
+                                                                post(
+                                                                    `${baseUrl}/${row.id}/reject`,
+                                                                )
+                                                            }
+                                                        >
+                                                            <XCircle
+                                                                size={15}
+                                                            />{" "}
+                                                            Tolak
+                                                        </Button>
+                                                    )}
+                                                    {permissions.canProcess &&
+                                                        row.can_process && (
+                                                            <Button
+                                                                type="button"
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() =>
+                                                                    process(row)
+                                                                }
+                                                            >
+                                                                <ShoppingCart
+                                                                    size={15}
+                                                                />{" "}
+                                                                Proses ke
+                                                                Pembelian
+                                                            </Button>
+                                                        )}
                                                     {permissions.canUnlock &&
                                                         row.can_unlock && (
                                                             <Button
@@ -285,41 +338,6 @@ export default function Index({
                                                                     size={15}
                                                                 />{" "}
                                                                 Ubah
-                                                            </Button>
-                                                        )}
-                                                    {permissions.canApprove &&
-                                                        row.can_approve && (
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                onClick={() =>
-                                                                    post(
-                                                                        `${baseUrl}/${row.id}/approve`,
-                                                                    )
-                                                                }
-                                                            >
-                                                                <CheckCircle2
-                                                                    size={15}
-                                                                />{" "}
-                                                                Setujui
-                                                            </Button>
-                                                        )}
-                                                    {permissions.canApprove &&
-                                                        row.can_approve && (
-                                                            <Button
-                                                                type="button"
-                                                                size="sm"
-                                                                variant="danger"
-                                                                onClick={() =>
-                                                                    post(
-                                                                        `${baseUrl}/${row.id}/reject`,
-                                                                    )
-                                                                }
-                                                            >
-                                                                <XCircle
-                                                                    size={15}
-                                                                />{" "}
-                                                                Tolak
                                                             </Button>
                                                         )}
                                                     {permissions.canProcess &&

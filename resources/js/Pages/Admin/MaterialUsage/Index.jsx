@@ -1,5 +1,6 @@
 import { Head, router, useForm } from "@inertiajs/react";
 import {
+    CheckCircle2,
     Edit3,
     Eye,
     Lock,
@@ -27,6 +28,7 @@ import { scopedTahapanOptions } from "../../../Utils/tahapanOptions";
 
 const itemTemplate = () => ({
     site_material_stock_id: "",
+    material_unit_id: "",
     qty: "",
     satuan: "",
 });
@@ -51,6 +53,7 @@ export default function Index({
     options = {},
     siteStockRows = [],
     permissions = {},
+    qualityUpgrade = null,
 }) {
     const [search, setSearch] = useState(filters.search ?? "");
     const [filterPerumahan, setFilterPerumahan] = useState(
@@ -69,10 +72,12 @@ export default function Index({
     const canUnlock = permissions.canUnlock ?? false;
     const form = useForm({
         tanggal: new Date().toISOString().slice(0, 10),
-        perumahan_id: "",
-        detail_rumah_id: "",
+        perumahan_id: qualityUpgrade?.perumahan_id ?? "",
+        detail_rumah_id: qualityUpgrade?.detail_rumah_id ?? "",
         tahapan_pembangunan_id: "",
         progress_pembangunan_id: "",
+        quality_upgrade_contract_id: qualityUpgrade?.id ?? "",
+        quality_upgrade_contract_item_id: qualityUpgrade?.items?.[0]?.value ?? "",
         keterangan: "",
         foto: null,
         items: [itemTemplate()],
@@ -187,10 +192,34 @@ export default function Index({
                     ? {
                           ...item,
                           [key]: value,
+                          material_unit_id:
+                              key === "site_material_stock_id"
+                                  ? String(selected?.base_unit_id ?? "")
+                                  : item.material_unit_id,
                           satuan:
                               key === "site_material_stock_id"
-                                  ? (selected?.satuan ?? "")
-                                  : item.satuan,
+                                  ? (selected?.unit_options?.find(
+                                        (unit) =>
+                                            String(unit.value) ===
+                                            String(selected?.base_unit_id),
+                                    )?.symbol ??
+                                    selected?.satuan ??
+                                    "")
+                                  : key === "material_unit_id"
+                                    ? (stockOptions
+                                          .find(
+                                              (stock) =>
+                                                  String(stock.value) ===
+                                                  String(
+                                                      item.site_material_stock_id,
+                                                  ),
+                                          )
+                                          ?.unit_options?.find(
+                                              (unit) =>
+                                                  String(unit.value) ===
+                                                  String(value),
+                                          )?.symbol ?? item.satuan)
+                                    : item.satuan,
                       }
                     : item,
             ),
@@ -229,6 +258,12 @@ export default function Index({
             detail_rumah_id: row.detail_rumah_id ?? "",
             tahapan_pembangunan_id: row.tahapan_pembangunan_id ?? "",
             progress_pembangunan_id: row.progress_pembangunan_id ?? "",
+            quality_upgrade_contract_id:
+                row.quality_upgrade_contract_id ?? qualityUpgrade?.id ?? "",
+            quality_upgrade_contract_item_id:
+                row.quality_upgrade_contract_item_id ??
+                qualityUpgrade?.items?.[0]?.value ??
+                "",
             keterangan: row.keterangan ?? "",
             foto: null,
             items: row.items?.length ? row.items : [itemTemplate()],
@@ -363,8 +398,9 @@ export default function Index({
                                 />
                             </div>
                         </div>
+                        {qualityUpgrade && <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900"><strong>Pemakaian untuk {qualityUpgrade.label}</strong><p>Stok yang diposting akan menjadi biaya material aktual Penambahan Mutu.</p><div className="mt-2"><Dropdown label="Pilih item pekerjaan" value={form.data.quality_upgrade_contract_item_id} options={qualityUpgrade.items} onChange={(value) => form.setData("quality_upgrade_contract_item_id", value)}/></div></div>}
                         <div className="grid gap-4 md:grid-cols-2">
-                            <div className="grid gap-2">
+                            {!qualityUpgrade && <div className="grid gap-2">
                                 <span className="text-sm font-extrabold">
                                     Kemajuan Disetujui
                                 </span>
@@ -393,7 +429,7 @@ export default function Index({
                                         })
                                     }
                                 />
-                            </div>
+                            </div>}
                             <div className="grid gap-2">
                                 <span className="text-sm font-extrabold">
                                     Bukti Pemakaian
@@ -432,7 +468,7 @@ export default function Index({
                             </div>
                             {form.data.items.map((item, index) => (
                                 <div
-                                    className="grid gap-3 rounded-lg border border-silver-deep/70 p-3 md:grid-cols-[1fr_180px_auto]"
+                                    className="grid gap-3 rounded-lg border border-silver-deep/70 p-3 md:grid-cols-[1fr_150px_180px_auto]"
                                     key={index}
                                 >
                                     <div className="grid gap-2">
@@ -449,6 +485,30 @@ export default function Index({
                                                     "site_material_stock_id",
                                                     value,
                                                     selected,
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <span className="text-sm font-extrabold">
+                                            Satuan Pemakaian
+                                        </span>
+                                        <Dropdown
+                                            value={item.material_unit_id ?? ""}
+                                            options={
+                                                stockOptions.find(
+                                                    (stock) =>
+                                                        String(stock.value) ===
+                                                        String(
+                                                            item.site_material_stock_id,
+                                                        ),
+                                                )?.unit_options ?? []
+                                            }
+                                            onChange={(value) =>
+                                                setItem(
+                                                    index,
+                                                    "material_unit_id",
+                                                    value,
                                                 )
                                             }
                                         />
@@ -645,7 +705,7 @@ export default function Index({
                                         "Material",
                                         "Bukti",
                                         "Audit",
-                                        "Kunci",
+                                        "Setting Approval",
                                         "Aksi",
                                     ].map((label) => (
                                         <th className="px-5 py-4" key={label}>
@@ -706,10 +766,33 @@ export default function Index({
                                             {row.updated_by_name}
                                         </td>
                                         <td className="px-5 py-4 font-bold">
-                                            {row.record_status}
+                                            {row.approval_stage}
                                         </td>
                                         <td className="px-5 py-4">
                                             <TableActions>
+                                                {row.can_review && (
+                                                    <Button
+                                                        type="button"
+                                                        size="sm"
+                                                        onClick={() =>
+                                                            window.confirm(
+                                                                `Setujui tahap aktif ${row.kode_pemakaian}?`,
+                                                            ) &&
+                                                            router.post(
+                                                                `${baseUrl}/${row.id}/approve`,
+                                                                {},
+                                                                {
+                                                                    preserveScroll: true,
+                                                                },
+                                                            )
+                                                        }
+                                                    >
+                                                        <CheckCircle2
+                                                            size={14}
+                                                        />{" "}
+                                                        Setujui
+                                                    </Button>
+                                                )}
                                                 <Button
                                                     type="button"
                                                     size="sm"

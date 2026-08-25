@@ -8,6 +8,7 @@ use App\Models\SalesProcessStep;
 use App\Models\Spr;
 use App\Models\PaymentSchedule;
 use App\Models\CustomerReceipt;
+use App\Models\Costumer;
 use App\Models\ChartOfAccount;
 use App\Models\PettyCashAccount;
 use App\Models\PettyCashLedger;
@@ -20,6 +21,10 @@ class HousingReservationService
     {
         return DB::transaction(function () use ($data) {
             DetailRumah::query()->findOrFail($data['detail_rumah_id']);
+            $customer = Costumer::query()->with('sourceLead')->findOrFail($data['costumer_id']);
+            if (! $customer->source_marketing_lead_id || ! in_array($customer->sourceLead?->stage, ['qualified', 'converted'], true)) {
+                throw ValidationException::withMessages(['costumer_id' => 'Reservasi hanya dapat dibuat untuk Customer hasil konversi Lead yang sudah Qualified.']);
+            }
             $reservation = HousingReservation::create([
                 ...$data,
                 'reservation_no' => 'RSV/'.now()->format('Y').'/'.str_pad((string) ((int) HousingReservation::max('id') + 1), 6, '0', STR_PAD_LEFT),
@@ -27,6 +32,7 @@ class HousingReservationService
                 'reserved_at' => now(), 'payment_due_at' => null, 'status' => 'draft', 'payment_status' => 'received_pending_approval', 'record_status' => 'draft',
                 'created_by' => auth()->id(), 'updated_by' => auth()->id(),
             ]);
+            $customer->update(['customer_stage' => 'reservation_draft', 'updated_by' => auth()->id()]);
             return $reservation;
         });
     }
@@ -46,6 +52,7 @@ class HousingReservationService
                 throw ValidationException::withMessages(['detail_rumah_id' => 'Unit sudah tidak tersedia untuk direservasi.']);
             }
             $row->update(['record_status' => 'locked', 'status' => 'pending_approval', 'payment_approval_status' => null, 'locked_at' => now(), 'locked_by' => auth()->id(), 'updated_by' => auth()->id()]);
+            $row->customer()->update(['customer_stage' => 'reservation_pending', 'updated_by' => auth()->id()]);
             $unit->update(['status_penjualan' => 'booking', 'booking_at' => now()]);
             return $row->fresh();
         });
@@ -63,6 +70,7 @@ class HousingReservationService
                 ['source_type' => HousingReservation::class, 'source_id' => $row->id, 'sequence' => 1, 'invoice_no' => $row->invoice_no, 'type' => 'booking_fee', 'description' => 'Booking Fee Reservasi '.$row->reservation_no, 'issued_at' => $row->payment_submitted_at, 'due_date' => $row->payment_submitted_at, 'amount' => $row->booking_fee, 'paid_amount' => 0, 'status' => 'belum_dibayar', 'record_status' => 'locked', 'locked_at' => now(), 'locked_by' => auth()->id()]
             );
             app(AccountingService::class)->recordCustomerInvoice($schedule);
+            $row->customer()->update(['customer_stage' => 'booking_fee_pending', 'updated_by' => auth()->id()]);
             return $row->fresh();
         });
     }
@@ -101,6 +109,7 @@ class HousingReservationService
                 }
             }
             $row->update(['status' => 'active', 'paid_amount' => $row->booking_fee, 'paid_at' => now(), 'payment_status' => 'paid', 'payment_approval_status' => 'approved', 'fund_received_at' => $row->fund_received_at ?? now(), 'fund_received_by' => $row->fund_received_by ?? auth()->id(), 'fund_custody_status' => $row->payment_channel === 'cash' ? 'in_marketing_petty_cash' : 'in_company_bank', 'finance_verification_notes' => $row->finance_verification_notes ?: 'Disetujui melalui Setting Approval reservasi.', 'updated_by' => auth()->id()]);
+            $row->customer()->update(['customer_stage' => 'booking_fee_paid', 'updated_by' => auth()->id()]);
         });
     }
 
@@ -118,18 +127,21 @@ class HousingReservationService
             $row->update(['status' => $status, 'cancellation_type' => $type, 'cancelled_at' => now(), 'cancelled_by' => $type === 'automatic' ? null : auth()->id(), 'cancellation_reason' => $reason, 'updated_by' => auth()->id()]);
             DetailRumah::query()->whereKey($row->detail_rumah_id)->where('status_penjualan', 'booking')->update(['status_penjualan' => 'tersedia', 'booking_spr_id' => null, 'booking_at' => null]);
             $row->paymentSchedule()->where('paid_amount', 0)->update(['status' => 'dibatalkan', 'record_status' => 'draft']);
+            $row->customer()->update(['customer_stage' => 'pre_reservation', 'updated_by' => auth()->id()]);
         });
     }
 
     public function linkToSpr(HousingReservation $reservation, Spr $spr): void
     {
         $reservation->update(['spr_id' => $spr->id, 'status' => 'spr_created', 'process_stage' => 'Draft SPR', 'updated_by' => auth()->id()]);
+        $reservation->customer()->update(['customer_stage' => 'spr_draft', 'updated_by' => auth()->id()]);
     }
 
     public function sprApproved(Spr $spr): void
     {
         $reservation = $spr->housingReservation;
         $reservation?->update(['status' => 'sales_process', 'process_stage' => 'SPR Disetujui', 'updated_by' => auth()->id()]);
+        $reservation?->customer()->update(['customer_stage' => 'spr_approved', 'updated_by' => auth()->id()]);
         if ($reservation && $spr->salesTransaction) {
             $reservation->paymentSchedule()->update(['sales_transaction_id' => $spr->salesTransaction->id]);
             $reservation->receipts()->update(['sales_transaction_id' => $spr->salesTransaction->id]);
@@ -145,5 +157,8 @@ class HousingReservationService
         if ($step->code === 'move_in') $attributes['status'] = 'occupied';
         if ($step->code === 'completed') $attributes = [...$attributes, 'status' => 'completed', 'completed_at' => now()];
         $reservation->update($attributes);
+        $reservation->customer()->update(['customer_stage' => match ($step->code) {
+            'customer_handover' => 'handover', 'move_in' => 'occupied', 'completed' => 'completed', default => 'sales_process',
+        }, 'updated_by' => auth()->id()]);
     }
 }

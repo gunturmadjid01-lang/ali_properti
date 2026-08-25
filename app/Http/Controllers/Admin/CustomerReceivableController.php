@@ -8,6 +8,7 @@ use App\Models\CustomerReceipt;
 use App\Models\HousingReservation;
 use App\Models\MasterBank;
 use App\Models\PaymentSchedule;
+use App\Models\QualityUpgradeContract;
 use App\Models\Perumahan;
 use App\Models\PettyCashAccount;
 use App\Models\ReceivableSetting;
@@ -45,7 +46,7 @@ class CustomerReceivableController extends Controller
         $selectedMonth = CarbonImmutable::create($year, $month, 1);
         $monthStart = $selectedMonth->startOfMonth()->toDateString();
         $monthEnd = $selectedMonth->endOfMonth()->toDateString();
-        $rows = PaymentSchedule::query()->with(['salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'housingReservation.customer', 'housingReservation.unit.perumahan'])
+        $rows = PaymentSchedule::query()->with(['salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'housingReservation.customer', 'housingReservation.unit.perumahan', 'qualityUpgradeContract.customer', 'qualityUpgradeContract.unit.perumahan'])
             ->where('record_status', 'locked')->whereBetween('due_date', [$monthStart, $monthEnd])->when($search, fn (Builder $q) => $q->where(fn (Builder $q) => $q->where('invoice_no', 'like', "%{$search}%")->orWhereHas('salesTransaction.customer', fn (Builder $q) => $q->where('nama', 'like', "%{$search}%"))->orWhereHas('salesTransaction', fn (Builder $q) => $q->where('transaction_no', 'like', "%{$search}%"))))
             ->when($status === 'overdue', fn (Builder $q) => $q->whereDate('due_date', '<', today())->whereColumn('paid_amount', '<', 'amount'))
             ->orderBy('due_date')->paginate(15)->withQueryString()->through(fn (PaymentSchedule $row) => $this->scheduleRow($row));
@@ -156,7 +157,7 @@ class CustomerReceivableController extends Controller
             'amount_min' => 'nullable|numeric|min:0', 'amount_max' => 'nullable|numeric|min:0',
         ]);
         $search = trim((string) ($filters['search'] ?? ''));
-        $query = CustomerReceipt::query()->with(['salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'housingReservation.customer', 'housingReservation.unit.perumahan', 'bankAccount', 'creator', 'allocations.schedule', 'journal'])
+        $query = CustomerReceipt::query()->with(['salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'housingReservation.customer', 'housingReservation.unit.perumahan', 'qualityUpgradeContract.customer', 'qualityUpgradeContract.unit.perumahan', 'bankAccount', 'creator', 'allocations.schedule', 'journal'])
             ->where(fn (Builder $q) => $q->where('record_status', 'locked')->orWhere('created_by', $request->user()?->id))
             ->when($search, fn (Builder $q) => $q->where(fn (Builder $q) => $q->where('receipt_no', 'like', "%{$search}%")
                 ->orWhere('bank_reference', 'like', "%{$search}%")->orWhere('sender_name', 'like', "%{$search}%")
@@ -173,7 +174,7 @@ class CustomerReceivableController extends Controller
             ->when($filters['amount_max'] ?? null, fn (Builder $q, $value) => $q->where('amount', '<=', $value));
         $summaryQuery = clone $query;
         $rows = $query->latest('payment_date')->latest('id')->paginate(12)->withQueryString()->through(fn (CustomerReceipt $r) => $this->receiptRow($r) + [
-            'housing' => $r->salesTransaction?->housingProject?->nama_perusahaan ?? $r->housingReservation?->unit?->perumahan?->nama_perusahaan, 'purpose' => $r->receipt_purpose,
+            'housing' => $r->salesTransaction?->housingProject?->nama_perusahaan ?? $r->housingReservation?->unit?->perumahan?->nama_perusahaan ?? $r->qualityUpgradeContract?->unit?->perumahan?->nama_perusahaan, 'purpose' => $r->receipt_purpose,
             'sender_name' => $r->sender_name, 'sender_bank' => $r->sender_bank, 'bank_reference' => $r->bank_reference,
             'creator' => $r->creator?->name, 'allocated' => (float) $r->allocations->whereNotNull('payment_schedule_id')->sum('amount'),
             'deposit' => (float) $r->allocations->whereNull('payment_schedule_id')->sum('amount'), 'journal_no' => $r->journal?->nomor_jurnal,
@@ -248,16 +249,57 @@ class CustomerReceivableController extends Controller
 
             return ['value' => (string) $t->id, 'label' => $t->transaction_no.' — '.$t->customer?->nama.' — '.$t->housingProject?->nama_perusahaan.' / '.$t->housingUnit?->nomor_rumah, 'customer' => $t->customer?->nama, 'unit' => $t->housingUnit?->nomor_rumah, 'schedules' => $schedules];
         });
-        $banks = MasterBank::query()->finalized()->with('perumahan')->where('status', 'aktif')->get()->map(fn ($b) => ['value' => (string) $b->id, 'label' => $b->nama_bank.' — '.$b->nomor_rekening.' — '.$b->nama_rekening.' ('.$b->perumahan?->nama_perusahaan.')']);
+        $upgradeContracts = QualityUpgradeContract::query()->with(['customer', 'unit.perumahan', 'company', 'schedules.allocations.receipt'])
+            ->where('business_status', 'active')->where('record_status', 'locked')->latest()->limit(500)->get()
+            ->map(function (QualityUpgradeContract $contract) use ($receivables) {
+                $schedules = $contract->schedules->where('record_status', 'locked')->map(function (PaymentSchedule $schedule) use ($receivables) {
+                    $reserved = (float) $schedule->allocations->filter(fn ($allocation) => in_array($allocation->receipt?->status, ['draft', 'pending_approval'], true))->sum('amount');
+                    $remaining = max(0, (float) $schedule->amount - (float) $schedule->paid_amount - $reserved);
+                    $penalty = $receivables->calculateSchedulePenalty($schedule, today());
+                    $available = round($remaining + $penalty, 2);
+                    if ($available <= 0) return null;
+                    return ['value' => (string) $schedule->id, 'label' => $schedule->invoice_no.' — '.$schedule->description.' — '.optional($schedule->due_date)->format('d/m/Y'), 'remaining' => $remaining, 'penalty' => $penalty, 'available' => $available, 'purpose' => 'invoice_payment', 'due_date' => optional($schedule->due_date)->format('Y-m-d')];
+                })->filter()->values()->all();
+                return ['value' => 'upgrade:'.$contract->id, 'label' => $contract->contract_no.' — '.$contract->customer?->nama.' — '.$contract->unit?->perumahan?->nama_perusahaan.' / '.$contract->unit?->display_label.' — '.$contract->company?->nama_cabang, 'customer' => $contract->customer?->nama, 'unit' => $contract->unit?->display_label, 'company_id' => (string) $contract->company_id, 'schedules' => $schedules];
+            });
+        $transactions = $transactions->concat($upgradeContracts)->values();
+        $banks = MasterBank::query()->finalized()->with(['perumahan', 'cabang'])->where('status', 'aktif')->get()->map(fn ($b) => ['value' => (string) $b->id, 'company_id' => (string) $b->cabang_id, 'label' => $b->nama_bank.' — '.$b->nomor_rekening.' — '.$b->nama_rekening.' ('.($b->cabang?->nama_cabang ?? $b->perumahan?->nama_perusahaan).')']);
         $pettyCashAccounts = PettyCashAccount::query()->where('status', 'active')->orderBy('name')->get()->map(fn ($account) => ['value' => (string) $account->id, 'label' => $account->code.' — '.$account->name]);
 
-        return Inertia::render('Admin/CustomerReceipts/Form', ['title' => 'Input Penerimaan Customer', 'transactions' => $transactions, 'banks' => $banks, 'pettyCashAccounts' => $pettyCashAccounts, 'defaults' => ['transaction' => (string) $request->query('transaction', ''), 'purpose' => (string) $request->query('purpose', 'invoice_payment')], 'storeUrl' => route('admin.customer-receipts.store', absolute: false)]);
+        return Inertia::render('Admin/CustomerReceipts/Form', ['title' => 'Input Penerimaan Customer', 'transactions' => $transactions, 'banks' => $banks, 'pettyCashAccounts' => $pettyCashAccounts, 'defaults' => ['transaction' => $request->query('quality_upgrade_contract') ? 'upgrade:'.$request->query('quality_upgrade_contract') : (string) $request->query('transaction', ''), 'purpose' => (string) $request->query('purpose', 'invoice_payment')], 'storeUrl' => route('admin.customer-receipts.store', absolute: false)]);
     }
 
     public function store(Request $request): RedirectResponse
     {
         $this->allow($request, 'customer-receipts.create');
-        $data = $request->validate(['sales_transaction_id' => 'required|exists:sales_transactions,id', 'master_bank_id' => 'nullable|required_if:payment_method,transfer|exists:master_banks,id', 'petty_cash_account_id' => 'nullable|required_if:payment_method,cash|exists:petty_cash_accounts,id', 'payment_date' => 'required|date', 'amount' => 'required|numeric|min:1', 'payment_method' => ['required', Rule::in(['transfer', 'cash'])], 'receipt_purpose' => ['required', Rule::in(['booking_fee', 'down_payment', 'invoice_payment', 'accelerated_payment', 'overpayment', 'other'])], 'bank_reference' => 'nullable|string|max:100', 'sender_bank' => 'nullable|string|max:100', 'sender_name' => 'nullable|string|max:150', 'proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120', 'notes' => 'nullable|string', 'allocations' => 'nullable|array', 'allocations.*.payment_schedule_id' => 'nullable|distinct|exists:payment_schedules,id', 'allocations.*.amount' => 'required|numeric|min:0.01']);
+        $data = $request->validate([
+            'sales_transaction_id' => 'required|string',
+            'master_bank_id' => 'nullable|required_if:payment_method,transfer|exists:master_banks,id',
+            'petty_cash_account_id' => 'nullable|required_if:payment_method,cash|exists:petty_cash_accounts,id',
+            'payment_date' => 'required|date',
+            'amount' => 'required|numeric|min:1',
+            'payment_method' => ['required', Rule::in(['transfer', 'cash'])],
+            'receipt_purpose' => ['required', Rule::in(['booking_fee', 'down_payment', 'invoice_payment', 'accelerated_payment', 'overpayment', 'other'])],
+            'bank_reference' => 'nullable|string|max:100',
+            'sender_bank' => 'nullable|string|max:100',
+            'sender_name' => 'nullable|string|max:150',
+            'proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120',
+            'notes' => 'nullable|string',
+            'allocations' => 'nullable|array',
+            'allocations.*.payment_schedule_id' => 'nullable|distinct|exists:payment_schedules,id',
+            'allocations.*.amount' => 'required|numeric|min:0.01',
+        ]);
+        $sourceReference = (string) $data['sales_transaction_id'];
+        $upgradeId = str_starts_with($sourceReference, 'upgrade:') ? (int) str($sourceReference)->after('upgrade:')->toString() : null;
+        $data['sales_transaction_id'] = $upgradeId ? null : (int) $sourceReference;
+        $data['quality_upgrade_contract_id'] = $upgradeId;
+        $upgrade = $upgradeId ? QualityUpgradeContract::query()->findOrFail($upgradeId) : null;
+        if (! $upgradeId) {
+            abort_unless(SalesTransaction::query()->whereKey($data['sales_transaction_id'])->exists(), 422, 'Transaksi penjualan tidak ditemukan.');
+        }
+        if ($upgrade && filled($data['master_bank_id'] ?? null)) {
+            abort_unless(MasterBank::query()->whereKey($data['master_bank_id'])->where('cabang_id', $upgrade->company_id)->exists(), 422, 'Rekening penerima wajib milik perusahaan pada kontrak penambahan mutu.');
+        }
         $data['master_bank_id'] = $data['payment_method'] === 'transfer' ? ($data['master_bank_id'] ?? null) : null;
         $data['petty_cash_account_id'] = $data['payment_method'] === 'cash' ? ($data['petty_cash_account_id'] ?? null) : null;
         if ($data['payment_method'] === 'transfer' && ! $request->hasFile('proof')) {
@@ -269,7 +311,9 @@ class CustomerReceivableController extends Controller
                 throw ValidationException::withMessages(['allocations' => 'Total alokasi melebihi penerimaan.']);
             }
             foreach ($alloc as $a) {
-                $schedule = PaymentSchedule::query()->lockForUpdate()->whereKey($a['payment_schedule_id'])->where('sales_transaction_id', $data['sales_transaction_id'])->first();
+                $schedule = PaymentSchedule::query()->lockForUpdate()->whereKey($a['payment_schedule_id'])
+                    ->when($data['quality_upgrade_contract_id'], fn ($query) => $query->where('quality_upgrade_contract_id', $data['quality_upgrade_contract_id']), fn ($query) => $query->where('sales_transaction_id', $data['sales_transaction_id']))
+                    ->first();
                 if (! $schedule) {
                     throw ValidationException::withMessages(['allocations' => 'Tagihan bukan milik transaksi yang dipilih.']);
                 }
@@ -329,23 +373,25 @@ class CustomerReceivableController extends Controller
     public function invoice(Request $request, PaymentSchedule $schedule): Response
     {
         $this->allow($request, 'receivables.print');
-        $schedule->load(['salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'allocations.receipt']);
+        $schedule->load(['salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'qualityUpgradeContract.customer', 'qualityUpgradeContract.unit.perumahan', 'allocations.receipt']);
+        $upgrade = $schedule->qualityUpgradeContract;
 
-        return Inertia::render('Admin/Receivables/Invoice', ['title' => 'Invoice '.$schedule->invoice_no, 'invoice' => $this->scheduleRow($schedule) + ['transaction' => $schedule->salesTransaction->transaction_no, 'customer' => $schedule->salesTransaction->customer?->nama, 'housing' => $schedule->salesTransaction->housingProject?->nama_perusahaan, 'unit' => $schedule->salesTransaction->housingUnit?->nomor_rumah, 'description' => $schedule->description, 'payments' => $schedule->allocations->filter(fn ($allocation) => $allocation->receipt)->sortBy(fn ($allocation) => $allocation->receipt->payment_date)->values()->map(fn ($allocation) => ['receipt_no' => $allocation->receipt->receipt_no, 'date' => optional($allocation->receipt->payment_date)->format('Y-m-d'), 'amount' => (float) $allocation->amount, 'method' => $allocation->receipt->payment_method, 'status' => $allocation->receipt->status, 'url' => route('admin.customer-receipts.preview', $allocation->receipt, absolute: false)])->all()]]);
+        return Inertia::render('Admin/Receivables/Invoice', ['title' => 'Invoice '.$schedule->invoice_no, 'invoice' => $this->scheduleRow($schedule) + ['transaction' => $schedule->salesTransaction?->transaction_no ?? $upgrade?->contract_no, 'customer' => $schedule->salesTransaction?->customer?->nama ?? $upgrade?->customer?->nama, 'housing' => $schedule->salesTransaction?->housingProject?->nama_perusahaan ?? $upgrade?->unit?->perumahan?->nama_perusahaan, 'unit' => $schedule->salesTransaction?->housingUnit?->nomor_rumah ?? $upgrade?->unit?->display_label, 'description' => $schedule->description, 'payments' => $schedule->allocations->filter(fn ($allocation) => $allocation->receipt)->sortBy(fn ($allocation) => $allocation->receipt->payment_date)->values()->map(fn ($allocation) => ['receipt_no' => $allocation->receipt->receipt_no, 'date' => optional($allocation->receipt->payment_date)->format('Y-m-d'), 'amount' => (float) $allocation->amount, 'method' => $allocation->receipt->payment_method, 'status' => $allocation->receipt->status, 'url' => route('admin.customer-receipts.preview', $allocation->receipt, absolute: false)])->all()]]);
     }
 
     public function receiptPreview(Request $request, CustomerReceipt $receipt): Response
     {
         $this->allow($request, 'customer-receipts.print');
-        $receipt->load(['salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'housingReservation.customer', 'housingReservation.unit.perumahan', 'allocations.schedule', 'bankAccount']);
+        $receipt->load(['salesTransaction.customer', 'salesTransaction.housingProject', 'salesTransaction.housingUnit', 'housingReservation.customer', 'housingReservation.unit.perumahan', 'qualityUpgradeContract.customer', 'qualityUpgradeContract.unit.perumahan', 'allocations.schedule', 'bankAccount']);
 
         $transaction = $receipt->salesTransaction;
         $reservation = $receipt->housingReservation;
+        $upgrade = $receipt->qualityUpgradeContract;
         $payload = $this->receiptRow($receipt) + [
-            'transaction' => $transaction?->transaction_no ?? $reservation?->reservation_no,
-            'customer' => $transaction?->customer?->nama ?? $reservation?->customer?->nama,
-            'housing' => $transaction?->housingProject?->nama_perusahaan ?? $reservation?->unit?->perumahan?->nama_perusahaan,
-            'unit' => $transaction?->housingUnit?->nomor_rumah ?? trim(($reservation?->unit?->kode_nlok ?? '').' / '.($reservation?->unit?->nomor_rumah ?? '')),
+            'transaction' => $transaction?->transaction_no ?? $reservation?->reservation_no ?? $upgrade?->contract_no,
+            'customer' => $transaction?->customer?->nama ?? $reservation?->customer?->nama ?? $upgrade?->customer?->nama,
+            'housing' => $transaction?->housingProject?->nama_perusahaan ?? $reservation?->unit?->perumahan?->nama_perusahaan ?? $upgrade?->unit?->perumahan?->nama_perusahaan,
+            'unit' => $transaction?->housingUnit?->nomor_rumah ?? ($reservation ? trim(($reservation->unit?->kode_nlok ?? '').' / '.($reservation->unit?->nomor_rumah ?? '')) : $upgrade?->unit?->display_label),
             'bank' => $receipt->bankAccount
                 ? $receipt->bankAccount->nama_bank.' - '.$receipt->bankAccount->nomor_rekening
                 : ($receipt->payment_method === 'cash' ? 'Kas Kecil Marketing' : 'Rekening tujuan tidak tercatat'),
@@ -375,13 +421,13 @@ class CustomerReceivableController extends Controller
         $remaining = max(0, (float) $r->amount - (float) $r->paid_amount);
         $urgency = $remaining <= 0 ? 'paid' : ($days < 0 ? 'overdue' : ($days <= (int) ($setting?->urgent_days ?? 3) ? 'urgent' : ($days <= (int) ($setting?->warning_days ?? 14) ? 'warning' : 'safe')));
 
-        return ['id' => $r->id, 'invoice_no' => $r->invoice_no, 'reference' => $r->salesTransaction?->transaction_no ?? $r->housingReservation?->reservation_no, 'customer' => $r->salesTransaction?->customer?->nama ?? $r->housingReservation?->customer?->nama, 'housing' => $r->salesTransaction?->housingProject?->nama_perusahaan ?? $r->housingReservation?->unit?->perumahan?->nama_perusahaan, 'unit' => $r->salesTransaction?->housingUnit?->nomor_rumah ?? $r->housingReservation?->unit?->nomor_rumah, 'type' => $r->description, 'issued_at' => optional($r->issued_at)->format('Y-m-d'), 'due_date' => optional($r->due_date)->format('Y-m-d'), 'bill' => (float) $r->amount, 'paid' => (float) $r->paid_amount, 'remaining' => $remaining, 'status' => $r->status, 'urgency' => $urgency, 'days' => $days, 'invoice_url' => $r->sales_transaction_id ? route('admin.receivables.invoice', $r, absolute: false) : null];
+        return ['id' => $r->id, 'invoice_no' => $r->invoice_no, 'reference' => $r->salesTransaction?->transaction_no ?? $r->housingReservation?->reservation_no ?? $r->qualityUpgradeContract?->contract_no, 'customer' => $r->salesTransaction?->customer?->nama ?? $r->housingReservation?->customer?->nama ?? $r->qualityUpgradeContract?->customer?->nama, 'housing' => $r->salesTransaction?->housingProject?->nama_perusahaan ?? $r->housingReservation?->unit?->perumahan?->nama_perusahaan ?? $r->qualityUpgradeContract?->unit?->perumahan?->nama_perusahaan, 'unit' => $r->salesTransaction?->housingUnit?->nomor_rumah ?? $r->housingReservation?->unit?->nomor_rumah ?? $r->qualityUpgradeContract?->unit?->display_label, 'type' => $r->description, 'issued_at' => optional($r->issued_at)->format('Y-m-d'), 'due_date' => optional($r->due_date)->format('Y-m-d'), 'bill' => (float) $r->amount, 'paid' => (float) $r->paid_amount, 'remaining' => $remaining, 'status' => $r->status, 'urgency' => $urgency, 'days' => $days, 'invoice_url' => ($r->sales_transaction_id || $r->quality_upgrade_contract_id) ? route('admin.receivables.invoice', $r, absolute: false) : null];
     }
 
     private function receiptRow(CustomerReceipt $r): array
     {
         $approval = ApprovalRequest::query()->where(['model_type' => CustomerReceipt::class, 'model_id' => $r->id])->latest()->first();
 
-        return ['id' => $r->id, 'receipt_no' => $r->receipt_no, 'transaction' => $r->salesTransaction?->transaction_no ?? $r->housingReservation?->reservation_no, 'customer' => $r->salesTransaction?->customer?->nama ?? $r->housingReservation?->customer?->nama, 'unit' => $r->salesTransaction?->housingUnit?->nomor_rumah ?? $r->housingReservation?->unit?->nomor_rumah, 'date' => optional($r->payment_date)->format('Y-m-d'), 'amount' => (float) $r->amount, 'method' => $r->payment_method, 'bank' => $r->bankAccount ? $r->bankAccount->nama_bank.' - '.$r->bankAccount->nomor_rekening : ($r->payment_method === 'cash' ? 'Kas Kecil Marketing' : null), 'status' => $r->status, 'record_status' => $r->record_status, 'approval_step' => $approval?->current_step, 'approval_total' => $approval?->total_steps, 'approval_status' => $approval?->status, 'can_review' => $approval ? app(ApprovalWorkflowService::class)->canReview($approval) : false, 'can_lock' => $r->record_status === 'draft' && $r->created_by === auth()->id(), 'can_unlock' => $r->record_status === 'locked' && $r->status !== 'posted' && (auth()->user()?->can('customer-receipts.unlock') || auth()->user()?->hasRole('super_admin')), 'preview_url' => route('admin.customer-receipts.preview', $r, absolute: false)];
+        return ['id' => $r->id, 'receipt_no' => $r->receipt_no, 'transaction' => $r->salesTransaction?->transaction_no ?? $r->housingReservation?->reservation_no ?? $r->qualityUpgradeContract?->contract_no, 'customer' => $r->salesTransaction?->customer?->nama ?? $r->housingReservation?->customer?->nama ?? $r->qualityUpgradeContract?->customer?->nama, 'unit' => $r->salesTransaction?->housingUnit?->nomor_rumah ?? $r->housingReservation?->unit?->nomor_rumah ?? $r->qualityUpgradeContract?->unit?->display_label, 'date' => optional($r->payment_date)->format('Y-m-d'), 'amount' => (float) $r->amount, 'method' => $r->payment_method, 'bank' => $r->bankAccount ? $r->bankAccount->nama_bank.' - '.$r->bankAccount->nomor_rekening : ($r->payment_method === 'cash' ? 'Kas Kecil Marketing' : null), 'status' => $r->status, 'record_status' => $r->record_status, 'approval_step' => $approval?->current_step, 'approval_total' => $approval?->total_steps, 'approval_status' => $approval?->status, 'can_review' => $approval ? app(ApprovalWorkflowService::class)->canReview($approval) : false, 'can_lock' => $r->record_status === 'draft' && $r->created_by === auth()->id(), 'can_unlock' => $r->record_status === 'locked' && $r->status !== 'posted' && (auth()->user()?->can('customer-receipts.unlock') || auth()->user()?->hasRole('super_admin')), 'preview_url' => route('admin.customer-receipts.preview', $r, absolute: false)];
     }
 }

@@ -30,6 +30,7 @@ class UserController extends Controller
 
     private const SECTIONS = [
         'marketing' => ['label' => 'Marketing', 'roles' => ['marketing']],
+        'admin_sales' => ['label' => 'Admin Sales', 'roles' => ['admin_sales']],
         'manager' => ['label' => 'Manager', 'roles' => ['manager']],
         'manajer_pimpro' => ['label' => 'Manajer Pimpro', 'roles' => ['manajer_pimpro']],
         'pengawas' => ['label' => 'Pengawas', 'roles' => ['pengawas']],
@@ -44,6 +45,7 @@ class UserController extends Controller
 
     public function index(Request $request): Response
     {
+        $this->authorizeAction($request, 'view');
         $search = trim((string) $request->query('search', ''));
         $section = $this->section($request);
 
@@ -85,11 +87,14 @@ class UserController extends Controller
 
     public function create(Request $request): Response
     {
+        $this->authorizeAction($request, 'create');
+
         return $this->formResponse(null, $this->section($request));
     }
 
     public function edit(Request $request, string $id): Response
     {
+        $this->authorizeAction($request, 'update');
         $user = User::query()->with($this->relations())->findOrFail($id);
         $this->abortIfLocked($user);
 
@@ -98,6 +103,7 @@ class UserController extends Controller
 
     public function store(StoreUserRequest $request): RedirectResponse
     {
+        $this->authorizeAction($request, 'create');
         $payload = $this->payload($request);
         $section = $this->section($request);
         $payload = $this->normalizeSectionPayload($payload, $section);
@@ -113,6 +119,7 @@ class UserController extends Controller
 
     public function update(UpdateUserRequest $request, string $id): RedirectResponse
     {
+        $this->authorizeAction($request, 'update');
         $payload = $this->payload($request);
         $section = $this->section($request);
         $payload = $this->normalizeSectionPayload($payload, $section);
@@ -218,8 +225,9 @@ class UserController extends Controller
         return $payload;
     }
 
-    public function destroy(string $id): RedirectResponse
+    public function destroy(Request $request, string $id): RedirectResponse
     {
+        $this->authorizeAction($request, 'delete');
         $user = User::query()->findOrFail($id);
         $this->abortIfLocked($user);
         $user->delete();
@@ -245,6 +253,16 @@ class UserController extends Controller
     protected function routeName(): string
     {
         return 'admin.management.user';
+    }
+
+    protected function permissionKey(): string
+    {
+        return 'users';
+    }
+
+    protected function defaultSection(): string
+    {
+        return 'marketing';
     }
 
     protected function title(): string
@@ -404,7 +422,15 @@ class UserController extends Controller
 
     private function section(Request $request, string $fallback = 'marketing'): string
     {
+        if ($this->defaultSection() === 'pegawai') {
+            return 'pegawai';
+        }
+
         $section = (string) $request->input('profile_section', $request->query('section', $fallback));
+
+        if ($section === 'pegawai') {
+            return $this->defaultSection();
+        }
 
         return array_key_exists($section, self::SECTIONS) ? $section : $fallback;
     }
@@ -453,9 +479,9 @@ class UserController extends Controller
         ];
     }
 
-    private function tabs(): array
+    protected function tabs(): array
     {
-        return collect(self::SECTIONS)->map(fn(array $config, string $key) => [
+        return collect(self::SECTIONS)->except('pegawai')->map(fn(array $config, string $key) => [
             'key' => $key,
             'label' => $config['label'],
             'url' => route($this->routeName() . '.index', ['section' => $key], false),
@@ -493,5 +519,15 @@ class UserController extends Controller
     protected function description(): string
     {
         return 'Kelola data, role, dan penugasan properti dari satu halaman.';
+    }
+
+    protected function authorizeAction(Request $request, string $action): void
+    {
+        $user = $request->user();
+        abort_unless(
+            $user?->can($this->permissionKey().'.'.$action)
+                || $user?->can($this->permissionKey().'.manage'),
+            403,
+        );
     }
 }

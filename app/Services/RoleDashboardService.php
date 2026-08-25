@@ -31,11 +31,24 @@ class RoleDashboardService
         $sections = [];
         $charts = [];
         $shortcuts = [];
+        $isExecutive = $user->hasAnyRole(['owner', 'manager', 'manajer_pimpro', 'admin', 'super_admin']);
+        $isMarketing = $user->hasAnyRole(['marketing', 'area_marketing']);
+        $isField = $user->hasAnyRole(['pengawas', 'manajer_pimpro']);
+        $isWarehouse = $user->hasAnyRole(['gudang', 'logistik']);
+        $isFinance = $user->hasAnyRole(['keuangan', 'finance']);
+        $profile = match (true) {
+            $isMarketing => ['key' => 'marketing', 'eyebrow' => 'Dasbor Marketing', 'title' => 'Fokus penjualan hari ini', 'description' => 'Pantau prospek, tindak lanjut, SPR, booking, dan pencapaian penjualan dalam satu ringkasan.'],
+            $isWarehouse => ['key' => 'warehouse', 'eyebrow' => 'Dasbor Gudang & Logistik', 'title' => 'Kendali persediaan hari ini', 'description' => 'Pantau stok, permintaan, pembelian, penerimaan, dan pemakaian material yang perlu ditindaklanjuti.'],
+            $isField && ! $isExecutive => ['key' => 'field', 'eyebrow' => 'Dasbor Pengawas Lapangan', 'title' => 'Kondisi pekerjaan hari ini', 'description' => 'Pantau jadwal, progres, mutu, K3, defect, material, dan pekerjaan lapangan berdasarkan unit aktif.'],
+            $isFinance && ! $isExecutive => ['key' => 'finance', 'eyebrow' => 'Dasbor Keuangan', 'title' => 'Posisi keuangan terkini', 'description' => 'Pantau kas, transaksi, piutang, hutang, jurnal, dan tugas review keuangan periode berjalan.'],
+            $isExecutive => ['key' => 'executive', 'eyebrow' => 'Dasbor Manajemen', 'title' => 'Ringkasan kinerja perusahaan', 'description' => 'Pantau kondisi keuangan, penjualan, proyek, persediaan, dan antrean keputusan dari seluruh area yang Anda kelola.'],
+            default => ['key' => 'general', 'eyebrow' => 'Dasbor Berbasis Hak Akses', 'title' => 'Ringkasan pekerjaan Anda', 'description' => 'Informasi operasional ditampilkan sesuai tugas dan hak akses yang diberikan.'],
+        };
 
         $canSeeFinanceSummary = $user->hasAnyRole(['owner', 'manager', 'manajer_pimpro', 'admin', 'super_admin', 'keuangan'])
             || $this->allowed($user, ['keuangan.view', 'bank-account-ledger.view', 'buku-besar.view', 'neraca-saldo.view', 'laba-rugi.view', 'neraca.view', 'arus-kas.view', 'piutang.view', 'hutang.view', 'petty-cash.view']);
 
-        if ($canSeeFinanceSummary) {
+        if ($canSeeFinanceSummary && ! $isMarketing && ! $isField && ! $isWarehouse) {
             $sections[] = $this->financeStats();
             $charts[] = $this->financeChart();
             $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
@@ -46,7 +59,7 @@ class RoleDashboardService
             ])];
         }
 
-        if ($this->allowed($user, ['approval.view', 'approval.settings', 'spk-kontraktor.approve', 'booking.manage'])) {
+        if (! $isMarketing && ($isExecutive || $isFinance || $this->allowed($user, ['approval.view', 'approval.settings', 'spk-kontraktor.approve']))) {
             $sections[] = $this->approvalStats();
             $charts[] = $this->distributionChart('Status Antrean Approval', 'approval_requests', 'status', 'Pengajuan');
             $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
@@ -56,7 +69,7 @@ class RoleDashboardService
             ])];
         }
 
-        if ($this->allowed($user, ['perumahan.view', 'detail-rumah.view', 'rab-unit.view', 'progress.view', 'site-schedule.view', 'site-report.view', 'quality-inspection.view', 'field-supervision.view', 'spk-kontraktor.view', 'laporan.view'])) {
+        if (! $isMarketing && ! $isWarehouse && ($isExecutive || $isField || $this->allowed($user, ['rab-unit.view', 'site-schedule.view', 'site-report.view', 'quality-inspection.view', 'field-supervision.view', 'spk-kontraktor.view']))) {
             $sections[] = $this->propertyStats();
             $charts[] = $this->distributionChart('Status Pembangunan Unit', 'detail_rumahs', 'status_pembangunan', 'Unit');
             $charts[] = $this->activityChart('Aktivitas Proyek', [
@@ -72,13 +85,13 @@ class RoleDashboardService
             ])];
         }
 
-        if ($this->allowed($user, ['customer.view', 'booking.view', 'customer-receipts.view', 'bank-kpr.applications.view', 'marketing.lead-report.view', 'marketing.pipeline.view', 'marketing.pipeline-report.view', 'marketing.campaign.manage', 'marketing.activity.view', 'laporan.view', 'laporan-marketing.view'])) {
+        if ($isMarketing || $isExecutive || $this->allowed($user, ['marketing.lead-report.view', 'marketing.pipeline.view', 'marketing.pipeline-report.view', 'marketing.campaign.manage', 'marketing.activity.view', 'laporan-marketing.view'])) {
             $sections[] = $this->marketingStats();
             $charts[] = $this->activityChart('Prospek & SPR', [
                 ['label' => 'Prospek', 'table' => 'costumers', 'date' => 'created_at', 'color' => '#2563eb'],
                 ['label' => 'SPR', 'table' => 'sprs', 'date' => 'tanggal_spr', 'color' => '#c8962e'],
             ]);
-            $charts[] = $this->distributionChart('Tahapan Prospek', 'costumers', 'status_lead', 'Prospek');
+            $charts[] = $this->distributionChart('Tahapan Prospek', 'marketing_leads', 'stage', 'Prospek');
             $shortcuts = [...$shortcuts, ...$this->shortcuts($user, [
                 ['customer.view', 'Data Pelanggan', '/admin/marketing/calon-konsumen'],
                 ['booking.view', 'Data SPR', '/admin/marketing/spr'],
@@ -86,7 +99,7 @@ class RoleDashboardService
             ])];
         }
 
-        if ($this->allowed($user, ['master-material.view', 'site-material-stock.view', 'material-request.view', 'material-purchase.view', 'material-usage.view', 'supplier.view', 'laporan.view', 'laporan-persediaan-material.view', 'laporan-pembelian.view'])) {
+        if (! $isMarketing && ($isExecutive || $isWarehouse || $this->allowed($user, ['master-material.view', 'site-material-stock.view', 'material-request.view', 'material-purchase.view', 'material-usage.view', 'supplier.view', 'laporan-persediaan-material.view', 'laporan-pembelian.view']))) {
             $sections[] = $this->warehouseStats();
             $charts[] = $this->activityChart('Aktivitas Logistik', [
                 ['label' => 'Permintaan', 'table' => 'material_requests', 'date' => 'tanggal', 'color' => '#0f766e'],
@@ -129,6 +142,7 @@ class RoleDashboardService
                 'active_perumahan_id' => $activePerumahanId,
                 'roles' => $user->roles->pluck('name')->values()->all(),
                 'period_label' => $this->periodLabel,
+                'profile' => $profile,
             ],
             'filters' => ['period' => $this->period, 'value' => $this->periodValue],
         ];
@@ -268,6 +282,7 @@ class RoleDashboardService
         $expense = array_fill(0, count($this->timeline), 0.0);
         if (SchemaMetadata::hasTable('transaksi_keuangans') && SchemaMetadata::hasTable('tipe_posts')) {
             $rows = $this->query('transaksi_keuangans as t')->join('tipe_posts as p', 'p.id', '=', 't.tipe_post_id')
+                ->where('t.status', 'posted')
                 ->whereBetween('t.tanggal', [$this->timeline[0]['start'], $this->timeline[array_key_last($this->timeline)]['end']])->get(['t.tanggal', 't.nominal', 'p.jenis']);
             foreach ($rows as $row) {
                 $index = $this->timelineIndex($row->tanggal);
@@ -342,7 +357,7 @@ class RoleDashboardService
             return 0;
         }
 
-        return (float) $this->query('transaksi_keuangans as t')->join('tipe_posts as p', 'p.id', '=', 't.tipe_post_id')->where('p.jenis', $type)->whereBetween('t.tanggal', [$this->periodStart, $this->periodEnd])->sum('t.nominal');
+        return (float) $this->query('transaksi_keuangans as t')->join('tipe_posts as p', 'p.id', '=', 't.tipe_post_id')->where('t.status', 'posted')->where('p.jenis', $type)->whereBetween('t.tanggal', [$this->periodStart, $this->periodEnd])->sum('t.nominal');
     }
 
     private function section(string $title, string $key, array $stats): array

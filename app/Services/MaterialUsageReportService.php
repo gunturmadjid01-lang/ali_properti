@@ -32,7 +32,7 @@ class MaterialUsageReportService
         $details = $usages->flatMap(function (MaterialUsage $usage): Collection {
             return $usage->details->map(function ($detail) use ($usage): array {
                 $material = $detail->barangMaterial;
-                $price = (float) ($material?->harga_hpp ?? 0);
+                $price = (float) ($detail->unit_cost_snapshot ?? 0);
                 $quantity = (float) $detail->qty;
 
                 return [
@@ -57,7 +57,7 @@ class MaterialUsageReportService
                     'quantity' => $quantity,
                     'unit_name' => $detail->satuan ?: ($material?->satuan ?? '-'),
                     'unit_price' => $price,
-                    'amount' => $quantity * $price,
+                    'amount' => (float) ($detail->subtotal_snapshot ?: $quantity * $price),
                     'note' => $usage->keterangan,
                 ];
             });

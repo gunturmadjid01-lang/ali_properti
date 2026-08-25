@@ -24,6 +24,8 @@ class GudangController extends Controller
 
     public function index(Request $request): Response
     {
+        $this->authorizeGudang('view');
+
         $search = trim((string) $request->query('search', ''));
         $chartStart = now()->copy()->subMonths(5)->startOfMonth();
         $months = collect(range(5, 0))->map(fn (int $offset) => now()->copy()->subMonths($offset));
@@ -86,6 +88,8 @@ class GudangController extends Controller
 
     public function create(): Response
     {
+        $this->authorizeGudang('create');
+
         return Inertia::render('Admin/Logistik/GudangForm', [
             'title' => 'Tambah Gudang Baru',
             'baseUrl' => route('admin.gudang.index', absolute: false),
@@ -96,6 +100,8 @@ class GudangController extends Controller
 
     public function edit(string $id): Response
     {
+        $this->authorizeGudang('update');
+
         $gudang = Gudang::query()->findOrFail($id);
 
         return Inertia::render('Admin/Logistik/GudangForm', [
@@ -119,6 +125,8 @@ class GudangController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        $this->authorizeGudang('create');
+
         Gudang::query()->create([
             ...$this->payload($request),
             'kode_gudang' => $this->nextCode(),
@@ -131,6 +139,8 @@ class GudangController extends Controller
 
     public function update(Request $request, string $id): RedirectResponse
     {
+        $this->authorizeGudang('update');
+
         $row = Gudang::query()->findOrFail($id);
         $this->abortIfLocked($row);
 
@@ -144,6 +154,8 @@ class GudangController extends Controller
 
     public function destroy(string $id): RedirectResponse
     {
+        $this->authorizeGudang('delete');
+
         $row = Gudang::query()->findOrFail($id);
         $this->abortIfLocked($row);
         $row->delete();
@@ -153,6 +165,8 @@ class GudangController extends Controller
 
     public function manajemen(Request $request): Response
     {
+        $this->authorizeGudang('view');
+
         $search = trim((string) $request->query('search', ''));
         $perumahanId = $request->query('perumahan_id');
 
@@ -201,11 +215,18 @@ class GudangController extends Controller
             ],
             'perumahans' => $perumahans,
             'allUsers' => $allUsers,
+            'permissions' => [
+                'canCreate' => $this->canGudang('create'),
+                'canUpdate' => $this->canGudang('update'),
+                'canDelete' => $this->canGudang('delete'),
+            ],
         ]);
     }
 
     public function assignUser(string $id, Request $request): RedirectResponse
     {
+        $this->authorizeGudang('update');
+
         $gudang = Gudang::query()->findOrFail($id);
         $userId = $request->integer('user_id');
 
@@ -216,6 +237,8 @@ class GudangController extends Controller
 
     public function removeUser(string $id, Request $request): RedirectResponse
     {
+        $this->authorizeGudang('update');
+
         $gudang = Gudang::query()->findOrFail($id);
         $userId = $request->integer('user_id');
 
@@ -250,6 +273,22 @@ class GudangController extends Controller
             'perumahans' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
             'status' => [['value' => 'aktif', 'label' => 'Aktif'], ['value' => 'nonaktif', 'label' => 'Nonaktif']],
         ];
+    }
+
+    protected function canGudang(string $action): bool
+    {
+        $user = auth()->user();
+
+        return (bool) (
+            $user?->hasRole('super_admin')
+            || $user?->can("gudang.{$action}")
+            || $user?->can('gudang.manage')
+        );
+    }
+
+    protected function authorizeGudang(string $action): void
+    {
+        abort_unless($this->canGudang($action), 403, 'Anda tidak memiliki permission gudang.');
     }
 
     protected function modelClass(): string

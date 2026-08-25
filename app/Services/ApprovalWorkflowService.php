@@ -45,9 +45,36 @@ class ApprovalWorkflowService
         return $request;
     }
 
+    public function reverseLockApproval(Model $model): void
+    {
+        ApprovalRequest::query()
+            ->where(['action' => 'lock', 'model_type' => $model::class, 'model_id' => $model->getKey()])
+            ->whereIn('status', [ApprovalRequest::STATUS_PENDING, ApprovalRequest::STATUS_APPROVED])
+            ->latest('id')
+            ->get()
+            ->each(function (ApprovalRequest $request): void {
+                $history = $request->step_history ?? [];
+                $history[] = [
+                    'step' => $request->current_step,
+                    'decision' => 'unlock_reversal',
+                    'user_id' => auth()->id(),
+                    'user_name' => auth()->user()?->name,
+                    'decided_at' => now()->toISOString(),
+                ];
+
+                $request->update([
+                    'status' => ApprovalRequest::STATUS_REVERSED,
+                    'reviewed_by' => auth()->id(),
+                    'reviewed_at' => now(),
+                    'rejection_note' => 'Finalisasi dan dampak transaksinya dibalik melalui unlock.',
+                    'step_history' => $history,
+                ]);
+            });
+    }
+
     public function cancelPendingLock(Model $model): void
     {
-        ApprovalRequest::query()->where(['action' => 'lock', 'model_type' => $model::class, 'model_id' => $model->getKey(), 'status' => ApprovalRequest::STATUS_PENDING])->update(['status' => ApprovalRequest::STATUS_REJECTED, 'reviewed_by' => auth()->id(), 'reviewed_at' => now(), 'rejection_note' => 'Finalisasi dibatalkan melalui unlock.']);
+        $this->reverseLockApproval($model);
     }
 
     public function update(string $moduleKey, Model $row, array $payload, Closure $directAction): RedirectResponse

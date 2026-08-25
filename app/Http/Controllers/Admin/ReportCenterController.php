@@ -22,6 +22,7 @@ use App\Models\Supplier;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -30,33 +31,42 @@ class ReportCenterController extends Controller
 {
     public function index(): Response
     {
-        $this->authorizeReport('view');
+        $groups = collect([
+            [
+                'key' => 'progress-pembangunan',
+                'title' => 'Laporan Progress Pembangunan',
+                'description' => 'Progress harian, mingguan/rentang tanggal, atau bulanan untuk maksimal dua blok beserta pembayaran SPK.',
+                'href' => route('admin.construction-progress-report.index', absolute: false),
+                'permission' => 'laporan.view',
+            ],
+            [
+                'key' => 'pemakaian-barang',
+                'title' => 'Laporan Pemakaian Barang',
+                'description' => 'Pemakaian material pada progress pembangunan per perumahan, unit, harian, mingguan, atau bulanan.',
+                'href' => route('admin.material-usage-report.index', absolute: false),
+                'permission' => 'laporan-persediaan-material.view',
+            ],
+            [
+                'key' => 'keuangan',
+                'title' => 'Laporan Keuangan',
+                'description' => 'Laba rugi, neraca, arus kas, buku besar, neraca saldo, aging piutang, dan aging hutang dengan filter perumahan serta periode.',
+                'href' => route('admin.finance.show', 'laba-rugi', absolute: false),
+                'permission' => 'laba-rugi.view',
+            ],
+        ])->concat(collect($this->groups())->map(fn (array $group, string $key) => [
+            'key' => $key,
+            'title' => $group['title'],
+            'description' => $group['description'],
+            'href' => route('admin.reports.show', $key, absolute: false),
+            'permission' => $group['permission'],
+        ]))->filter(fn (array $group) => $this->canReport('view', $group['permission']))->values();
+
+        abort_if($groups->isEmpty(), 403);
 
         return Inertia::render('Admin/Reports/Index', [
             'title' => 'Laporan',
             'description' => 'Pilih kelompok laporan, atur filter, preview data, lalu cetak laporan ke PDF.',
-            'groups' => collect([
-                [
-                    'key' => 'progress-pembangunan',
-                    'title' => 'Laporan Progress Pembangunan',
-                    'description' => 'Progress harian, mingguan/rentang tanggal, atau bulanan untuk maksimal dua blok beserta pembayaran SPK.',
-                    'href' => route('admin.construction-progress-report.index', absolute: false),
-                    'permission' => 'laporan.view',
-                ],
-                [
-                    'key' => 'pemakaian-barang',
-                    'title' => 'Laporan Pemakaian Barang',
-                    'description' => 'Pemakaian material pada progress pembangunan per perumahan, unit, harian, mingguan, atau bulanan.',
-                    'href' => route('admin.material-usage-report.index', absolute: false),
-                    'permission' => 'laporan-persediaan-material.view',
-                ],
-            ])->concat(collect($this->groups())->map(fn (array $group, string $key) => [
-                'key' => $key,
-                'title' => $group['title'],
-                'description' => $group['description'],
-                'href' => route('admin.reports.show', $key, absolute: false),
-                'permission' => $group['permission'],
-            ]))->values(),
+            'groups' => $groups,
         ]);
     }
 
@@ -405,6 +415,104 @@ class ReportCenterController extends Controller
 
     private function inventoryReport(string $type, Request $request, int $limit): array
     {
+        if ($type === 'stok-kondisi') {
+            $rows = DB::table('material_condition_stocks as stock')->join('barang_materials as material', 'material.id', '=', 'stock.barang_material_id')
+                ->join('gudangs as warehouse', 'warehouse.id', '=', 'stock.gudang_id')
+                ->when($request->query('gudang_id'), fn ($query, $value) => $query->where('stock.gudang_id', $value))
+                ->where('stock.qty', '>', 0)->orderBy('stock.condition_bucket')->limit($limit)
+                ->get()->map(fn ($row) => ['gudang' => $row->nama_gudang, 'material' => $row->kode_barang.' - '.$row->nama_barang, 'kondisi' => str($row->condition_bucket)->replace('_', ' ')->title(), 'qty' => $this->num($row->qty).' '.$row->satuan, 'modal' => $this->money($row->inventory_value), 'status' => $row->condition_bucket === 'quarantine' ? 'Perlu Tindakan' : 'Tidak Dijual/Pakai']);
+
+            return $this->result(['gudang' => 'Gudang', 'material' => 'Material', 'kondisi' => 'Bucket Kondisi', 'qty' => 'Jumlah', 'modal' => 'Nilai Modal', 'status' => 'Status'], $rows);
+        }
+
+        if ($type === 'aging-persediaan') {
+            $rows = DB::table('material_stock_lots as lot')->join('barang_materials as material', 'material.id', '=', 'lot.barang_material_id')
+                ->join('gudangs as warehouse', 'warehouse.id', '=', 'lot.gudang_id')->where('lot.qty_tersedia', '>', 0)
+                ->when($request->query('gudang_id'), fn ($query, $value) => $query->where('lot.gudang_id', $value))
+                ->orderBy('lot.tanggal_terima')->limit($limit)->get()
+                ->map(function ($row) {
+                    $days = now()->startOfDay()->diffInDays(Carbon::parse($row->tanggal_terima), absolute: true);
+                    $bucket = $days <= 30 ? '0-30 hari' : ($days <= 60 ? '31-60 hari' : ($days <= 90 ? '61-90 hari' : '>90 hari'));
+
+                    return ['gudang' => $row->nama_gudang, 'lot' => $row->kode_lot, 'material' => $row->kode_barang.' - '.$row->nama_barang, 'tanggal_masuk' => $row->tanggal_terima, 'umur' => $days.' hari', 'kategori' => $bucket, 'qty' => $this->num($row->qty_tersedia).' '.$row->satuan, 'nilai' => $this->money($row->qty_tersedia * $row->unit_cost), 'status' => $days > 90 ? 'Slow Moving' : 'Aktif'];
+                });
+
+            return $this->result(['gudang' => 'Gudang', 'lot' => 'Lot', 'material' => 'Material', 'tanggal_masuk' => 'Tanggal Masuk', 'umur' => 'Umur', 'kategori' => 'Aging', 'qty' => 'Sisa', 'nilai' => 'Nilai', 'status' => 'Status'], $rows);
+        }
+
+        if ($type === 'klaim-supplier') {
+            $rows = DB::table('material_supplier_claims as claim')->join('material_purchases as purchase', 'purchase.id', '=', 'claim.material_purchase_id')
+                ->join('material_purchase_details as detail', 'detail.id', '=', 'claim.material_purchase_detail_id')->join('barang_materials as material', 'material.id', '=', 'detail.barang_material_id')
+                ->leftJoin('suppliers as supplier', 'supplier.id', '=', 'purchase.supplier_id')->orderByDesc('claim.id')->limit($limit)->get()
+                ->map(fn ($row) => ['klaim' => $row->claim_no, 'pembelian' => $row->kode_pembelian, 'supplier' => $row->nama_supplier ?? $row->supplier ?? '-', 'material' => $row->kode_barang.' - '.$row->nama_barang, 'jenis' => str($row->claim_type)->title(), 'qty' => $this->num($row->qty), 'nilai' => $this->money($row->amount), 'status' => str($row->status)->replace('_', ' ')->title(), 'penyelesaian' => $row->resolution ?: '-']);
+
+            return $this->result(['klaim' => 'No Klaim', 'pembelian' => 'Pembelian', 'supplier' => 'Supplier', 'material' => 'Material', 'jenis' => 'Jenis Klaim', 'qty' => 'Qty', 'nilai' => 'Nilai', 'status' => 'Status', 'penyelesaian' => 'Penyelesaian'], $rows);
+        }
+
+        if ($type === 'nilai-persediaan') {
+            $rows = DB::table('stok_materials as stock')
+                ->join('barang_materials as material', 'material.id', '=', 'stock.barang_material_id')
+                ->leftJoin('gudangs as warehouse', 'warehouse.id', '=', 'stock.gudang_id')
+                ->when($request->query('gudang_id'), fn ($query, $value) => $query->where('stock.gudang_id', $value))
+                ->where('stock.qty', '>', 0)->orderBy('warehouse.nama_gudang')->orderBy('material.nama_barang')->limit($limit)
+                ->get(['warehouse.nama_gudang as gudang', 'material.kode_barang as kode', 'material.nama_barang as material', 'material.satuan', 'stock.qty', 'stock.average_unit_cost', 'stock.inventory_value'])
+                ->map(fn ($row) => [
+                    'gudang' => $row->gudang ?? 'Gudang Umum', 'kode' => $row->kode, 'material' => $row->material,
+                    'stok' => $this->num($row->qty).' '.$row->satuan, 'modal_rata_rata' => $this->money($row->average_unit_cost),
+                    'nilai_persediaan' => $this->money($row->inventory_value), 'status' => 'Tersedia',
+                ]);
+
+            return $this->result(['gudang' => 'Gudang', 'kode' => 'Kode', 'material' => 'Material', 'stok' => 'Stok Fisik', 'modal_rata_rata' => 'Modal Rata-rata', 'nilai_persediaan' => 'Nilai Persediaan', 'status' => 'Status'], $rows);
+        }
+
+        if ($type === 'selisih-penerimaan') {
+            $rows = MaterialPurchaseDetail::query()
+                ->with(['barangMaterial:id,kode_barang,nama_barang', 'materialPurchase.gudang:id,nama_gudang'])
+                ->where('inspection_status', '!=', 'pending')
+                ->whereHas('materialPurchase', fn (Builder $query) => $this->purchaseFilter($query, $request))
+                ->orderByDesc('checked_at')->limit($limit)->get()
+                ->map(fn (MaterialPurchaseDetail $row) => [
+                    'tanggal' => optional($row->checked_at)->format('Y-m-d H:i'), 'pembelian' => $row->materialPurchase?->kode_pembelian,
+                    'gudang' => $row->materialPurchase?->gudang?->nama_gudang ?? '-',
+                    'material' => ($row->barangMaterial?->kode_barang ?? '-').' - '.($row->barangMaterial?->nama_barang ?? '-'),
+                    'pesanan' => $this->num($row->qty), 'faktur' => $this->num($row->qty_faktur), 'fisik' => $this->num($row->qty_fisik_tiba),
+                    'diterima' => $this->num($row->qty_diterima_baik), 'cacat' => $this->num($row->qty_cacat), 'ditolak' => $this->num($row->qty_ditolak),
+                    'status' => $row->status_selisih, 'alasan' => $row->alasan_selisih ?: $row->inspection_note ?: '-',
+                ]);
+
+            return $this->result(['tanggal' => 'Diperiksa', 'pembelian' => 'No Pembelian', 'gudang' => 'Gudang', 'material' => 'Material', 'pesanan' => 'Pesanan', 'faktur' => 'Faktur', 'fisik' => 'Fisik Tiba', 'diterima' => 'Diterima Baik', 'cacat' => 'Cacat', 'ditolak' => 'Ditolak', 'status' => 'Status Selisih', 'alasan' => 'Alasan'], $rows);
+        }
+
+        if ($type === 'pemakaian-proyek') {
+            $rows = MaterialUsageDetail::query()
+                ->with(['barangMaterial:id,kode_barang,nama_barang', 'materialUsage.perumahan:id,nama_perusahaan', 'materialUsage.detailRumah:id,kode_nlok,nomor_rumah'])
+                ->whereHas('materialUsage', fn (Builder $query) => $this->dateFilter($query, $request, 'tanggal'))
+                ->limit($limit)->get()->map(fn (MaterialUsageDetail $row) => [
+                    'tanggal' => optional($row->materialUsage?->tanggal)->format('Y-m-d'), 'kode' => $row->materialUsage?->kode_pemakaian,
+                    'proyek' => $row->materialUsage?->perumahan?->nama_perusahaan ?? '-',
+                    'unit' => $row->materialUsage?->detailRumah ? 'Blok '.$row->materialUsage->detailRumah->kode_nlok.' No. '.$row->materialUsage->detailRumah->nomor_rumah : 'Kawasan',
+                    'material' => ($row->barangMaterial?->kode_barang ?? '-').' - '.($row->barangMaterial?->nama_barang ?? '-'),
+                    'qty' => $this->num($row->qty).' '.$row->satuan, 'status' => $row->materialUsage?->record_status ?? 'draft',
+                ]);
+
+            return $this->result(['tanggal' => 'Tanggal', 'kode' => 'No Pemakaian', 'proyek' => 'Perumahan', 'unit' => 'Unit', 'material' => 'Material', 'qty' => 'Dipakai', 'status' => 'Status'], $rows);
+        }
+
+        if ($type === 'pengembalian-proyek') {
+            $rows = MaterialReturnDetail::query()
+                ->with(['barangMaterial:id,kode_barang,nama_barang', 'materialReturn.gudang:id,nama_gudang', 'materialReturn.perumahan:id,nama_perusahaan', 'materialReturn.detailRumah:id,kode_nlok,nomor_rumah'])
+                ->whereHas('materialReturn', fn (Builder $query) => $this->dateFilter($query, $request, 'tanggal'))
+                ->limit($limit)->get()->map(fn (MaterialReturnDetail $row) => [
+                    'tanggal' => optional($row->materialReturn?->tanggal)->format('Y-m-d'), 'kode' => $row->materialReturn?->kode_pengembalian,
+                    'gudang' => $row->materialReturn?->gudang?->nama_gudang ?? '-', 'proyek' => $row->materialReturn?->perumahan?->nama_perusahaan ?? '-',
+                    'unit' => $row->materialReturn?->detailRumah ? 'Blok '.$row->materialReturn->detailRumah->kode_nlok.' No. '.$row->materialReturn->detailRumah->nomor_rumah : 'Kawasan',
+                    'material' => ($row->barangMaterial?->kode_barang ?? '-').' - '.($row->barangMaterial?->nama_barang ?? '-'),
+                    'qty' => $this->num($row->qty).' '.$row->satuan, 'nilai' => $this->money($row->subtotal), 'status' => $row->materialReturn?->status ?? '-',
+                ]);
+
+            return $this->result(['tanggal' => 'Tanggal', 'kode' => 'No Retur', 'gudang' => 'Gudang Tujuan', 'proyek' => 'Perumahan', 'unit' => 'Unit', 'material' => 'Material', 'qty' => 'Dikembalikan', 'nilai' => 'Nilai', 'status' => 'Status'], $rows);
+        }
+
         if ($type === 'item-opname') {
             $rows = MaterialStockOpnameDetail::query()
                 ->with(['barangMaterial:id,kode_barang,nama_barang,satuan', 'opname.gudang:id,nama_gudang'])
@@ -716,11 +824,18 @@ class ReportCenterController extends Controller
             ],
             'persediaan-material' => [
                 'title' => 'Laporan Persediaan Material',
-                'description' => 'Item masuk, keluar, dan opname material.',
+                'description' => 'Laporan owner yang memisahkan modal persediaan, arus barang, pemakaian, opname, dan selisih penerimaan.',
                 'permission' => 'laporan-persediaan-material.view',
                 'types' => [
+                    'nilai-persediaan' => ['label' => 'Nilai Modal Persediaan'],
+                    'stok-kondisi' => ['label' => 'Stok Karantina, Scrap & Hilang'],
+                    'aging-persediaan' => ['label' => 'Umur dan Slow Moving Inventory'],
                     'item-masuk' => ['label' => 'Laporan Item Masuk'],
                     'item-keluar' => ['label' => 'Laporan Item Keluar'],
+                    'pemakaian-proyek' => ['label' => 'Laporan Pemakaian Proyek'],
+                    'pengembalian-proyek' => ['label' => 'Laporan Pengembalian Proyek'],
+                    'selisih-penerimaan' => ['label' => 'Rekonsiliasi Faktur & Fisik'],
+                    'klaim-supplier' => ['label' => 'Klaim Supplier'],
                     'item-opname' => ['label' => 'Laporan Item Opname'],
                 ],
             ],

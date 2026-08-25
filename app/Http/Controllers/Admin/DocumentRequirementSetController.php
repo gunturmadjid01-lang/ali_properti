@@ -35,7 +35,7 @@ class DocumentRequirementSetController extends Controller
             return ['id' => $x->id, 'code' => $x->code, 'name' => $x->name, 'types' => collect($x->application_types)->map(fn ($v) => str($v)->replace('_', ' ')->title())->join(', '), 'items_count' => $x->items_count, 'status' => $x->status, 'record_status' => $x->record_status, 'approval_status' => $approval?->status, 'approval_stage' => $approval?->status === 'pending' ? "{$approval->current_step}/{$approval->total_steps}" : null, 'can_review' => $approval ? $workflow->canReview($approval) : false];
         });
 
-        return Inertia::render('Admin/DocumentRequirements/Index', ['title' => 'Paket Persyaratan Dokumen', 'baseUrl' => route('admin.document-sets.index', absolute: false), 'rows' => $rows]);
+        return Inertia::render('Admin/DocumentRequirements/Index', ['title' => 'Paket Persyaratan Kredit', 'baseUrl' => route('admin.document-sets.index', absolute: false), 'rows' => $rows]);
     }
 
     public function create(Request $r): Response

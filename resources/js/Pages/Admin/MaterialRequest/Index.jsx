@@ -87,7 +87,7 @@ export default function Index({
             { preserveScroll: true },
         );
     const approveGudang = (row) =>
-        window.confirm(`Approve gudang untuk ${row.kode_request}?`) &&
+        window.confirm(`Setujui tahap aktif untuk ${row.kode_request}?`) &&
         router.post(
             `${baseUrl}/${row.id}/approve`,
             {},
@@ -111,7 +111,7 @@ export default function Index({
                     <>
                         {canApproveGudang && row.can_approve_gudang && (
                             <IconButton
-                                title="Setujui Gudang"
+                                title="Setujui Tahap Aktif"
                                 icon={CheckCircle2}
                                 onClick={() => approveGudang(row)}
                             />
@@ -209,8 +209,7 @@ export default function Index({
                                     "Gudang",
                                     "Unit",
                                     "Barang",
-                                    "Persetujuan Gudang",
-                                    "Persetujuan Owner",
+                                    "Setting Approval",
                                     "Audit",
                                     "Status",
                                     "Aksi",
@@ -241,14 +240,7 @@ export default function Index({
                                         {row.items_text}
                                     </td>
                                     <td className="px-3 py-2 font-bold">
-                                        {row.approved_at_gudang
-                                            ? `${row.approved_by_gudang} · ${row.approved_at_gudang}`
-                                            : "Menunggu"}
-                                    </td>
-                                    <td className="px-3 py-2 font-bold">
-                                        {row.approved_at_owner
-                                            ? `${row.approved_by_owner} · ${row.approved_at_owner}`
-                                            : "Menunggu"}
+                                        {row.approval_stage}
                                     </td>
                                     <td className="px-3 py-2 text-xs font-bold text-ink-soft dark:text-white/65">
                                         Dibuat: {row.created_by_name}

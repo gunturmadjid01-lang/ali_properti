@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Concerns\ChecksMarketingAccess;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Models\MarketingLeadActivity;
+use App\Models\MarketingLead;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -30,7 +31,7 @@ class PipelineReportController extends Controller
         $activities = MarketingLeadActivity::query()
             ->with(['costumer:id,kode_costumer,nama,telepon', 'user:id,name'])
             ->whereBetween('activity_at', [$from, $to])
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id)))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->orderBy('activity_at')
             ->get();
@@ -100,6 +101,15 @@ class PipelineReportController extends Controller
         $uniqueCustomers = $activities->pluck('costumer_id')->unique()->count();
         $closing = $activities->where('status_to', MarketingLeadStatusService::CLOSING)->pluck('costumer_id')->unique()->count();
 
+        $probabilities = config('crm.forecast_stage_weights', []);
+        $forecastLeads = MarketingLead::query()->with('unit:id,harga_jual')->whereNotIn('status', ['lost', 'converted'])->get();
+        $forecast = [
+            'leads' => $forecastLeads->count(),
+            'potential_value' => (float) $forecastLeads->sum(fn ($lead) => (float) ($lead->unit?->harga_jual ?? $lead->budget_max ?? 0)),
+            'weighted_value' => (float) $forecastLeads->sum(fn ($lead) => (float) ($lead->unit?->harga_jual ?? $lead->budget_max ?? 0) * ($probabilities[$lead->stage] ?? 0.1)),
+            'aging_over_7_days' => $forecastLeads->filter(fn ($lead) => optional($lead->created_at)->lt(now()->subDays(7)))->count(),
+        ];
+
         return Inertia::render('Admin/Marketing/PipelineReport/Index', [
             'title' => 'Laporan Pipeline Marketing',
             'description' => 'Analisis pergerakan customer, konversi setiap tahap, dan performa marketing berdasarkan periode.',
@@ -115,6 +125,7 @@ class PipelineReportController extends Controller
             'marketingRows' => $marketingRows,
             'dailyRows' => $dailyRows,
             'timeline' => $timeline,
+            'forecast' => $forecast,
         ]);
     }
 

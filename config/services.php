@@ -35,4 +35,12 @@ return [
         ],
     ],
 
+    'sales_lead_webhook' => [
+        'key' => env('SALES_LEAD_WEBHOOK_KEY'),
+    ],
+
+    'crm_communication' => [
+        'webhook_key' => env('CRM_COMMUNICATION_WEBHOOK_KEY'),
+    ],
+
 ];

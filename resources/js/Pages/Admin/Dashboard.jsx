@@ -293,15 +293,15 @@ function Dashboard({
                     <div className="relative grid gap-6 xl:grid-cols-[1fr_460px] xl:items-end">
                         <div>
                             <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-amber-300">
-                                Dasbor Berbasis Hak Akses
+                                {context.profile?.eyebrow ??
+                                    "Dasbor Berbasis Hak Akses"}
                             </p>
                             <h2 className="mt-3 font-display text-3xl font-extrabold md:text-4xl">
-                                Selamat datang, {user?.name ?? "Pengguna"}
+                                {context.profile?.title ?? "Selamat datang"}
                             </h2>
                             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">
-                                Ringkasan ini otomatis menyesuaikan hak akses
-                                Anda dan menampilkan kondisi operasional terbaru
-                                dari modul yang diizinkan.
+                                {context.profile?.description ??
+                                    "Ringkasan ini otomatis menyesuaikan hak akses Anda dan menampilkan kondisi operasional terbaru."}
                             </p>
                         </div>
                         <form

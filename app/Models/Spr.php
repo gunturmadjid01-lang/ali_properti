@@ -171,6 +171,11 @@ class Spr extends Model
         return $this->hasOne(SalesTransaction::class);
     }
 
+    public function qualityUpgradeContracts(): HasMany
+    {
+        return $this->hasMany(QualityUpgradeContract::class);
+    }
+
     public function refundMasterBank(): BelongsTo
     {
         return $this->belongsTo(MasterBank::class, 'refund_master_bank_id');

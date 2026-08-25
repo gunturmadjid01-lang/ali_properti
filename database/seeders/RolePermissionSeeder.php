@@ -3,6 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\User;
+use App\Support\MarketingPermissions;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
@@ -22,6 +23,10 @@ class RolePermissionSeeder extends Seeder
             'users.create',
             'users.update',
             'users.delete',
+            'employee.view',
+            'employee.create',
+            'employee.update',
+            'employee.delete',
             'roles.view',
             'roles.manage',
             'approval.view',
@@ -80,6 +85,52 @@ class RolePermissionSeeder extends Seeder
             'marketing.receivable.view',
             'marketing.target-commission.manage',
             'marketing.leaderboard.view',
+            'marketing.owner-report.view',
+            'marketing-calendar.view',
+            'admin-sales.dashboard.view',
+            'admin-sales.monitoring.view',
+            'admin-sales.lead.view',
+            'admin-sales.lead.create',
+            'admin-sales.lead.verify',
+            'admin-sales.lead.assign',
+            'admin-sales.follow-up.review',
+            'admin-sales.visit.review',
+            'admin-sales.work-item.view',
+            'admin-sales.work-item.create',
+            'admin-sales.work-item.update',
+            'admin-sales.report.view',
+            'admin-sales.report.export',
+            'marketing.lead-assignment.respond',
+            'marketing.lead-assignment.view',
+            'marketing.activity.view-all',
+            'marketing-evaluation.view',
+            'marketing-evaluation.manage',
+            'marketing-report.view',
+            'marketing-report.export',
+            'marketing-audit.view',
+            'marketing-reference.view',
+            'marketing-reference.create',
+            'marketing-reference.update',
+            'marketing-reference.delete',
+            'marketing-reference.lock',
+            'marketing-reference.unlock',
+            // CRM lead lifecycle used by the current Marketing workspace.
+            'marketing-lead.view',
+            'marketing-lead.create',
+            'marketing-lead.update',
+            'marketing-lead.qualify',
+            'marketing-lead.convert',
+            'marketing-activity-contact.create',
+            'marketing-activity-contact.convert',
+            'cash-sale.view',
+            'cash-sale.create',
+            'cash-sale.update',
+            'cash-sale.lock',
+            'lead.assign',
+            'lead.transfer',
+            'customer.view-all',
+            'follow-up.verify',
+            'visit-report.verify',
 
             'dokumen-legalitas.view',
             'dokumen-legalitas.create',
@@ -172,10 +223,6 @@ class RolePermissionSeeder extends Seeder
             'bank-account-ledger.view',
             'tipe-post.manage',
             'settings.manage',
-            'tukang.view',
-            'tukang.create',
-            'tukang.update',
-            'tukang.delete',
         ];
 
         $matrixActions = [
@@ -199,8 +246,8 @@ class RolePermissionSeeder extends Seeder
             'dokumen-customer' => $matrixActions,
             'master-bank' => ['view', 'create', 'update', 'delete', 'unlock'],
             'tipe-post' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'customer' => $matrixActions,
-            'customer-follow-up' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'customer' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
+            'customer-follow-up' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
             'booking' => ['view', 'create', 'update', 'delete', 'unlock'],
             'housing-reservation' => ['view', 'create', 'update', 'delete', 'lock', 'print'],
             'kpr' => ['view', 'create', 'update', 'delete', 'unlock'],
@@ -218,6 +265,10 @@ class RolePermissionSeeder extends Seeder
             'marketing-lead-distribution' => ['view', 'create', 'update', 'delete', 'unlock'],
             'marketing-activity' => ['view'],
             'marketing-target' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'marketing-survey' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
+            'marketing-visit' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
+            'marketing-action-plan' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
+            'customer-document-checklist' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
             'site-schedule' => ['view', 'create', 'update', 'delete', 'unlock'],
             'progress' => ['view', 'create', 'update', 'delete', 'unlock'],
             'site-report' => ['view', 'create', 'update', 'delete', 'unlock'],
@@ -234,7 +285,7 @@ class RolePermissionSeeder extends Seeder
             'spk-payment' => ['view', 'create', 'update'],
             'company-inventory' => ['view', 'create', 'update', 'delete', 'export', 'verify', 'approve', 'print'],
             'heavy-equipment' => ['view', 'create', 'update', 'delete', 'export', 'approve', 'print'],
-            'master-material' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'master-material' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
             'material-type' => ['view', 'create', 'update', 'delete'],
             'material-brand' => ['view', 'create', 'update', 'delete'],
             'material-unit' => ['view', 'create', 'update', 'delete'],
@@ -249,16 +300,21 @@ class RolePermissionSeeder extends Seeder
             'supplier' => ['view', 'create', 'update', 'delete', 'unlock'],
             'material-price' => ['view', 'create', 'delete', 'unlock'],
             'material-opening-balance' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'material-request' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'material-usage' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'material-return' => ['view', 'create', 'update', 'delete', 'unlock'],
-            'material-purchase' => ['view', 'create', 'update', 'delete', 'unlock'],
+            'material-request' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
+            'material-purchase-request' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
+            'material-usage' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
+            'material-return' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
+            'material-purchase' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
+            'material-receipt' => ['view', 'create', 'update', 'delete', 'lock', 'unlock'],
             'material-stock-opname' => ['view', 'create', 'update', 'delete', 'view-all'],
             'site-material-stock' => ['view'],
-            'tukang' => ['view', 'create', 'update', 'delete'],
             'rab-perumahan' => ['view', 'create', 'update', 'delete', 'manage'],
             'rab-unit' => ['view', 'create', 'update', 'delete', 'manage'],
             'keuangan' => $matrixActions,
+            'quality-upgrade' => ['view', 'create', 'update', 'delete', 'lock', 'unlock', 'print'],
+            'quality-upgrade-addendum' => ['view', 'create', 'update', 'delete', 'lock', 'unlock', 'print'],
+            'quality-upgrade-handover' => ['view', 'create', 'update', 'delete', 'lock', 'unlock', 'print'],
+            'quality-upgrade-defect' => ['view', 'create', 'update', 'delete'],
             'petty-cash' => ['view', 'create', 'approve', 'disburse'],
             'bank-account-ledger' => ['view'],
             'laporan' => ['view'],
@@ -266,6 +322,13 @@ class RolePermissionSeeder extends Seeder
             'laporan-pembelian' => ['view'],
             'laporan-persediaan-material' => ['view'],
             'laporan-marketing' => ['view'],
+            'buku-besar' => ['view'],
+            'neraca-saldo' => ['view'],
+            'laba-rugi' => ['view'],
+            'neraca' => ['view'],
+            'arus-kas' => ['view'],
+            'piutang' => ['view'],
+            'hutang' => ['view'],
         ];
         $sectionActions = ['view', 'create', 'update', 'delete', 'export', 'verify', 'approve', 'print'];
         foreach (['company-inventory' => ['dashboard', 'categories', 'items', 'units', 'locations', 'receipts', 'loans', 'returns', 'transfers', 'damages', 'losses', 'stock-opname', 'ledger', 'reports'], 'heavy-equipment' => ['dashboard', 'equipment', 'types', 'components', 'replacements', 'usage', 'operators', 'maintenance', 'damages', 'fuel', 'reports']] as $prefix => $sections) {
@@ -294,11 +357,20 @@ class RolePermissionSeeder extends Seeder
         $matrixModules['sales-process'] = ['view', 'update', 'lock', 'unlock', 'print'];
         foreach ($matrixModules as $module => $actions) {
             foreach ($actions as $action) {
-                $permissions[] = $module . '.' . $action;
+                $permissions[] = $module.'.'.$action;
             }
         }
         $permissions = array_values(array_unique($permissions));
-        $deprecatedApprovalPermissions = ['approve_manager', 'approve_owner', 'approve_finance', 'approve_admin'];
+        $deprecatedApprovalPermissions = [
+            'approve_manager',
+            'approve_owner',
+            'approve_finance',
+            'approve_admin',
+            'tukang.view',
+            'tukang.create',
+            'tukang.update',
+            'tukang.delete',
+        ];
         Permission::query()
             ->whereIn('name', $deprecatedApprovalPermissions)
             ->delete();
@@ -338,29 +410,16 @@ class RolePermissionSeeder extends Seeder
                 return false;
             }
 
-            return ! collect($ownerBlockedPrefixes)->contains(fn(string $prefix) => str_starts_with($permission, $prefix));
+            return ! collect($ownerBlockedPrefixes)->contains(fn (string $prefix) => str_starts_with($permission, $prefix));
         }));
 
         $now = now();
         Permission::query()->upsert(
-            collect($permissions)->map(fn(string $permission) => ['name' => $permission, 'guard_name' => 'web', 'created_at' => $now, 'updated_at' => $now])->all(),
+            collect($permissions)->map(fn (string $permission) => ['name' => $permission, 'guard_name' => 'web', 'created_at' => $now, 'updated_at' => $now])->all(),
             ['name', 'guard_name'],
             ['updated_at'],
         );
         app(PermissionRegistrar::class)->forgetCachedPermissions();
-
-        Role::query()
-            ->whereIn('name', [
-                'admin_keuangan',
-                'admin_konsumen',
-                'admin_kpr',
-                'area_marketing',
-                'bag_legal',
-                'supervisor_marketing',
-                'teknik',
-                'user_area_gudang',
-            ])
-            ->delete();
 
         $rolePermissions = [
             'super_admin' => $permissions,
@@ -463,10 +522,6 @@ class RolePermissionSeeder extends Seeder
                 'laporan-marketing.view',
                 'master-bank.manage',
                 'tipe-post.manage',
-                'tukang.view',
-                'tukang.create',
-                'tukang.update',
-                'tukang.delete',
                 'gudang.view',
                 'gudang.create',
                 'gudang.update',
@@ -702,9 +757,11 @@ class RolePermissionSeeder extends Seeder
                 'material-request.view',
                 'material-request.create',
                 'material-request.update',
+                'material-request.lock',
                 'material-usage.view',
                 'material-usage.create',
                 'material-usage.update',
+                'material-usage.lock',
                 'material-return.view',
                 'material-return.create',
                 'site-material-stock.view',
@@ -802,18 +859,18 @@ class RolePermissionSeeder extends Seeder
             ],
         ];
 
-        $integratedViewPermissions = collect($integratedSalesPages)->flatMap(fn($pages, $prefix) => collect($pages)->map(fn($page) => "{$prefix}.{$page}.view"))->values()->all();
+        $integratedViewPermissions = collect($integratedSalesPages)->flatMap(fn ($pages, $prefix) => collect($pages)->map(fn ($page) => "{$prefix}.{$page}.view"))->values()->all();
         $integratedMasterPermissions = collect([
             'cash-installment' => ['schemes', 'scheme-steps'],
             'developer-kpr' => ['products'],
-        ])->flatMap(fn($pages, $prefix) => collect($pages)->flatMap(fn($page) => collect(['view', 'create', 'update', 'delete', 'submit', 'print'])->map(fn($action) => "{$prefix}.{$page}.{$action}")))->values()->all();
-        $integratedReviewPermissions = collect($integratedSalesPages)->flatMap(fn($pages, $prefix) => collect($pages)->flatMap(fn($page) => collect(['view', 'approve', 'reject', 'print', 'export'])->map(fn($action) => "{$prefix}.{$page}.{$action}")))->values()->all();
-        $transactionDetailViews = collect(['summary', 'schedules', 'payments', 'construction', 'handover', 'after-sales', 'history'])->map(fn($tab) => "sales.transaction-detail.{$tab}.view")->all();
-        $customerChargePermissions = collect(['view', 'create', 'update', 'lock', 'unlock', 'print', 'reverse'])->map(fn($action) => "customer-charges.{$action}")->all();
-        $customerRefundPermissions = collect(['view', 'update', 'lock', 'unlock', 'print'])->map(fn($action) => "customer-refunds.{$action}")->all();
-        $waterPeriodPermissions = collect(['view', 'create', 'update', 'lock', 'unlock'])->map(fn($action) => "water-billing-periods.{$action}")->all();
-        $waterPaymentPermissions = collect(['view', 'create', 'update', 'lock', 'unlock', 'print'])->map(fn($action) => "water-payments.{$action}")->all();
-        $reservationManage = collect(['view', 'create', 'update', 'delete', 'lock', 'print'])->map(fn($action) => "housing-reservation.{$action}")->all();
+        ])->flatMap(fn ($pages, $prefix) => collect($pages)->flatMap(fn ($page) => collect(['view', 'create', 'update', 'delete', 'submit', 'print'])->map(fn ($action) => "{$prefix}.{$page}.{$action}")))->values()->all();
+        $integratedReviewPermissions = collect($integratedSalesPages)->flatMap(fn ($pages, $prefix) => collect($pages)->flatMap(fn ($page) => collect(['view', 'approve', 'reject', 'print', 'export'])->map(fn ($action) => "{$prefix}.{$page}.{$action}")))->values()->all();
+        $transactionDetailViews = collect(['summary', 'schedules', 'payments', 'construction', 'handover', 'after-sales', 'history'])->map(fn ($tab) => "sales.transaction-detail.{$tab}.view")->all();
+        $customerChargePermissions = collect(['view', 'create', 'update', 'lock', 'unlock', 'print', 'reverse'])->map(fn ($action) => "customer-charges.{$action}")->all();
+        $customerRefundPermissions = collect(['view', 'update', 'lock', 'unlock', 'print'])->map(fn ($action) => "customer-refunds.{$action}")->all();
+        $waterPeriodPermissions = collect(['view', 'create', 'update', 'lock', 'unlock'])->map(fn ($action) => "water-billing-periods.{$action}")->all();
+        $waterPaymentPermissions = collect(['view', 'create', 'update', 'lock', 'unlock', 'print'])->map(fn ($action) => "water-payments.{$action}")->all();
+        $reservationManage = collect(['view', 'create', 'update', 'delete', 'lock', 'print'])->map(fn ($action) => "housing-reservation.{$action}")->all();
         $reservationRead = ['housing-reservation.view', 'housing-reservation.print'];
         $rolePermissions['admin'] = array_values(array_unique([...$rolePermissions['admin'], ...$reservationManage, ...$integratedViewPermissions, ...$integratedMasterPermissions, ...$transactionDetailViews, ...$customerChargePermissions, ...$customerRefundPermissions, ...$waterPeriodPermissions, 'document-template.view', 'receivables.view', 'receivables.print', 'customer-receipts.view', 'customer-receipts.create', 'customer-receipts.update', 'customer-receipts.lock', 'customer-receipts.unlock', 'customer-receipts.print', 'sales-process.view', 'sales-process.update', 'sales-process.lock', 'sales-process.unlock', 'sales-process.print']));
         $rolePermissions['manager'] = array_values(array_unique([...$rolePermissions['manager'], ...$reservationRead, ...$integratedReviewPermissions, ...$transactionDetailViews, ...$customerChargePermissions, ...$customerRefundPermissions, 'document-template.view', 'receivables.view', 'receivables.print', 'receivables.settings', 'customer-receipts.view', 'customer-receipts.print', 'sales-process.view', 'sales-process.unlock', 'sales-process.print']));
@@ -845,32 +902,106 @@ class RolePermissionSeeder extends Seeder
             $rolePermissions[$roleName] = array_values(array_unique([...$rolePermissions[$roleName], 'sales.transactions.view', 'sales.transaction-detail.view', 'sales.transaction-detail.summary.view', 'sales.transaction-detail.construction.view', 'sales.transaction-detail.handover.view', 'sales-process.view', 'sales-process.update', 'sales-process.lock', 'sales-process.print', ...$fieldSupervisionSectionPermissions]));
         }
 
-        foreach ($rolePermissions as $roleName => $rolePermissionNames) {
-            $role = Role::findOrCreate($roleName, 'web');
-            $role->syncPermissions(
-                Permission::query()
-                    ->where('guard_name', 'web')
-                    ->whereIn('name', $rolePermissionNames)
-                    ->get(),
-            );
-            foreach (['company-inventory' => ['dashboard', 'categories', 'items', 'units', 'locations', 'receipts', 'loans', 'returns', 'transfers', 'damages', 'losses', 'stock-opname', 'ledger', 'reports'], 'heavy-equipment' => ['dashboard', 'equipment', 'types', 'components', 'replacements', 'usage', 'operators', 'maintenance', 'damages', 'fuel', 'reports']] as $prefix => $sections) {
-                foreach ($sectionActions as $action) {
-                    if (in_array("{$prefix}.{$action}", $rolePermissionNames, true)) {
-                        $role->givePermissionTo(collect($sections)->map(fn($section) => "{$prefix}.{$section}.{$action}")->all());
-                    }
-                }
-                foreach ($sectionActions as $action) {
-                    if (Permission::where('name', "{$prefix}.{$action}")->where('guard_name', 'web')->exists() && $role->hasPermissionTo("{$prefix}.{$action}")) {
-                        $role->revokePermissionTo("{$prefix}.{$action}");
-                    }
-                }
-            }
+        foreach ($rolePermissions as $roleName => $assignedPermissions) {
+            Role::findOrCreate($roleName, 'web')->syncPermissions($assignedPermissions);
         }
+
+        Role::findOrCreate('super_admin', 'web')->syncPermissions(
+            Permission::query()->where('guard_name', 'web')->get(),
+        );
+        Role::findOrCreate('owner', 'web')->givePermissionTo([
+            'marketing.owner-report.view',
+            'quality-upgrade.view',
+        ]);
+        Role::findOrCreate('marketing', 'web')->givePermissionTo([...MarketingPermissions::operational(), 'marketing-report.view', 'marketing.lead-assignment.respond']);
+        // Area Marketing menjalankan aktivitas lapangan yang sama dengan Marketing,
+        // sedangkan Supervisor hanya memantau dan mengatur pekerjaan tim.
+        Role::findOrCreate('area_marketing', 'web')->syncPermissions([
+            ...MarketingPermissions::operational(),
+            'marketing-report.view',
+            'marketing.lead-assignment.respond',
+        ]);
+        $marketingMonitoring = [
+            'dashboard.view', 'customer.view', 'customer-follow-up.view', 'marketing-reminder.view',
+            'marketing-visit.view', 'marketing-action-plan.view', 'customer-document-checklist.view',
+            'marketing-survey.view', 'marketing.activity.view', 'marketing.activity.view-all',
+            'marketing.pipeline.view', 'marketing.lead-report.view', 'marketing.owner-report.view',
+            'marketing-evaluation.view',
+        ];
+        foreach (['owner', 'manager', 'supervisor_marketing'] as $roleName) {
+            Role::findOrCreate($roleName, 'web')->givePermissionTo([...$marketingMonitoring, 'marketing-report.view', 'marketing-report.export', 'marketing-audit.view', 'customer.view-all']);
+        }
+        foreach (['admin_sales', 'marketing', 'area_marketing'] as $roleName) {
+            Role::findOrCreate($roleName, 'web')->givePermissionTo('marketing-calendar.view');
+        }
+        Role::findOrCreate('manager', 'web')->givePermissionTo(['marketing-evaluation.manage', 'lead.assign', 'lead.transfer', 'follow-up.verify', 'visit-report.verify', 'marketing-reference.view', 'marketing-reference.create', 'marketing-reference.update', 'marketing-reference.delete', 'marketing-reference.lock', 'marketing-reference.unlock']);
+        Role::findOrCreate('supervisor_marketing', 'web')->givePermissionTo('marketing-evaluation.manage');
+        Role::findOrCreate('admin_sales', 'web')->givePermissionTo([
+            ...MarketingPermissions::operational(), 'marketing.activity.view-all',
+            'marketing.lead-distribution.manage', 'marketing.lead-source.manage',
+            'marketing.campaign.manage', 'marketing.target-commission.manage',
+            'marketing-report.view', 'marketing-report.export', 'marketing-audit.view', 'customer.view-all',
+            'lead.assign', 'lead.transfer', 'follow-up.verify', 'visit-report.verify', 'marketing-reference.view',
+            'admin-sales.dashboard.view', 'admin-sales.monitoring.view', 'admin-sales.lead.view', 'admin-sales.lead.create', 'admin-sales.lead.verify', 'admin-sales.lead.assign',
+            'admin-sales.follow-up.review', 'admin-sales.visit.review', 'admin-sales.work-item.view',
+            'admin-sales.work-item.create', 'admin-sales.work-item.update', 'admin-sales.report.view', 'admin-sales.report.export',
+        ]);
+        Role::findOrCreate('keuangan', 'web')->givePermissionTo([
+            'quality-upgrade.view',
+            'quality-upgrade.create',
+            'quality-upgrade.update',
+            'quality-upgrade.delete',
+            'quality-upgrade.lock',
+            'quality-upgrade.unlock',
+            'quality-upgrade.print',
+            'quality-upgrade-addendum.view',
+            'quality-upgrade-addendum.create',
+            'quality-upgrade-addendum.update',
+            'quality-upgrade-addendum.delete',
+            'quality-upgrade-addendum.lock',
+            'quality-upgrade-addendum.unlock',
+            'quality-upgrade-addendum.print',
+            'quality-upgrade-handover.view',
+            'quality-upgrade-handover.create',
+            'quality-upgrade-handover.update',
+            'quality-upgrade-handover.lock',
+            'quality-upgrade-handover.unlock',
+            'quality-upgrade-handover.print',
+            'quality-upgrade-defect.view',
+            'receivables.view',
+            'receivables.print',
+            'customer-receipts.view',
+            'customer-receipts.create',
+            'customer-receipts.update',
+            'customer-receipts.lock',
+            'customer-receipts.unlock',
+            'customer-receipts.print',
+        ]);
+        Role::findOrCreate('pengawas', 'web')->givePermissionTo([
+            'quality-upgrade.view',
+            'quality-upgrade.update',
+            'quality-upgrade-handover.view',
+            'quality-upgrade-handover.create',
+            'quality-upgrade-handover.update',
+            'quality-upgrade-handover.lock',
+            'quality-upgrade-defect.view',
+            'quality-upgrade-defect.create',
+            'quality-upgrade-defect.update',
+            'quality-upgrade-defect.delete',
+            'material-request.view',
+            'material-request.create',
+            'material-request.update',
+            'material-request.lock',
+            'material-usage.view',
+            'material-usage.create',
+            'material-usage.update',
+            'material-usage.lock',
+        ]);
 
         foreach (
             [
                 'owner@ptali.com' => 'owner',
-                'admin@ptali.com' => 'admin',
+                'admin@ptali.com' => 'super_admin',
                 'keuangan@ptali.com' => 'keuangan',
                 'marketing@ptali.com' => 'marketing',
                 'manager@ptali.com' => 'manager',

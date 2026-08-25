@@ -20,6 +20,11 @@ class PropertyAreaRoleSeeder extends Seeder
             'keuangan',
             'pengawas',
             'marketing',
+            'area_marketing',
+            'supervisor_marketing',
+            'admin_sales',
+            'user_area_gudang',
+            'petugas',
         ];
 
         foreach ($roles as $role) {

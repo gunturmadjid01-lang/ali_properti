@@ -9,12 +9,12 @@ export default function Index({ title, baseUrl, rows }) {
                 <header className="flex items-center justify-between rounded-xl bg-white/85 p-5 shadow-soft dark:border dark:border-white/10 dark:bg-[#171c23]">
                     <div>
                         <p className="text-xs font-black uppercase text-ink-soft">
-                            Repositori Dokumen Pelanggan
+                            Aturan Dokumen Kredit
                         </p>
                         <h1 className="text-2xl font-black">{title}</h1>
                         <p className="text-sm text-ink-soft">
-                            Buat sekali, terapkan ke banyak bank, produk,
-                            perusahaan, perumahan, dan kontrak kerja sama.
+                            Susun jenis berkas yang wajib dipenuhi untuk proses,
+                            bank, produk kredit, dan kerja sama yang dipilih.
                         </p>
                     </div>
                     <Button as={Link} href={`${baseUrl}/tambah`}>

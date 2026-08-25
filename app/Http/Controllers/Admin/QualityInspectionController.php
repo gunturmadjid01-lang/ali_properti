@@ -7,10 +7,12 @@ use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Concerns\UsesApprovalSettings;
 use App\Http\Controllers\Controller;
 use App\Models\FieldDefect;
+use App\Models\ApprovalRequest;
 use App\Models\ProgressPembangunan;
 use App\Models\QualityInspection;
 use App\Models\SiteSchedule;
 use App\Services\TahapanOptionService;
+use App\Services\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -88,7 +90,9 @@ class QualityInspectionController extends Controller
                     'created_by_name' => $row->creator?->name ?? '-',
                     'updated_by_name' => $row->updater?->name ?? '-',
                     'approved_by_name' => $row->approvedBy?->name ?? '-',
-                    'can_approve' => ($row->record_status ?? 'draft') === 'locked' && $this->requiresApprovalFor('quality-inspection') && $row->approval_status !== 'approved' && $this->canApproveFor('quality-inspection'),
+                    'can_approve' => ($approval = $this->approvalFor($row)) ? app(ApprovalWorkflowService::class)->canReview($approval) : false,
+                    'approval_stage' => $approval?->current_step,
+                    'approval_total' => $approval?->total_steps,
                     'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canQualityInspection('update'),
                     'can_unlock' => $this->canQualityInspection('unlock') || $this->currentUserCanManageLockedRecords(),
                     'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canQualityInspection('update'),
@@ -169,18 +173,24 @@ class QualityInspectionController extends Controller
 
     public function approve(string $id): RedirectResponse
     {
-        abort_unless($this->requiresApprovalFor('quality-inspection'), 422, 'Kontrol kualitas ini tidak memerlukan approval.');
-        abort_unless($this->canApproveFor('quality-inspection'), 403, 'Anda tidak memiliki izin approval inspeksi.');
         $row = QualityInspection::query()->findOrFail($id);
-        abort_unless(($row->record_status ?? 'draft') === 'locked', 422, 'Kontrol kualitas harus di-lock terlebih dahulu.');
-        if ($row->approval_status === 'approved') {
-            return back()->with('success', 'Kontrol kualitas sudah disetujui sebelumnya.');
-        }
+        $approval = $this->approvalFor($row);
+        abort_unless($approval && app(ApprovalWorkflowService::class)->canReview($approval), 403, 'Anda bukan reviewer pada tahap aktif.');
+        app(ApprovalWorkflowService::class)->approve($approval);
+        return back()->with('success', 'Approval tahap aktif berhasil diproses.');
+    }
 
-        $row->update(['approval_status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()]);
-        $this->syncDefectFromInspection($row->fresh());
+    public function reject(Request $request, string $id): RedirectResponse
+    {
+        $approval = $this->approvalFor(QualityInspection::query()->findOrFail($id));
+        abort_unless($approval && app(ApprovalWorkflowService::class)->canReview($approval), 403, 'Anda bukan reviewer pada tahap aktif.');
+        app(ApprovalWorkflowService::class)->reject($approval, $request->validate(['note' => ['required', 'string', 'min:3']])['note']);
+        return back()->with('success', 'Kontrol kualitas dikembalikan menjadi draft.');
+    }
 
-        return back()->with('success', 'Kontrol kualitas berhasil disetujui.');
+    private function approvalFor(QualityInspection $row): ?ApprovalRequest
+    {
+        return ApprovalRequest::query()->where('model_type', $row::class)->where('model_id', $row->id)->latest('id')->first();
     }
 
     public function lock(string $id): RedirectResponse

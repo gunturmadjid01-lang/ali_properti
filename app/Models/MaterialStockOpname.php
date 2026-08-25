@@ -22,6 +22,7 @@ class MaterialStockOpname extends Model
         'record_status',
         'locked_at',
         'locked_by',
+        'stock_posted_at',
         'created_by',
         'updated_by',
     ];
@@ -29,6 +30,7 @@ class MaterialStockOpname extends Model
     protected $casts = [
         'tanggal' => 'date',
         'locked_at' => 'datetime',
+        'stock_posted_at' => 'datetime',
     ];
 
     protected static function booted(): void

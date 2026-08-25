@@ -30,6 +30,8 @@ class MaterialRequest extends Model
         'site_schedule_id',
         'progress_diakui',
         'progress_pembangunan_id',
+        'quality_upgrade_contract_id',
+        'quality_upgrade_contract_item_id',
         'status',
         'keterangan',
         'requested_by',
@@ -90,6 +92,11 @@ class MaterialRequest extends Model
     public function progressPembangunan(): BelongsTo
     {
         return $this->belongsTo(ProgressPembangunan::class);
+    }
+
+    public function qualityUpgradeContract(): BelongsTo
+    {
+        return $this->belongsTo(QualityUpgradeContract::class);
     }
 
     public function approvedByGudang(): BelongsTo

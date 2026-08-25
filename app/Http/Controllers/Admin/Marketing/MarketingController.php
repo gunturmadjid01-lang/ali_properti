@@ -5,10 +5,19 @@ namespace App\Http\Controllers\Admin\Marketing;
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Http\Controllers\Controller;
 use App\Models\Costumer;
+use App\Models\CostumerFollowUp;
+use App\Models\CustomerDocument;
+use App\Models\CustomerDocumentChecklist;
 use App\Models\DetailRumah;
 use App\Models\DokumenCostumer;
+use App\Models\MarketingActionPlan;
+use App\Models\MarketingLead;
+use App\Models\MarketingSurveySchedule;
+use App\Models\MarketingVisit;
 use App\Models\Perumahan;
 use App\Models\ProgressPembangunan;
+use App\Services\Marketing\MarketingLeadStatusService;
+use App\Services\Marketing\MarketingOperationsService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -18,8 +27,11 @@ class MarketingController extends Controller
 {
     use ScopesActivePerumahan;
 
-    public function index(Request $request): Response
+    public function index(Request $request, MarketingOperationsService $operations): Response
     {
+        $this->authorizeSection($request, 'marketing');
+        $operations->syncAutomaticReminders($request->user()?->id);
+
         return $this->render('marketing', $request);
     }
 
@@ -32,8 +44,18 @@ class MarketingController extends Controller
 
     protected function render(string $slug, Request $request): Response
     {
+        $this->authorizeSection($request, $slug);
         $section = $this->sections()[$slug] ?? $this->sections()['marketing'];
-        $summary = $this->summary($request);
+
+        if ($slug === 'marketing') {
+            return Inertia::render('Admin/Marketing/Index', [
+                'title' => $section['title'],
+                'roles' => $request->user()?->loadMissing('roles')?->roles?->pluck('name')->values()->all() ?? [],
+                'today' => $this->today($request),
+            ]);
+        }
+
+        $summary = $this->summary($request, $slug);
 
         return Inertia::render('Admin/Marketing/Index', [
             'title' => $section['title'],
@@ -51,19 +73,38 @@ class MarketingController extends Controller
                 ? $this->progressRows($request)
                 : [],
             'quickActions' => $section['quickActions'] ?? [],
+            'today' => null,
         ]);
     }
 
-    protected function summary(Request $request): array
+    protected function summary(Request $request, string $slug = 'marketing'): array
     {
         $customerQuery = Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request));
 
-        return [
+        $base = [
             'total_customers' => (clone $customerQuery)->count(),
-            'high_prospects' => 0,
-            'documents' => DokumenCostumer::query()->count(),
+            'high_prospects' => MarketingLead::query()->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))->where('stage', 'qualified')->count(),
+        ];
+
+        if ($this->shouldScopeToCurrentMarketing($request) && $slug === 'marketing') {
+            return $base + [
+                'documents' => CustomerDocumentChecklist::query()
+                    ->where('validation_status', '!=', 'complete')
+                    ->whereHas('costumer', fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
+                    ->count(),
+                'recent_progress' => 0,
+                'active_projects' => 0,
+                'active_units' => 0,
+            ];
+        }
+
+        return [
+            ...$base,
+            'documents' => CustomerDocument::query()->whereHas('customer', fn (Builder $query) => $query
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))->count(),
             'recent_progress' => ProgressPembangunan::query()
                 ->whereDate('tanggal', '>=', now()->subDays(30))
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
@@ -82,7 +123,7 @@ class MarketingController extends Controller
     protected function customerRows(Request $request)
     {
         return Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->latest('id')
             ->limit(5)
@@ -114,6 +155,124 @@ class MarketingController extends Controller
                 'persentase' => $progress->persentase,
                 'user' => $progress->user?->name ?? '-',
             ]);
+    }
+
+    protected function today(Request $request): array
+    {
+        $userId = $request->user()?->id;
+        $canMonitorTeam = (bool) $request->user()?->hasAnyRole([
+            'owner',
+            'manager',
+            'manajer_pimpro',
+            'supervisor_marketing',
+            'super_admin',
+        ]) || (bool) $request->user()?->can('marketing.activity.view-all');
+        $activePerumahanId = $this->shouldScopeToActivePerumahan($request)
+            ? $this->activePerumahanId($request)
+            : null;
+        $scopeCustomer = function (Builder $query) use ($request, $userId): void {
+            $query->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $userId))
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request));
+        };
+
+        $customerCounts = MarketingLead::query()
+            ->whereNotIn('stage', ['converted', 'lost'])
+            ->where(fn (Builder $query) => $query->whereNull('next_action_at')->where('stage', 'new')->orWhereDate('next_action_at', '<=', today()))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $userId))
+            ->when($activePerumahanId, fn (Builder $query, int $perumahanId) => $query->where('perumahan_id', $perumahanId))
+            ->selectRaw('COUNT(*) as due_count')
+            ->selectRaw('COALESCE(SUM(CASE WHEN next_action_at < ? THEN 1 ELSE 0 END), 0) as overdue_count', [now()])
+            ->first();
+
+        $visitCount = MarketingVisit::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $userId))
+            ->when($activePerumahanId, fn (Builder $query, int $perumahanId) => $query->where('perumahan_id', $perumahanId))
+            ->whereIn('status', ['planned', 'in_progress'])
+            ->whereDate('planned_at', today())
+            ->count();
+
+        $incompleteDocuments = CustomerDocumentChecklist::query()->where('validation_status', '!=', 'complete')
+            ->whereHas('costumer', $scopeCustomer)->count();
+
+        $activities = collect()
+            ->concat(CostumerFollowUp::query()->with('lead:id,name')->whereDate('tanggal_follow_up', today())
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $userId))
+                ->when($activePerumahanId, fn (Builder $query, int $perumahanId) => $query->whereHas('lead', fn (Builder $lead) => $lead->where('perumahan_id', $perumahanId)))
+                ->latest('id')->limit(30)->get()
+                ->map(fn (CostumerFollowUp $row) => ['id' => 'follow-'.$row->id, 'type' => 'Follow-up', 'customer' => $row->lead?->name, 'time' => optional($row->created_at)->format('H:i'), 'result' => $row->catatan ?: $this->leadLabel($row->status), 'status' => $row->record_status ?? 'draft', 'url' => route('admin.marketing.jejak-follow-up.show', $row->id, false)]))
+            ->concat(MarketingVisit::query()->with('costumer:id,nama')->whereDate('planned_at', today())
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $userId))
+                ->when($activePerumahanId, fn (Builder $query, int $perumahanId) => $query->where('perumahan_id', $perumahanId))
+                ->latest('planned_at')->limit(30)->get()
+                ->map(fn (MarketingVisit $row) => ['id' => 'visit-'.$row->id, 'type' => 'Kunjungan', 'customer' => $row->costumer?->nama, 'time' => $row->planned_at?->format('H:i'), 'result' => $row->result ?: $row->objective, 'status' => $row->status, 'url' => route('admin.marketing.crm.show', ['visits', $row->id], false)]))
+            ->concat(MarketingSurveySchedule::query()->with('costumer:id,nama')->whereDate('tanggal_survey', today())
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $userId))
+                ->when($activePerumahanId, fn (Builder $query, int $perumahanId) => $query->where('perumahan_id', $perumahanId))
+                ->latest('tanggal_survey')->limit(30)->get()
+                ->map(fn (MarketingSurveySchedule $row) => ['id' => 'survey-'.$row->id, 'type' => 'Survei', 'customer' => $row->costumer?->nama, 'time' => $row->tanggal_survey?->format('H:i'), 'result' => $row->hasil_survey ?: $row->catatan, 'status' => $row->status, 'url' => route('admin.marketing.jadwal-survey.index', false)]))
+            ->concat(MarketingActionPlan::query()->with('costumer:id,nama')->whereDate('start_at', today())
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $userId))
+                ->when($activePerumahanId, fn (Builder $query, int $perumahanId) => $query->where('perumahan_id', $perumahanId))
+                ->latest('start_at')->limit(30)->get()
+                ->map(fn (MarketingActionPlan $row) => ['id' => 'plan-'.$row->id, 'type' => 'Aktivitas Lain', 'customer' => $row->costumer?->nama, 'time' => $row->start_at?->format('H:i'), 'result' => $row->actual_result ?: $row->objective, 'status' => $row->status, 'url' => route('admin.marketing.crm.show', ['action-plans', $row->id], false)]))
+            ->sortByDesc('time')->take(40)->values();
+
+        $quickActions = collect([
+            $this->shouldScopeToCurrentMarketing($request)
+                ? ['permission' => 'marketing-visit.create', 'label' => 'Catat Prospek Lapangan', 'description' => 'Catat penawaran ke rumah prospek, event, atau canvassing. Konversi menjadi lead setelah prospek tertarik.', 'href' => route('admin.marketing.crm.create', 'visits', false)]
+                : ['permission' => 'customer.create', 'label' => 'Tambah Prospek', 'description' => 'Catat calon pelanggan baru hari ini.', 'href' => route('admin.marketing.calon-konsumen.create', false)],
+            ['permission' => 'customer-follow-up.create', 'label' => 'Catat Follow-up', 'description' => 'Telepon, WhatsApp, atau pertemuan dengan prospek.', 'href' => route('admin.marketing.jejak-follow-up.create', false)],
+            ['permission' => 'marketing-visit.create', 'label' => 'Catat Kunjungan', 'description' => 'Rencana dan hasil kunjungan ke pelanggan.', 'href' => route('admin.marketing.crm.create', 'visits', false)],
+            ['permission' => 'marketing-action-plan.create', 'label' => 'Catat Aktivitas Lain', 'description' => 'Canvassing, event, promosi, atau pekerjaan marketing lain.', 'href' => route('admin.marketing.crm.create', 'action-plans', false)],
+            ['permission' => 'marketing-survey.create', 'label' => 'Jadwal Survei', 'description' => 'Kelola jadwal survei lokasi atau unit.', 'href' => route('admin.marketing.jadwal-survey.create', false)],
+        ])->filter(fn (array $action) => $request->user()?->hasRole('super_admin') || $request->user()?->can($action['permission']))
+            ->map(fn (array $action) => collect($action)->except('permission')->all())
+            ->values()
+            ->all();
+
+        return [
+            'eyebrow' => $canMonitorTeam ? 'Monitoring Harian Tim Marketing' : 'Buku Kerja Harian Marketing',
+            'heading' => $canMonitorTeam ? 'Apa yang dikerjakan tim hari ini?' : 'Apa yang Anda kerjakan hari ini?',
+            'description' => $canMonitorTeam
+                ? 'Pantau input prospek, follow-up, kunjungan, survei, dan aktivitas lapangan seluruh tim sesuai lingkup perumahan Anda.'
+                : 'Masukkan setiap prospek, follow-up, kunjungan, survei, dan aktivitas lapangan. Hasil serta rencana berikutnya menjadi bukti kerja dan bahan monitoring atasan.',
+            'counts' => [
+                'due' => (int) ($customerCounts?->due_count ?? 0),
+                'overdue' => (int) ($customerCounts?->overdue_count ?? 0),
+                'visits' => $visitCount,
+                'incomplete_documents' => $incompleteDocuments,
+                'activities' => $activities->count(),
+            ],
+            'activities' => $activities,
+            'quick_actions' => $quickActions,
+            'monitoring_url' => $canMonitorTeam
+                ? route('admin.marketing.tools.show', 'monitoring-aktivitas', false)
+                : null,
+        ];
+    }
+
+    private function leadScore(Costumer $customer): int
+    {
+        $score = match ($customer->status_lead) {
+            'closing' => 100, 'spr' => 90, 'booking_fee' => 80, 'negosiasi' => 65,
+            'survey_lokasi' => 50, 'dihubungi' => 30, 'batal' => 0, default => 15,
+        };
+        if ((float) $customer->penghasilan > 0) {
+            $score += 5;
+        }
+        if ($customer->marketing_campaign_id) {
+            $score += 3;
+        }
+        if ($customer->next_action_at && ! $customer->next_action_at->isPast()) {
+            $score += 2;
+        }
+
+        return min(100, $score);
+    }
+
+    private function leadLabel(?string $status): string
+    {
+        return data_get(collect(MarketingLeadStatusService::statusOptions())->firstWhere('value', $status), 'label', $status ?: 'Lead Baru');
     }
 
     protected function sections(): array
@@ -260,5 +419,26 @@ class MarketingController extends Controller
 
         return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
             && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
+    }
+
+    private function authorizeSection(Request $request, string $slug): void
+    {
+        $permissions = match ($slug) {
+            'marketing' => ['dashboard.view'],
+            'calon-konsumen', 'konsumen' => ['customer.view'],
+            'jejak-follow-up' => ['customer-follow-up.view', 'customer.follow-up'],
+            'spr' => ['booking.view', 'booking.manage'],
+            'transaksi-pembelian' => ['cash-sale.view', 'kpr.view'],
+            'operasional' => ['marketing.activity.view'],
+            'laporan' => ['marketing-report.view'],
+            default => [],
+        };
+        $user = $request->user();
+
+        abort_unless(
+            $user?->hasRole('super_admin')
+            || collect($permissions)->contains(fn (string $permission) => $user?->can($permission)),
+            403
+        );
     }
 }

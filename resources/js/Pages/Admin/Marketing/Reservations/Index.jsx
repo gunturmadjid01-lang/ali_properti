@@ -1,4 +1,5 @@
 import { Head, Link, router } from "@inertiajs/react";
+import { useState } from "react";
 import {
     BarChart3,
     CalendarDays,
@@ -18,7 +19,7 @@ import {
     FinanceChart,
     FinanceTrendChart,
 } from "../../../../Components/Finance/FinanceChart";
-import { Button, Dropdown, TableActions } from "../../../../Components/UI";
+import { Button, Dropdown, Modal, TableActions } from "../../../../Components/UI";
 
 const money = (value) => `Rp ${Number(value || 0).toLocaleString("id-ID")}`;
 const reservationLabels = {
@@ -76,6 +77,8 @@ export default function Index({
     canCreate,
     canManage,
 }) {
+    const [rejectApproval, setRejectApproval] = useState(null);
+    const [rejectNote, setRejectNote] = useState("");
     const apply = (key, value) =>
         router.get(
             "/admin/marketing/reservasi-perumahan",
@@ -101,6 +104,9 @@ export default function Index({
     return (
         <AdminLayout>
             <Head title={title} />
+            <Modal open={Boolean(rejectApproval)} onClose={() => setRejectApproval(null)} title="Tolak reservasi" size="sm" footer={<><Button type="button" variant="outline" onClick={() => setRejectApproval(null)}>Batal</Button><Button type="button" variant="danger" disabled={!rejectNote.trim()} onClick={() => router.post(`/admin/approval/${rejectApproval}/reject`, { rejection_note: rejectNote }, { preserveScroll: true, onFinish: () => { setRejectApproval(null); setRejectNote(""); } })}>Kirim Penolakan</Button></>}>
+                <label className="grid gap-2 text-sm font-bold">Alasan penolakan wajib<textarea autoFocus value={rejectNote} onChange={(event) => setRejectNote(event.target.value)} className="min-h-28 rounded-lg border p-3" /></label>
+            </Modal>
             <div className="grid gap-6">
                 <header className="flex flex-wrap items-center justify-between gap-4">
                     <div>
@@ -440,23 +446,7 @@ export default function Index({
                                                     <Button
                                                         size="sm"
                                                         className="border border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                                                        onClick={() => {
-                                                            const note =
-                                                                window.prompt(
-                                                                    "Alasan penolakan reservasi",
-                                                                );
-                                                            if (note)
-                                                                router.post(
-                                                                    `/admin/approval/${row.approval_id}/reject`,
-                                                                    {
-                                                                        rejection_note:
-                                                                            note,
-                                                                    },
-                                                                    {
-                                                                        preserveScroll: true,
-                                                                    },
-                                                                );
-                                                        }}
+                                                        onClick={() => { setRejectApproval(row.approval_id); setRejectNote(""); }}
                                                     >
                                                         <Ban size={16} />
                                                         Tolak

@@ -1,0 +1,14 @@
+implementasi Siteplan dengan unit perumahan
+laporan kunjungan
+checklist document kostumer,
+plan Aksion(marketing).
+----------------------------
+alat berat
+pekerjaan pervolume / blok rumah
+pemakain penambahan rentang jam, serta selisih hm
+daftar material, harus sinkron ekspedisi, dan upah tukang
+pengembalian barang material, harus ada status (utuh, cacat, layak pakai)
+
+PENAMBAHAN MUTU BANGUNAN
+
+

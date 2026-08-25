@@ -19,6 +19,10 @@ class MaterialUsage extends Model
         'detail_rumah_id',
         'tahapan_pembangunan_id',
         'progress_pembangunan_id',
+        'material_request_id',
+        'quality_upgrade_contract_id',
+        'quality_upgrade_contract_item_id',
+        'stock_posted_at',
         'keterangan',
         'foto',
         'record_status',
@@ -28,7 +32,7 @@ class MaterialUsage extends Model
         'updated_by',
     ];
 
-    protected $casts = ['tanggal' => 'date', 'locked_at' => 'datetime'];
+    protected $casts = ['tanggal' => 'date', 'locked_at' => 'datetime', 'stock_posted_at' => 'datetime'];
 
     public function details(): HasMany
     {
@@ -53,5 +57,10 @@ class MaterialUsage extends Model
     public function progressPembangunan(): BelongsTo
     {
         return $this->belongsTo(ProgressPembangunan::class);
+    }
+
+    public function qualityUpgradeContract(): BelongsTo
+    {
+        return $this->belongsTo(QualityUpgradeContract::class);
     }
 }

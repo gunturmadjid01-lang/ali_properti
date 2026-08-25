@@ -178,7 +178,7 @@ class CustomerReceivableService
     public function approveReceipt(CustomerReceipt $receipt): void
     {
         DB::transaction(function () use ($receipt) {
-            $receipt = CustomerReceipt::query()->with(['allocations.schedule', 'salesTransaction.housingProject'])->lockForUpdate()->findOrFail($receipt->id);
+            $receipt = CustomerReceipt::query()->with(['allocations.schedule', 'salesTransaction.housingProject', 'qualityUpgradeContract.unit.perumahan'])->lockForUpdate()->findOrFail($receipt->id);
             if ($receipt->status === 'posted') {
                 return;
             }
@@ -188,7 +188,10 @@ class CustomerReceivableService
             }
             foreach ($receipt->allocations->whereNotNull('payment_schedule_id')->groupBy('payment_schedule_id') as $group) {
                 $schedule = PaymentSchedule::query()->lockForUpdate()->findOrFail($group->first()->payment_schedule_id);
-                abort_unless((int) $schedule->sales_transaction_id === (int) $receipt->sales_transaction_id, 422, 'Tagihan bukan milik transaksi yang dipilih.');
+                $belongsToSource = $receipt->quality_upgrade_contract_id
+                    ? (int) $schedule->quality_upgrade_contract_id === (int) $receipt->quality_upgrade_contract_id
+                    : (int) $schedule->sales_transaction_id === (int) $receipt->sales_transaction_id;
+                abort_unless($belongsToSource, 422, 'Tagihan bukan milik transaksi yang dipilih.');
                 $paymentAmount = round((float) $group->sum('amount'), 2);
                 $penalty = $this->calculateSchedulePenalty($schedule, $receipt->payment_date);
                 if ($penalty > 0) {
@@ -225,7 +228,9 @@ class CustomerReceivableService
                 $account->update(['balance' => $newBalance]);
             }
             $receipt->update(['status' => 'posted', 'approved_at' => now(), 'approved_by' => auth()->id(), 'journal_id' => $journal->id]);
-            SalesWorkflowHistory::firstOrCreate(['sales_transaction_id' => $receipt->sales_transaction_id, 'process' => 'customer_receipt_posted', 'notes' => "Penerimaan {$receipt->receipt_no} disetujui dan diposting."], ['to_status' => 'posted', 'user_id' => auth()->id(), 'occurred_at' => now()]);
+            if ($receipt->sales_transaction_id) {
+                SalesWorkflowHistory::firstOrCreate(['sales_transaction_id' => $receipt->sales_transaction_id, 'process' => 'customer_receipt_posted', 'notes' => "Penerimaan {$receipt->receipt_no} disetujui dan diposting."], ['to_status' => 'posted', 'user_id' => auth()->id(), 'occurred_at' => now()]);
+            }
         });
     }
 
@@ -294,12 +299,27 @@ class CustomerReceivableService
         $cashAccount = $receipt->payment_method === 'cash' ? ChartOfAccount::KAS_KECIL : ChartOfAccount::KAS_BANK;
         $lines = [['account' => $cashAccount, 'debit' => $receipt->amount, 'kredit' => 0]];
         if ($allocated > 0) {
-            $lines[] = ['account' => ChartOfAccount::PIUTANG_CUSTOMER, 'debit' => 0, 'kredit' => $allocated];
+            $lines[] = ['account' => $receipt->quality_upgrade_contract_id ? ChartOfAccount::PIUTANG_PENAMBAHAN_MUTU : ChartOfAccount::PIUTANG_CUSTOMER, 'debit' => 0, 'kredit' => $allocated];
         }
         if ($deposit > 0) {
-            $lines[] = ['account' => ChartOfAccount::UANG_MUKA_CUSTOMER, 'debit' => 0, 'kredit' => $deposit];
+            $lines[] = ['account' => $receipt->quality_upgrade_contract_id ? ChartOfAccount::UANG_MUKA_PENAMBAHAN_MUTU : ChartOfAccount::UANG_MUKA_CUSTOMER, 'debit' => 0, 'kredit' => $deposit];
         }
 
-        return app(AccountingService::class)->postJournal($receipt, 'customer_receipt', $receipt->payment_date->toDateString(), $receipt->salesTransaction->perumahan_id, $receipt->salesTransaction->detail_rumah_id, "Penerimaan customer {$receipt->receipt_no}", $lines, $receipt->payment_method === 'cash' ? null : $receipt->master_bank_id);
+        $contract = $receipt->qualityUpgradeContract;
+        $journal = app(AccountingService::class)->postJournal(
+            $receipt,
+            'customer_receipt',
+            $receipt->payment_date->toDateString(),
+            $receipt->salesTransaction?->perumahan_id ?? $contract?->unit?->perumahan_id,
+            $receipt->salesTransaction?->detail_rumah_id ?? $contract?->detail_rumah_id,
+            "Penerimaan customer {$receipt->receipt_no}",
+            $lines,
+            $receipt->payment_method === 'cash' ? null : $receipt->master_bank_id,
+        );
+        if ($contract) {
+            $journal->update(['cabang_perusahaan_id' => $contract->company_id]);
+        }
+
+        return $journal;
     }
 }

@@ -314,7 +314,8 @@ class AccountingService
 
     public function recordSupplierBill(MaterialPurchase $purchase): ?Journal
     {
-        if ((float) $purchase->total_nominal <= 0) {
+        $amount = (float) ($purchase->supplierInvoice?->payable_amount ?? $purchase->total_nominal);
+        if ($amount <= 0) {
             return null;
         }
 
@@ -326,15 +327,16 @@ class AccountingService
             detailRumahId: $purchase->detail_rumah_id,
             keterangan: "Tagihan supplier pembelian {$purchase->kode_pembelian}",
             lines: [
-                ['account' => ChartOfAccount::PERSEDIAAN_MATERIAL, 'debit' => $purchase->total_nominal, 'kredit' => 0],
-                ['account' => ChartOfAccount::HUTANG_SUPPLIER, 'debit' => 0, 'kredit' => $purchase->total_nominal],
+                ['account' => ChartOfAccount::PERSEDIAAN_MATERIAL, 'debit' => $amount, 'kredit' => 0],
+                ['account' => ChartOfAccount::HUTANG_SUPPLIER, 'debit' => 0, 'kredit' => $amount],
             ],
         );
     }
 
     public function recordSupplierPayment(MaterialPurchase $purchase): ?Journal
     {
-        if ((float) $purchase->total_nominal <= 0) {
+        $amount = (float) ($purchase->supplierInvoice?->outstanding_amount ?? $purchase->total_nominal);
+        if ($amount <= 0) {
             return null;
         }
 
@@ -346,8 +348,8 @@ class AccountingService
             detailRumahId: $purchase->detail_rumah_id,
             keterangan: "Pembayaran hutang supplier {$purchase->kode_pembelian}",
             lines: [
-                ['account' => ChartOfAccount::HUTANG_SUPPLIER, 'debit' => $purchase->total_nominal, 'kredit' => 0],
-                ['account' => ChartOfAccount::KAS_BANK, 'debit' => 0, 'kredit' => $purchase->total_nominal],
+                ['account' => ChartOfAccount::HUTANG_SUPPLIER, 'debit' => $amount, 'kredit' => 0],
+                ['account' => ChartOfAccount::KAS_BANK, 'debit' => 0, 'kredit' => $amount],
             ],
             masterBankId: $purchase->payment_master_bank_id,
         );
@@ -355,7 +357,7 @@ class AccountingService
         $this->recordCashflow(
             tipePostName: 'Pembayaran Hutang Supplier',
             tanggal: now()->toDateString(),
-            nominal: (float) $purchase->total_nominal,
+            nominal: $amount,
             keterangan: "Pembayaran hutang supplier {$purchase->kode_pembelian}",
             cabangId: $purchase->perumahan?->cabang_id,
             masterBankId: $purchase->payment_master_bank_id,

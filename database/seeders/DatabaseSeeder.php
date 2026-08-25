@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\File;
 
 class DatabaseSeeder extends Seeder
 {
@@ -14,41 +15,22 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        if (File::exists(database_path('seeders/data/current_database_snapshot.php'))) {
+            $this->call(CurrentDatabaseSnapshotSeeder::class);
+
+            return;
+        }
+
         $this->call([
-            // Fondasi akses dan struktur perusahaan.
+            // Fondasi akses: hanya super_admin yang menerima permission.
             PropertyAreaRoleSeeder::class,
             RolePermissionSeeder::class,
-            ApprovalSettingSeeder::class,
+
+            // Data dasar yang dipertahankan untuk instalasi bersih.
             CabangPerusahaanSeeder::class,
             PerumahanSeeder::class,
             UserSeeder::class,
-            UserPettyCashSeeder::class,
-
-            // Data operasional dasar yang dibutuhkan transaksi penjualan.
-            GudangSeeder::class,
-            BarangMaterialSeeder::class,
-            HppReferenceSeeder::class,
-            OperationalSettingSeeder::class,
-            MarketingLeadSourceSeeder::class,
-            CostumerSeeder::class,
-            MarketingTemplateSeeder::class,
-            ChartOfAccountSeeder::class,
-            DokumenCostumerSeeder::class,
-
-            // Master metode pembayaran harus tersedia sebelum SPR dibuat.
-            MasterBankSeeder::class,
-            BankKreditSeeder::class,
-            BankCreditMasterSeeder::class,
-            SalesPaymentMasterSeeder::class,
-
-            // Unit tersedia untuk pengujian manual mulai dari Reservasi.
-            // SPR sengaja tidak di-seed agar seluruh alur dapat diuji dari awal.
-            DetailRumahSeeder::class,
-
-            // Data pendukung modul lain.
-            TipePostSeeder::class,
-            KelompokHppSeeder::class,
-            InventoryHeavyEquipmentSeeder::class,
+            MaterialUnitSeeder::class,
         ]);
     }
 }

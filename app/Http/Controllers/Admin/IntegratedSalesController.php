@@ -47,6 +47,10 @@ class IntegratedSalesController extends Controller
                 $query->where($column, $operator, $value);
             }
         }
+        if ($section === 'bank-applications' && $request->query('queue') === 'stale') {
+            $query->whereNotIn('kpr_submissions.status', ['approved', 'rejected', 'cancelled', 'disbursed'])
+                ->where('kpr_submissions.updated_at', '<', now()->subDays(3));
+        }
         $filterColumns = $section === 'transactions' ? ['status' => 'sales_transactions.status', 'payment_method' => 'sales_transactions.payment_method', 'perumahan_id' => 'sales_transactions.perumahan_id', 'date_from' => 'sales_transactions.created_at', 'date_to' => 'sales_transactions.created_at'] : ($config['filter_columns'] ?? []);
         foreach ($filterColumns as $key => $column) {
             $value = $filters[$key] ?? null;
@@ -83,7 +87,7 @@ class IntegratedSalesController extends Controller
 
         return Inertia::render('Admin/OperationsModule/Index', [
             'title' => 'Penjualan Terintegrasi', 'module' => 'sales', 'section' => $section, 'sectionTitle' => $config['title'], 'baseUrl' => '/admin/penjualan-terintegrasi',
-            'menu' => $this->menu($request), 'fields' => $config['fields'], 'columns' => $config['columns'], 'rows' => $rows, 'filters' => ['search' => $search, ...$filters],
+            'menu' => $this->menu($request), 'fields' => $config['fields'], 'columns' => $config['columns'], 'rows' => $rows, 'filters' => ['search' => $search, 'queue' => $request->query('queue'), ...$filters],
             'analytics' => $analytics,
             'filterOptions' => ['housing' => $this->options()['housing'], 'paymentMethods' => [['value' => 'cash', 'label' => 'Cash'], ['value' => 'cash_bertahap', 'label' => 'Cash Bertahap'], ['value' => 'kpr_bank', 'label' => 'KPR Bank'], ['value' => 'kpr_developer', 'label' => 'KPR Developer']], 'statuses' => [['value' => 'active', 'label' => 'Aktif'], ['value' => 'draft', 'label' => 'Draf'], ['value' => 'approved', 'label' => 'Disetujui'], ['value' => 'cancelled', 'label' => 'Dibatalkan']]],
             'permissions' => collect(['create', 'update', 'delete', 'export', 'print', 'submit'])->mapWithKeys(fn ($action) => [$action => (! in_array($action, ['create', 'update', 'delete'], true) || ($config['editable'] ?? false)) && ($request->user()?->can($config['permission'].'.'.$action) || $request->user()?->hasRole('super_admin'))])->all(),
@@ -444,7 +448,7 @@ class IntegratedSalesController extends Controller
                 $data[$key] = json_encode($data[$key]);
             }
         }
-        $data['document_requirements'] = null; // Dokumen customer dikelola terpusat melalui menu Dokumen Pelanggan.
+        $data['document_requirements'] = null; // File customer dikelola terpusat melalui menu Berkas Pelanggan.
         DB::transaction(function () use ($isCash, $id, $data, $housingIds, $steps, $request) {
             $model = $isCash ? CashInstallmentScheme::query()->find($id) : DeveloperKprProduct::query()->find($id);
             if ($model) {

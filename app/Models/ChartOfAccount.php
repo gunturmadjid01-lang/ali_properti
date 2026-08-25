@@ -9,11 +9,16 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ChartOfAccount extends Model
 {
+    public const PIUTANG_PENAMBAHAN_MUTU = '1-1500';
+    public const UANG_MUKA_PENAMBAHAN_MUTU = '2-2300';
+    public const PENDAPATAN_PENAMBAHAN_MUTU = '4-1300';
+    public const HPP_PENAMBAHAN_MUTU = '5-1300';
     use HasFactory, SoftDeletes;
 
     public const KAS_BANK = '1-1000';
     public const KAS_KECIL = '1-1010';
     public const PIUTANG_CUSTOMER = '1-1100';
+    public const PIUTANG_SUPPLIER = '1-1200';
     public const PERSEDIAAN_MATERIAL = '1-1300';
     public const PERSEDIAAN_PROYEK = '1-1400';
     public const UANG_MUKA_CUSTOMER = '2-1000';

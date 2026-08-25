@@ -12,9 +12,14 @@ class MarketingReminder extends Model
     use HasUserAudit, SoftDeletes;
 
     protected $fillable = [
-        'costumer_id', 'user_id', 'jenis', 'judul', 'remind_at', 'status', 'catatan',
+        'costumer_id', 'marketing_lead_id', 'user_id', 'jenis', 'judul', 'remind_at', 'status', 'catatan',
         'source_type', 'source_id', 'completed_at', 'created_by', 'updated_by',
     ];
+
+    public function lead()
+    {
+        return $this->belongsTo(MarketingLead::class, 'marketing_lead_id');
+    }
 
     protected $casts = [
         'remind_at' => 'datetime',

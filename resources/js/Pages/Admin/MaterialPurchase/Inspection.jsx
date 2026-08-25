@@ -83,10 +83,18 @@ export default function Inspection({
         const nextInputs = {};
         purchase.items.forEach((item) => {
             nextInputs[item.id] = {
+                qty_faktur: item.qty_faktur ?? item.qty,
+                qty_fisik_tiba: item.qty_fisik_tiba ?? item.qty,
                 qty_diterima:
                     item.inspection_status === "pending"
                         ? item.qty
                         : item.qty_diterima,
+                qty_cacat: item.qty_cacat ?? 0,
+                qty_ditolak: item.qty_ditolak ?? 0,
+                invoice_unit_price:
+                    item.invoice_unit_price ?? item.harga_satuan ?? 0,
+                kondisi_fisik: item.kondisi_fisik ?? "baik",
+                alasan_selisih: item.alasan_selisih ?? "",
                 catatan: item.inspection_note ?? "",
             };
         });
@@ -132,6 +140,13 @@ export default function Inspection({
             {
                 status: inspectionStatus,
                 qty_diterima: qtyDiterima,
+                qty_faktur: Number(input.qty_faktur ?? item.qty),
+                qty_fisik_tiba: Number(input.qty_fisik_tiba ?? item.qty),
+                qty_cacat: Number(input.qty_cacat ?? 0),
+                qty_ditolak: Number(input.qty_ditolak ?? 0),
+                invoice_unit_price: Number(input.invoice_unit_price ?? 0),
+                kondisi_fisik: input.kondisi_fisik ?? "baik",
+                alasan_selisih: input.alasan_selisih ?? "",
                 tanggal_barang_masuk: arrivalDate,
                 catatan: input.catatan ?? "",
             },
@@ -287,7 +302,9 @@ export default function Inspection({
                                                     size="sm"
                                                     variant="outline"
                                                     onClick={() =>
-                                                        openDetail(purchase)
+                                                        router.visit(
+                                                            `${baseUrl}/${purchase.id}`,
+                                                        )
                                                     }
                                                 >
                                                     <Eye size={15} /> Detail
@@ -390,7 +407,7 @@ export default function Inspection({
                                         {[
                                             "Material",
                                             "Dipesan",
-                                            "Diterima",
+                                            "Faktur / Fisik / Diterima",
                                             "Hasil",
                                             "Catatan",
                                             "Aksi",
@@ -414,8 +431,18 @@ export default function Inspection({
                                                 {item.qty} {item.satuan}
                                             </td>
                                             <td className="px-4 py-3 font-bold">
+                                                {item.qty_faktur ?? "-"} /{" "}
+                                                {item.qty_fisik_tiba ?? "-"} /{" "}
                                                 {item.qty_diterima}{" "}
                                                 {item.satuan}
+                                                {item.status_selisih ===
+                                                    "selisih" && (
+                                                    <div className="mt-1 text-xs text-red-500">
+                                                        Kurang {item.qty_kurang}{" "}
+                                                        · Lebih {item.qty_lebih}{" "}
+                                                        · Cacat {item.qty_cacat}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td
                                                 className={`px-4 py-3 font-extrabold ${item.inspection_status === "tidak_sesuai" ? "text-red-500" : item.inspection_status === "sesuai" ? "text-emerald-500" : "text-amber-500"}`}
@@ -431,12 +458,90 @@ export default function Inspection({
                                                 {item.inspection_status ===
                                                 "pending" ? (
                                                     <div className="grid min-w-72 gap-2">
-                                                        <div className="grid grid-cols-[110px_1fr] gap-2">
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            <input
+                                                                className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-2 text-right text-xs font-bold dark:border-white/10 dark:bg-white/8"
+                                                                type="number"
+                                                                min="0"
+                                                                step="1"
+                                                                title="Harga pada faktur"
+                                                                placeholder="Harga faktur"
+                                                                value={
+                                                                    inspectionInputs[
+                                                                        item.id
+                                                                    ]
+                                                                        ?.invoice_unit_price ??
+                                                                    item.harga_satuan ??
+                                                                    0
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setInspectionInput(
+                                                                        item.id,
+                                                                        "invoice_unit_price",
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
+                                                            <input
+                                                                className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-2 text-right text-xs font-bold dark:border-white/10 dark:bg-white/8"
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                title="Qty pada faktur"
+                                                                placeholder="Faktur"
+                                                                value={
+                                                                    inspectionInputs[
+                                                                        item.id
+                                                                    ]
+                                                                        ?.qty_faktur ??
+                                                                    item.qty
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setInspectionInput(
+                                                                        item.id,
+                                                                        "qty_faktur",
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
+                                                            <input
+                                                                className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-2 text-right text-xs font-bold dark:border-white/10 dark:bg-white/8"
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                title="Qty fisik tiba"
+                                                                placeholder="Fisik"
+                                                                value={
+                                                                    inspectionInputs[
+                                                                        item.id
+                                                                    ]
+                                                                        ?.qty_fisik_tiba ??
+                                                                    item.qty
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setInspectionInput(
+                                                                        item.id,
+                                                                        "qty_fisik_tiba",
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
                                                             <input
                                                                 className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-3 text-right text-xs font-bold text-ink outline-none dark:border-white/10 dark:bg-white/8 dark:text-white"
                                                                 type="number"
                                                                 min="0"
-                                                                max={item.qty}
                                                                 step="0.01"
                                                                 value={
                                                                     inspectionInputs[
@@ -457,6 +562,94 @@ export default function Inspection({
                                                                     )
                                                                 }
                                                             />
+                                                        </div>
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            <input
+                                                                className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-2 text-right text-xs font-bold dark:border-white/10 dark:bg-white/8"
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                placeholder="Cacat"
+                                                                value={
+                                                                    inspectionInputs[
+                                                                        item.id
+                                                                    ]
+                                                                        ?.qty_cacat ??
+                                                                    0
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setInspectionInput(
+                                                                        item.id,
+                                                                        "qty_cacat",
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
+                                                            <input
+                                                                className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-2 text-right text-xs font-bold dark:border-white/10 dark:bg-white/8"
+                                                                type="number"
+                                                                min="0"
+                                                                step="0.01"
+                                                                placeholder="Ditolak"
+                                                                value={
+                                                                    inspectionInputs[
+                                                                        item.id
+                                                                    ]
+                                                                        ?.qty_ditolak ??
+                                                                    0
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setInspectionInput(
+                                                                        item.id,
+                                                                        "qty_ditolak",
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
+                                                            <select
+                                                                className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-2 text-xs font-bold dark:border-white/10 dark:bg-white/8"
+                                                                value={
+                                                                    inspectionInputs[
+                                                                        item.id
+                                                                    ]
+                                                                        ?.kondisi_fisik ??
+                                                                    "baik"
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setInspectionInput(
+                                                                        item.id,
+                                                                        "kondisi_fisik",
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            >
+                                                                <option value="baik">
+                                                                    Baik
+                                                                </option>
+                                                                <option value="layak_pakai">
+                                                                    Layak Pakai
+                                                                </option>
+                                                                <option value="cacat">
+                                                                    Cacat
+                                                                </option>
+                                                                <option value="rusak">
+                                                                    Rusak
+                                                                </option>
+                                                            </select>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-2">
                                                             <input
                                                                 className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-3 text-xs font-bold text-ink outline-none dark:border-white/10 dark:bg-white/8 dark:text-white"
                                                                 placeholder="Catatan rusak/kurang"
@@ -473,6 +666,28 @@ export default function Inspection({
                                                                     setInspectionInput(
                                                                         item.id,
                                                                         "catatan",
+                                                                        event
+                                                                            .target
+                                                                            .value,
+                                                                    )
+                                                                }
+                                                            />
+                                                            <input
+                                                                className="h-9 rounded-lg border border-silver-deep/70 bg-white/85 px-3 text-xs font-bold dark:border-white/10 dark:bg-white/8"
+                                                                placeholder="Alasan selisih faktur/fisik"
+                                                                value={
+                                                                    inspectionInputs[
+                                                                        item.id
+                                                                    ]
+                                                                        ?.alasan_selisih ??
+                                                                    ""
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setInspectionInput(
+                                                                        item.id,
+                                                                        "alasan_selisih",
                                                                         event
                                                                             .target
                                                                             .value,

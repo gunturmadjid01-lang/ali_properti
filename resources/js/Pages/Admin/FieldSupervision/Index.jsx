@@ -223,13 +223,14 @@ const sectionMeta = {
     },
 };
 
-export default function Index({ title, section, sections = [], baseUrl, rows = { data: [], links: [] }, filters = {}, fields = [], options = {}, config = {} }) {
+export default function Index({ title, section, sections = [], baseUrl, rows = { data: [], links: [] }, filters = {}, context = {}, fields = [], options = {}, config = {} }) {
     const [search, setSearch] = useState(filters.search ?? '');
     const [filterPerumahan, setFilterPerumahan] = useState(filters.perumahan_id ?? '');
     const [filterUnit, setFilterUnit] = useState(filters.detail_rumah_id ?? '');
     const [editing, setEditing] = useState(null);
     const [detail, setDetail] = useState(null);
-    const form = useForm({ ...emptyData(fields), foto: null });
+    const initialData = { ...emptyData(fields), ...context, foto: null };
+    const form = useForm(initialData);
 
     const filteredFormUnits = useMemo(() => (options.detailRumahs ?? []).filter((row) => !form.data.perumahan_id || row.perumahan_id === String(form.data.perumahan_id)), [form.data.perumahan_id, options.detailRumahs]);
     const filteredFilterUnits = useMemo(() => (options.detailRumahs ?? []).filter((row) => !filterPerumahan || row.perumahan_id === String(filterPerumahan)), [filterPerumahan, options.detailRumahs]);
@@ -290,7 +291,7 @@ export default function Index({ title, section, sections = [], baseUrl, rows = {
 
     const resetForm = () => {
         setEditing(null);
-        form.setData({ ...emptyData(fields), foto: null });
+        form.setData(initialData);
         form.clearErrors();
     };
 
@@ -419,7 +420,7 @@ export default function Index({ title, section, sections = [], baseUrl, rows = {
                                         <td className="px-5 py-4">{row.perumahan}<br /><span className="text-xs text-ink-soft">{row.unit} {row.tahapan !== '-' ? `- ${row.tahapan}` : ''}</span></td>
                                         <td className="max-w-md px-5 py-4">{row.summary}<br /><span className="text-xs text-ink-soft">{row.spk !== '-' ? `SPK: ${row.spk}` : ''} {row.progress !== '-' ? `Progress: ${row.progress}` : ''} {row.qc !== '-' ? `QC: ${row.qc}` : ''}</span></td>
                                         <td className="px-5 py-4 font-bold">{row.status}</td>
-                                        <td className="px-5 py-4 font-bold">{config.approval ? row.approval_status : '-'}</td>
+                                        <td className="px-5 py-4 font-bold">{config.approval ? <>{row.approval_status}{row.approval_stage ? <span className="block text-xs text-ink-soft">Tahap {row.approval_stage}/{row.approval_total}</span> : null}</> : '-'}</td>
                                         <td className="min-w-44 px-5 py-4 text-xs"><span className="font-bold">Dibuat:</span> {row.created_by_name}<br /><span className="font-bold">Diubah:</span> {row.updated_by_name}<br /><span className="font-bold">Setujui:</span> {row.approved_by_name}</td>
                                         <td className="px-5 py-4">
                                             <TableActions>
@@ -427,6 +428,7 @@ export default function Index({ title, section, sections = [], baseUrl, rows = {
                                                 {row.foto_url && <Button as="a" href={row.foto_url} target="_blank" size="sm" variant="outline">Foto</Button>}
                                                 {canUpdate && row.can_edit && <Button type="button" size="sm" variant="outline" onClick={() => editRow(row)}><Edit3 size={14} /> Ubah</Button>}
                                                 {canApprove && row.can_approve && row.approval_status !== 'approved' && <Button type="button" size="sm" onClick={() => router.post(`${baseUrl}/${row.id}/approve`, {}, { preserveScroll: true })}><CheckCircle2 size={14} /></Button>}
+                                                {canApprove && row.can_approve && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => { const note = window.prompt('Alasan penolakan/koreksi:'); if (note) router.post(`${baseUrl}/${row.id}/reject`, { note }, { preserveScroll: true }); }}>Tolak</Button>}
                                                 {canDelete && row.can_delete && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => window.confirm('Hapus data ini?') && router.delete(`${baseUrl}/${row.id}`, { preserveScroll: true })}><Trash2 size={14} /></Button>}
                                                 {canLock && row.can_lock && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/lock`, {}, { preserveScroll: true })}><Lock size={14} /> Kunci</Button>}
                                                 {canUnlock && row.can_unlock && row.record_status === 'locked' && <Button type="button" size="sm" variant="outline" onClick={() => router.post(`${baseUrl}/${row.id}/unlock`, {}, { preserveScroll: true })}><Unlock size={14} /> Unlock</Button>}

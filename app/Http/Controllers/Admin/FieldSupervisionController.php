@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\BuildsFieldOptions;
 use App\Http\Controllers\Concerns\UsesApprovalSettings;
 use App\Http\Controllers\Controller;
 use App\Models\DetailRumah;
+use App\Models\ApprovalRequest;
 use App\Models\FieldDefect;
 use App\Models\InternalHandover;
 use App\Models\OfficeAsset;
@@ -112,13 +113,14 @@ class FieldSupervisionController extends Controller
             'sections' => $this->sectionNavigation(),
             'baseUrl' => route('admin.field-supervision.show', $section, absolute: false),
             'filters' => ['search' => $search, 'perumahan_id' => $perumahanId, 'detail_rumah_id' => $detailRumahId],
+            'context' => ['perumahan_id' => (string) ($perumahanId ?? ''), 'detail_rumah_id' => (string) ($detailRumahId ?? ''), 'site_schedule_id' => (string) $request->query('site_schedule_id', '')],
             'rows' => $rows,
             'fields' => $this->fields($section),
             'options' => $this->options(),
             'config' => [
                 'photo' => $config['photo'],
                 'approval' => $config['approval'],
-                'canApprove' => $config['approval'] && $this->requiresApprovalFor('field-supervision') && $this->canApproveFor('field-supervision'),
+                'canApprove' => $config['approval'],
                 'canCreate' => $this->canSection($section, 'create'),
                 'canUpdate' => $this->canSection($section, 'update'),
                 'canDelete' => $this->canSection($section, 'delete'),
@@ -205,38 +207,18 @@ class FieldSupervisionController extends Controller
 
     public function approve(string $section, string $id): RedirectResponse
     {
-        abort_unless($this->config($section)['approval'], 422, 'Menu ini tidak membutuhkan approval.');
-        abort_unless($this->requiresApprovalFor('field-supervision'), 422, 'Menu ini sudah auto approved.');
-        abort_unless($this->canApproveFor('field-supervision'), 403, 'Anda tidak memiliki izin approval.');
-        $config = $this->config($section);
-        abort_unless($config['approval'], 422, 'Menu ini tidak membutuhkan approval.');
+        $approval = $this->approvalFor($this->findRow($section, $id));
+        abort_unless($approval && app(ApprovalWorkflowService::class)->canReview($approval), 403, 'Anda bukan reviewer pada tahap aktif.');
+        app(ApprovalWorkflowService::class)->approve($approval);
+        return back()->with('success', $approval->fresh()->status === ApprovalRequest::STATUS_APPROVED ? 'Approval final selesai.' : 'Approval tahap aktif selesai.');
+    }
 
-        DB::transaction(function () use ($section, $id): void {
-            $row = $this->findRow($section, $id);
-            abort_unless(($row->record_status ?? 'draft') === 'locked', 422, 'Data harus di-lock terlebih dahulu.');
-            if (($row->approval_status ?? null) === 'approved') {
-                return;
-            }
-
-            $row->update([
-                'approval_status' => 'approved',
-                'approved_by' => auth()->id(),
-                'approved_at' => now(),
-                'updated_by' => auth()->id(),
-            ]);
-
-            if ($section === 'serah-terima-internal' && $row instanceof InternalHandover) {
-                $row->detailRumah?->update([
-                    'status_pembangunan' => 'selesai',
-                    'progress_terakhir' => max((float) ($row->detailRumah?->progress_terakhir ?? 0), (float) $row->progress_unit),
-                    'updated_by' => auth()->id(),
-                ]);
-            }
-            $this->syncUnitProgressState($row->detail_rumah_id ?? null);
-
-        });
-
-        return back()->with('success', 'Data berhasil disetujui.');
+    public function reject(Request $request, string $section, string $id): RedirectResponse
+    {
+        $approval = $this->approvalFor($this->findRow($section, $id));
+        abort_unless($approval && app(ApprovalWorkflowService::class)->canReview($approval), 403, 'Anda bukan reviewer pada tahap aktif.');
+        app(ApprovalWorkflowService::class)->reject($approval, $request->validate(['note' => ['required', 'string', 'min:3']])['note']);
+        return back()->with('success', 'Data ditolak dan dikembalikan menjadi draft.');
     }
 
     public function lock(string $section, string $id): RedirectResponse
@@ -347,6 +329,7 @@ class FieldSupervisionController extends Controller
             unset($detail['office_assets']);
         }
 
+        $approval = $this->approvalFor($row);
         return [
             'id' => $row->id,
             'kode' => $row->{$config['code']},
@@ -372,12 +355,19 @@ class FieldSupervisionController extends Controller
             'updated_by_name' => $row->updater?->name ?? '-',
             'approved_by_name' => $row->approvedBy?->name ?? '-',
             'record_status' => $row->record_status ?? 'draft',
-            'can_approve' => ($row->record_status ?? 'draft') === 'locked' && $config['approval'] && $this->requiresApprovalFor('field-supervision') && ($row->approval_status ?? null) !== 'approved' && $this->canApproveFor('field-supervision'),
+            'approval_stage' => $approval?->current_step,
+            'approval_total' => $approval?->total_steps,
+            'can_approve' => $approval ? app(ApprovalWorkflowService::class)->canReview($approval) : false,
             'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSection($section, 'update'),
             'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSection($section, 'delete'),
             'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canSection($section, 'update'),
             'can_unlock' => $this->canManageFieldLock(),
         ];
+    }
+
+    private function approvalFor(Model $row): ?ApprovalRequest
+    {
+        return ApprovalRequest::query()->where('model_type', $row::class)->where('model_id', $row->getKey())->latest('id')->first();
     }
 
     protected function authorizeFieldSupervision(string $action): void

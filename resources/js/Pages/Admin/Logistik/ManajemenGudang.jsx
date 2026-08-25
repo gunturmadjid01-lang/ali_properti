@@ -1,6 +1,6 @@
 import { Head, router } from "@inertiajs/react";
-import { ChevronDown, Plus, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ChevronDown, Edit3, Plus, Search, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { Button, Input, TableActions } from "../../../Components/UI";
 import AdminLayout from "../../../Layouts/AdminLayout";
 
@@ -11,6 +11,7 @@ export default function ManajemenGudang({
     filters = {},
     perumahans = [],
     allUsers = [],
+    permissions = {},
 }) {
     const [search, setSearch] = useState(filters.search ?? "");
     const [perumahanId, setPerumahanId] = useState(filters.perumahan_id ?? "");
@@ -44,6 +45,11 @@ export default function ManajemenGudang({
         });
     };
 
+    const handleDelete = (row) => {
+        if (!window.confirm(`Hapus gudang ${row.nama_gudang}?`)) return;
+        router.delete(`/admin/gudang/${row.id}`, { preserveScroll: true });
+    };
+
     return (
         <>
             <Head title={title} />
@@ -59,9 +65,11 @@ export default function ManajemenGudang({
                                 perumahan
                             </p>
                         </div>
-                        <Button as="a" href="/admin/gudang/create">
-                            <Plus size={17} /> Tambah Gudang Baru
-                        </Button>
+                        {permissions.canCreate && (
+                            <Button as="a" href="/admin/gudang/create">
+                                <Plus size={17} /> Tambah Gudang Baru
+                            </Button>
+                        )}
                     </div>
 
                     <div className="mb-6 rounded-lg border border-silver-deep/30 bg-white p-4">
@@ -157,6 +165,48 @@ export default function ManajemenGudang({
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3">
+                                            {(permissions.canUpdate ||
+                                                permissions.canDelete) && (
+                                                <div
+                                                    onClick={(event) =>
+                                                        event.stopPropagation()
+                                                    }
+                                                >
+                                                    <TableActions>
+                                                        {permissions.canUpdate && (
+                                                            <Button
+                                                                as="a"
+                                                                href={`/admin/gudang/${row.id}/edit`}
+                                                                variant="outline"
+                                                                size="sm"
+                                                            >
+                                                                <Edit3
+                                                                    size={15}
+                                                                />
+                                                                Edit
+                                                            </Button>
+                                                        )}
+                                                        {permissions.canDelete && (
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="text-red-600"
+                                                                onClick={() =>
+                                                                    handleDelete(
+                                                                        row,
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Trash2
+                                                                    size={15}
+                                                                />
+                                                                Hapus
+                                                            </Button>
+                                                        )}
+                                                    </TableActions>
+                                                </div>
+                                            )}
                                             <div className="text-right">
                                                 <div className="text-xs text-ink-soft">
                                                     Petugas
@@ -205,18 +255,20 @@ export default function ManajemenGudang({
                                                                             }
                                                                         </div>
                                                                     </div>
-                                                                    <Button
-                                                                        variant="outline"
-                                                                        size="sm"
-                                                                        onClick={() =>
-                                                                            handleRemoveUser(
-                                                                                row.id,
-                                                                                user.id,
-                                                                            )
-                                                                        }
-                                                                    >
-                                                                        Hapus
-                                                                    </Button>
+                                                                    {permissions.canUpdate && (
+                                                                        <Button
+                                                                            variant="outline"
+                                                                            size="sm"
+                                                                            onClick={() =>
+                                                                                handleRemoveUser(
+                                                                                    row.id,
+                                                                                    user.id,
+                                                                                )
+                                                                            }
+                                                                        >
+                                                                            Hapus
+                                                                        </Button>
+                                                                    )}
                                                                 </div>
                                                             ),
                                                         )}
@@ -229,49 +281,60 @@ export default function ManajemenGudang({
                                                 )}
                                             </div>
 
-                                            <div>
-                                                <h4 className="mb-3 font-bold text-ink-darker">
-                                                    Tambah Petugas
-                                                </h4>
-                                                <select
-                                                    className="w-full rounded-lg border border-silver-deep/30 bg-white px-3 py-2 text-sm text-ink-darker"
-                                                    onChange={(e) => {
-                                                        if (e.target.value) {
-                                                            handleAssignUser(
-                                                                row.id,
-                                                                parseInt(
-                                                                    e.target
-                                                                        .value,
-                                                                ),
-                                                            );
-                                                            e.target.value = "";
-                                                        }
-                                                    }}
-                                                    defaultValue=""
-                                                >
-                                                    <option value="">
-                                                        Pilih Petugas...
-                                                    </option>
-                                                    {allUsers
-                                                        .filter(
-                                                            (u) =>
-                                                                !row.users.some(
-                                                                    (ru) =>
-                                                                        ru.id ===
-                                                                        u.id,
-                                                                ),
-                                                        )
-                                                        .map((user) => (
-                                                            <option
-                                                                key={user.id}
-                                                                value={user.id}
-                                                            >
-                                                                {user.name} (
-                                                                {user.email})
-                                                            </option>
-                                                        ))}
-                                                </select>
-                                            </div>
+                                            {permissions.canUpdate && (
+                                                <div>
+                                                    <h4 className="mb-3 font-bold text-ink-darker">
+                                                        Tambah Petugas
+                                                    </h4>
+                                                    <select
+                                                        className="w-full rounded-lg border border-silver-deep/30 bg-white px-3 py-2 text-sm text-ink-darker"
+                                                        onChange={(e) => {
+                                                            if (
+                                                                e.target.value
+                                                            ) {
+                                                                handleAssignUser(
+                                                                    row.id,
+                                                                    parseInt(
+                                                                        e.target
+                                                                            .value,
+                                                                    ),
+                                                                );
+                                                                e.target.value =
+                                                                    "";
+                                                            }
+                                                        }}
+                                                        defaultValue=""
+                                                    >
+                                                        <option value="">
+                                                            Pilih Petugas...
+                                                        </option>
+                                                        {allUsers
+                                                            .filter(
+                                                                (u) =>
+                                                                    !row.users.some(
+                                                                        (ru) =>
+                                                                            ru.id ===
+                                                                            u.id,
+                                                                    ),
+                                                            )
+                                                            .map((user) => (
+                                                                <option
+                                                                    key={
+                                                                        user.id
+                                                                    }
+                                                                    value={
+                                                                        user.id
+                                                                    }
+                                                                >
+                                                                    {user.name}{" "}
+                                                                    (
+                                                                    {user.email}
+                                                                    )
+                                                                </option>
+                                                            ))}
+                                                    </select>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>

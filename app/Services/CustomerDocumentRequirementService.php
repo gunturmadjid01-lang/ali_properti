@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Costumer;
+use App\Models\CustomerDocument;
 use App\Models\DocumentRequirementSet;
 use App\Models\SalesProcessStep;
 use App\Models\Spr;
@@ -10,6 +12,51 @@ use Illuminate\Support\Facades\DB;
 
 class CustomerDocumentRequirementService
 {
+    public function forChecklist(Costumer $customer): Collection
+    {
+        $spr = Spr::query()
+            ->with(['costumer', 'detailRumah.perumahan', 'bankCreditProduct'])
+            ->where('costumer_id', $customer->id)
+            ->latest('id')
+            ->first();
+
+        if (! $spr) {
+            return collect();
+        }
+
+        $applications = collect(['spr', $spr->metode_pembayaran])
+            ->filter(fn (?string $application) => in_array($application, ['spr', 'cash_bertahap', 'kpr_developer', 'kpr_bank'], true))
+            ->unique()
+            ->values();
+        $repository = CustomerDocument::query()
+            ->where('costumer_id', $customer->id)
+            ->where('status', 'active')
+            ->latest('id')
+            ->get()
+            ->unique(fn (CustomerDocument $document) => $document->dokumen_costumer_id.'|'.($document->party_scope ?: 'customer'))
+            ->keyBy(fn (CustomerDocument $document) => $document->dokumen_costumer_id.'|'.($document->party_scope ?: 'customer'));
+        $candidateSets = $this->matchingSets($spr);
+
+        return $applications
+            ->flatMap(fn (string $application) => $this->setsFromCandidates($candidateSets, $application))
+            ->unique('id')
+            ->flatMap(fn ($set) => $set->items
+                ->filter(fn ($item) => $this->condition($item, $spr))
+                ->map(function ($item) use ($set, $repository) {
+                    $partyScope = $item->party_scope ?: 'customer';
+                    $file = $repository->get($item->dokumen_costumer_id.'|'.$partyScope);
+
+                    return [
+                        ...$this->row($item, $set, (bool) $file, $file?->nama_file, []),
+                        'requirement_item_id' => $item->id,
+                        'customer_document_id' => $file?->id,
+                        'file_path' => $file?->path_file,
+                        'expires_at' => $file?->expires_at?->format('Y-m-d'),
+                    ];
+                }))
+            ->pipe(fn (Collection $rows) => $this->merge($rows));
+    }
+
     public function forSpr(Spr $spr): Collection
     {
         $spr->loadMissing(['costumer', 'detailRumah.perumahan', 'berkasCostumers.dokumen', 'bankCreditProduct']);
@@ -42,9 +89,21 @@ class CustomerDocumentRequirementService
 
     private function sets(Spr $spr, string $application): Collection
     {
-        $matches = DocumentRequirementSet::with(['items.document', 'banks:id', 'products:id', 'housings:id', 'companies:id', 'partnerships:id,bank_kredit_id,perumahan_id'])
+        return $this->setsFromCandidates($this->matchingSets($spr), $application);
+    }
+
+    private function matchingSets(Spr $spr): Collection
+    {
+        return DocumentRequirementSet::with(['items.document', 'banks:id', 'products:id', 'housings:id', 'companies:id', 'partnerships:id,bank_kredit_id,perumahan_id'])
             ->where('status', 'aktif')->where('record_status', 'locked')->whereHas('approvalRequests', fn ($q) => $q->where('status', 'approved'))->get()
-            ->filter(fn ($set) => in_array($application, $set->application_types ?? [], true) && $this->matchesScope($set, $spr));
+            ->filter(fn ($set) => $this->matchesScope($set, $spr));
+    }
+
+    private function setsFromCandidates(Collection $candidates, string $application): Collection
+    {
+        $matches = $candidates
+            ->filter(fn ($set) => in_array($application, $set->application_types ?? [], true))
+            ->values();
         if ($application === 'spr' || $matches->isEmpty()) {
             return $matches;
         }
@@ -81,6 +140,7 @@ class CustomerDocumentRequirementService
             $first = $group->first();
             $first['required'] = $group->contains('required', true);
             $first['source'] = $group->pluck('source')->unique()->join(', ');
+            $first['notes'] = $group->pluck('notes')->filter()->unique()->join(' ');
 
             return $first;
         })->values();
@@ -102,6 +162,6 @@ class CustomerDocumentRequirementService
         $jobs = $item->employment_categories ?? [];
         $marital = $item->marital_statuses ?? [];
 
-        return (! $jobs || in_array($spr->costumer?->employment_category, $jobs, true)) && (! $marital || in_array($spr->costumer?->status_perkawinan,$marital,true));
+        return (! $jobs || in_array($spr->costumer?->employment_category, $jobs, true)) && (! $marital || in_array($spr->costumer?->status_perkawinan, $marital, true));
     }
 }

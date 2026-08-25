@@ -5,25 +5,43 @@ namespace App\Services;
 use App\Models\ApprovalRequest;
 use App\Models\BankKprDisbursement;
 use App\Models\BankKprFinancing;
-use App\Models\CashInstallmentContract;
 use App\Models\CashSale;
 use App\Models\CustomerCharge;
 use App\Models\CustomerReceipt;
 use App\Models\CustomerRefund;
 use App\Models\DetailRumah;
-use App\Models\HousingReservation;
-use App\Models\DeveloperKprApplication;
-use App\Models\PettyCashFunding;
-use App\Models\PettyCashDeposit;
-use App\Models\PayrollBatch;
 use App\Models\EmployeeAdvance;
+use App\Models\HousingReservation;
+use App\Models\Journal;
+use App\Models\FieldDefect;
+use App\Models\InternalHandover;
+use App\Models\QualityInspection;
+use App\Models\SafetyReport;
+use App\Models\SiteManpowerLog;
+use App\Models\SiteReport;
+use App\Models\WorkChangeRequest;
+use App\Models\MaterialOpeningBalance;
+use App\Models\MaterialPurchase;
+use App\Models\MaterialPurchaseRequest;
+use App\Models\MaterialRequest;
+use App\Models\MaterialReturn;
+use App\Models\MaterialStockOpname;
+use App\Models\MaterialUsage;
+use App\Models\MarketingVisit;
+use App\Models\PayrollBatch;
+use App\Models\PettyCashDeposit;
+use App\Models\PettyCashFunding;
+use App\Models\QualityUpgradeAddendum;
+use App\Models\QualityUpgradeContract;
+use App\Models\QualityUpgradeHandover;
 use App\Models\SalesProcessStep;
 use App\Models\SalesResolutionRequest;
 use App\Models\Spr;
 use App\Models\SprApproval;
-use App\Models\WaterPayment;
-use App\Models\WaterBillingPeriod;
+use App\Models\TransaksiKeuangan;
 use App\Models\UnitOwnership;
+use App\Models\WaterBillingPeriod;
+use App\Models\WaterPayment;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Illuminate\Database\Eloquent\Model;
 
@@ -31,6 +49,15 @@ class ApprovalWorkflowEffectService
 {
     public function submitted(Model $model, ApprovalRequest $request): void
     {
+        if ($model instanceof MaterialPurchase && $request->status === ApprovalRequest::STATUS_PENDING) {
+            $model->update(['status' => MaterialPurchase::STATUS_MENUNGGU_APPROVAL]);
+        }
+        if ($model instanceof MaterialRequest && $request->status === ApprovalRequest::STATUS_PENDING) {
+            $model->update(['status' => MaterialRequest::STATUS_DIAJUKAN]);
+        }
+        if ($model instanceof MaterialPurchaseRequest && $request->status === ApprovalRequest::STATUS_PENDING) {
+            $model->update(['status' => MaterialPurchaseRequest::STATUS_DIAJUKAN]);
+        }
         if ($model instanceof WaterPayment && $request->status === ApprovalRequest::STATUS_PENDING) {
             $model->update(['status' => 'pending_approval']);
         }
@@ -58,6 +85,113 @@ class ApprovalWorkflowEffectService
 
     public function approved(Model $model, ApprovalRequest $request): void
     {
+        if ($model instanceof MarketingVisit) {
+            $model->forceFill(['verification_status' => 'verified', 'verification_note' => null, 'verified_by' => auth()->id(), 'verified_at' => now()])->save();
+            app(\App\Services\Marketing\MarketingActivityService::class)->record($model->costumer_id, 'visit_verified', 'Laporan kunjungan terverifikasi', $model, 'Laporan kunjungan disetujui melalui workflow approval.');
+            return;
+        }
+        if ($model instanceof SiteReport) {
+            $model->forceFill(['approval_status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()])->save();
+            return;
+        }
+        if ($model instanceof QualityInspection) {
+            $model->forceFill(['approval_status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()])->save();
+            $this->syncInspectionDefect($model->fresh());
+            return;
+        }
+        if ($model instanceof FieldDefect || $model instanceof WorkChangeRequest || $model instanceof SafetyReport || $model instanceof InternalHandover) {
+            $model->forceFill(['approval_status' => 'approved', 'approved_by' => auth()->id(), 'approved_at' => now()])->save();
+            if ($model instanceof InternalHandover) {
+                $model->detailRumah?->forceFill(['status_pembangunan' => 'selesai', 'progress_terakhir' => max((float) ($model->detailRumah?->progress_terakhir ?? 0), (float) $model->progress_unit), 'updated_by' => auth()->id()])->save();
+            }
+            if ($model->detail_rumah_id) app(SalesProcessService::class)->syncLinkedUnitData((int) $model->detail_rumah_id);
+            return;
+        }
+        if ($model instanceof SiteManpowerLog) {
+            if ($model->detail_rumah_id) app(SalesProcessService::class)->syncLinkedUnitData((int) $model->detail_rumah_id);
+            return;
+        }
+        if ($model instanceof Journal && $request->module_key === 'manual-journal') {
+            if ($model->record_status === 'posted') {
+                return;
+            }
+            $model->forceFill([
+                'nomor_jurnal' => 'JRN-MANUAL-'.$model->tanggal->format('Ymd').'-'.str_pad((string) $model->id, 8, '0', STR_PAD_LEFT),
+                'record_status' => 'posted',
+                'posted_at' => $model->posted_at ?? now(),
+                'posted_by' => $model->posted_by ?? auth()->id(),
+            ])->save();
+            return;
+        }
+        if ($model instanceof TransaksiKeuangan) {
+            if ($model->journal_id || $model->status === 'posted') {
+                return;
+            }
+
+            app(AccountingService::class)->recordFinancialTransaction($model);
+            $model->refresh()->update([
+                'status' => 'posted',
+                'posted_at' => $model->posted_at ?? now(),
+                'posted_by' => $model->posted_by ?? auth()->id(),
+            ]);
+
+            return;
+        }
+        if ($model instanceof QualityUpgradeAddendum) {
+            app(QualityUpgradeContractService::class)->approveAddendum($model);
+
+            return;
+        }
+        if ($model instanceof QualityUpgradeHandover) {
+            app(QualityUpgradeContractService::class)->approveHandover($model);
+
+            return;
+        }
+        if ($model instanceof QualityUpgradeContract) {
+            app(QualityUpgradeContractService::class)->approve($model);
+
+            return;
+        }
+        if ($model instanceof MaterialOpeningBalance) {
+            app(MaterialInventoryFinalizationService::class)->postOpeningBalance($model);
+
+            return;
+        }
+        if ($model instanceof MaterialStockOpname) {
+            app(MaterialInventoryFinalizationService::class)->postStockOpname($model);
+
+            return;
+        }
+        if ($model instanceof MaterialPurchase) {
+            app(MaterialPurchaseService::class)->approve($model);
+
+            return;
+        }
+        if ($model instanceof MaterialRequest) {
+            app(MaterialWorkflowService::class)->tryIssueApprovedRequest($model);
+
+            return;
+        }
+        if ($model instanceof MaterialReturn) {
+            app(MaterialWorkflowService::class)->reserveReturnAfterApproval($model);
+
+            return;
+        }
+        if ($model instanceof MaterialPurchaseRequest) {
+            $model->update(['status' => MaterialPurchaseRequest::STATUS_DISETUJUI, 'approved_by' => auth()->id(), 'approved_at' => now()]);
+
+            return;
+        }
+        if ($model instanceof MaterialUsage) {
+            app(MaterialWorkflowService::class)->postUsage($model);
+            app(MaterialHppRealizationService::class)->syncFromUsage($model->fresh('details'));
+            if ($model->quality_upgrade_contract_id) {
+                app(QualityUpgradeContractService::class)->postMaterialHpp($model->fresh(['details', 'qualityUpgradeContract.unit']));
+                app(QualityUpgradeContractService::class)->syncMaterialCost($model->quality_upgrade_contract_id);
+            }
+
+            return;
+        }
         if ($model instanceof WaterBillingPeriod) {
             UnitOwnership::query()->where('is_active', true)
                 ->whereHas('detailRumah', fn ($query) => $query->where('perumahan_id', $model->perumahan_id))
@@ -67,15 +201,18 @@ class ApprovalWorkflowEffectService
                         ['perumahan_id' => $model->perumahan_id, 'detail_rumah_id' => $owner->detail_rumah_id, 'payment_no' => $model->period_code.'-'.$owner->id, 'amount' => $model->amount, 'status' => 'unpaid', 'record_status' => 'draft', 'created_by' => auth()->id(), 'updated_by' => auth()->id()],
                     );
                 });
+
             return;
         }
         if ($model instanceof WaterPayment) {
             $model->update(['status' => 'paid']);
+
             return;
         }
         if ($model instanceof HousingReservation && $request->module_key === 'housing-reservation') {
             app(HousingReservationService::class)->finalize($model);
             app(HousingReservationService::class)->markPaid($model->fresh());
+
             return;
         }
         if ($model instanceof EmployeeAdvance) {
@@ -117,6 +254,7 @@ class ApprovalWorkflowEffectService
         }
         if ($model instanceof CustomerRefund) {
             app(CustomerRefundService::class)->approve($model);
+
             return;
         }
         if ($model instanceof CustomerCharge) {
@@ -218,14 +356,55 @@ class ApprovalWorkflowEffectService
 
     public function rejected(Model $model, ApprovalRequest $request, ?string $note): void
     {
+        if ($model instanceof MarketingVisit) {
+            $model->forceFill(['verification_status' => 'needs_revision', 'verification_note' => $note, 'verified_by' => auth()->id(), 'verified_at' => now()])->save();
+            app(\App\Services\Marketing\MarketingActivityService::class)->record($model->costumer_id, 'visit_revision_requested', 'Laporan kunjungan perlu diperbaiki', $model, $note);
+            return;
+        }
+        if ($model instanceof SiteReport || $model instanceof QualityInspection || $model instanceof FieldDefect || $model instanceof WorkChangeRequest || $model instanceof SafetyReport || $model instanceof InternalHandover) {
+            $model->forceFill(['approval_status' => 'rejected', 'approved_by' => null, 'approved_at' => null])->save();
+            return;
+        }
+        if ($model instanceof TransaksiKeuangan) {
+            $model->update(['status' => 'rejected']);
+
+            return;
+        }
+        if ($model instanceof QualityUpgradeAddendum) {
+            $model->update(['status' => 'rejected']);
+
+            return;
+        }
+        if ($model instanceof QualityUpgradeHandover) {
+            $model->update(['status' => 'rejected']);
+
+            return;
+        }
+        if ($model instanceof MaterialRequest) {
+            $model->update(['status' => MaterialRequest::STATUS_DITOLAK]);
+
+            return;
+        }
+        if ($model instanceof MaterialPurchaseRequest) {
+            $model->update(['status' => MaterialPurchaseRequest::STATUS_DITOLAK, 'approved_by' => auth()->id(), 'approved_at' => now()]);
+
+            return;
+        }
+        if ($model instanceof MaterialUsage) {
+            app(MaterialWorkflowService::class)->reverseUsage($model);
+
+            return;
+        }
         if ($model instanceof WaterPayment) {
             $model->update(['status' => 'rejected']);
+
             return;
         }
         if ($model instanceof HousingReservation && $request->module_key === 'housing-reservation') {
             $model->paymentSchedule()->delete();
             DetailRumah::query()->whereKey($model->detail_rumah_id)->where('status_penjualan', 'booking')->update(['status_penjualan' => 'tersedia', 'booking_at' => null]);
             $model->update(['status' => 'draft', 'payment_approval_status' => 'rejected', 'record_status' => 'draft', 'locked_at' => null, 'locked_by' => null, 'updated_by' => auth()->id()]);
+
             return;
         }
         if ($model instanceof EmployeeAdvance) {
@@ -272,6 +451,7 @@ class ApprovalWorkflowEffectService
         }
         if ($model instanceof CustomerRefund) {
             $model->update(['status' => 'rejected']);
+
             return;
         }
         if (! $model instanceof Spr) {
@@ -293,5 +473,25 @@ class ApprovalWorkflowEffectService
             'booking_at' => null,
         ]);
         app(MarketingLeadStatusService::class)->markSpr($model, MarketingLeadStatusService::BATAL, $note);
+    }
+
+    private function syncInspectionDefect(QualityInspection $inspection): void
+    {
+        if (! in_array($inspection->hasil, ['defect', 'perlu_perbaikan'], true)) return;
+        FieldDefect::query()->updateOrCreate(
+            ['quality_inspection_id' => $inspection->id],
+            [
+                'kode_defect' => FieldDefect::query()->where('quality_inspection_id', $inspection->id)->value('kode_defect') ?: 'DEF-QC-'.str_pad((string) $inspection->id, 8, '0', STR_PAD_LEFT),
+                'tanggal' => $inspection->tanggal, 'perumahan_id' => $inspection->perumahan_id,
+                'detail_rumah_id' => $inspection->detail_rumah_id, 'tahapan_pembangunan_id' => $inspection->tahapan_pembangunan_id,
+                'progress_pembangunan_id' => $inspection->progress_pembangunan_id, 'kategori' => 'pekerjaan',
+                'prioritas' => $inspection->hasil === 'defect' ? 'high' : 'medium',
+                'temuan' => $inspection->temuan ?: $inspection->item_pemeriksaan,
+                'instruksi_perbaikan' => $inspection->tindakan_perbaikan, 'target_selesai' => $inspection->target_selesai,
+                'status' => match ($inspection->status) { 'selesai' => 'selesai', 'dalam_perbaikan' => 'dalam_perbaikan', default => 'open' },
+                'foto' => $inspection->foto, 'approval_status' => 'approved', 'approved_by' => auth()->id(),
+                'approved_at' => now(), 'created_by' => $inspection->created_by, 'updated_by' => auth()->id(),
+            ],
+        );
     }
 }

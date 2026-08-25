@@ -17,6 +17,11 @@ class StoreCostumerRequest extends FormRequest
             'marketing_lead_source_id' => ['nullable', 'exists:marketing_lead_sources,id'],
             'marketing_campaign_id' => ['nullable', 'exists:marketing_campaigns,id'],
             'perumahan_id' => ['nullable', 'exists:perumahans,id'],
+            'lead_priority' => ['nullable', 'in:low,normal,high,urgent'],
+            'interest_level' => ['nullable', 'string', 'max:30'],
+            'budget_min' => ['nullable', 'numeric', 'min:0'],
+            'budget_max' => ['nullable', 'numeric', 'gte:budget_min'],
+            'preferred_payment_method' => ['nullable', 'in:cash,cash_installment,kpr'],
             'nama' => ['required', 'string', 'max:255'],
             'jenis_kelamin' => ['required', 'string', 'max:255'],
             'jenis_identitas' => ['required', 'string', 'max:255'],
@@ -54,6 +59,14 @@ class StoreCostumerRequest extends FormRequest
             'daftar_cicilan.*.angsuran_bulanan' => ['nullable', 'numeric', 'min:0'],
             'daftar_cicilan.*.sisa_pokok' => ['nullable', 'numeric', 'min:0'],
             'daftar_cicilan.*.tanggal_selesai' => ['nullable', 'date'],
+            'unit_interests' => ['nullable', 'array', 'max:10'],
+            'unit_interests.*.detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
+            'unit_interests.*.perumahan_id' => ['nullable', 'exists:perumahans,id'],
+            'unit_interests.*.interest_level' => ['nullable', 'string', 'max:30'],
+            'unit_interests.*.payment_plan' => ['nullable', 'string', 'max:50'],
+            'unit_interests.*.budget_min' => ['nullable', 'numeric', 'min:0'],
+            'unit_interests.*.budget_max' => ['nullable', 'numeric', 'min:0'],
+            'unit_interests.*.notes' => ['nullable', 'string', 'max:1000'],
         ];
     }
 }

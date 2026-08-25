@@ -149,29 +149,38 @@ export default function MasterMaterial({
                                             <TableActions>
                                                 {row.record_status ===
                                                 "locked" ? (
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        onClick={() =>
-                                                            lock(row, "unlock")
-                                                        }
-                                                    >
-                                                        <Unlock size={14} />
-                                                    </Button>
-                                                ) : (
-                                                    <>
+                                                    permissions.canUnlock && (
                                                         <Button
                                                             size="sm"
                                                             variant="outline"
                                                             onClick={() =>
                                                                 lock(
                                                                     row,
-                                                                    "lock",
+                                                                    "unlock",
                                                                 )
                                                             }
                                                         >
-                                                            <Lock size={14} />
+                                                            <Unlock size={14} />
                                                         </Button>
+                                                    )
+                                                ) : (
+                                                    <>
+                                                        {permissions.canLock && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="outline"
+                                                                onClick={() =>
+                                                                    lock(
+                                                                        row,
+                                                                        "lock",
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Lock
+                                                                    size={14}
+                                                                />
+                                                            </Button>
+                                                        )}
                                                         {permissions.canUpdate && (
                                                             <Button
                                                                 as="a"

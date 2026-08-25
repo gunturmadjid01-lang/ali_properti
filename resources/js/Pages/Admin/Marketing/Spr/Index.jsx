@@ -1317,12 +1317,6 @@ export default function Index({
     filters = {},
     filterOptions = {},
     analytics = {},
-    customers = [],
-    units = [],
-    bankKreditOptions = [],
-    dokumenOptions = [],
-    options = {},
-    permissions = {},
 }) {
     const resourcePermissions = useResourcePermissions("booking", baseUrl);
     const [search, setSearch] = useState(filters.search ?? "");
@@ -1335,6 +1329,8 @@ export default function Index({
     });
     const [detailRow, setDetailRow] = useState(null);
     const [actionErrors, setActionErrors] = useState([]);
+    const [rejectRow, setRejectRow] = useState(null);
+    const [rejectNote, setRejectNote] = useState("");
     const canCreate = resourcePermissions.canCreate;
     const canUpdate = resourcePermissions.canUpdate;
 
@@ -1362,20 +1358,12 @@ export default function Index({
     };
 
     const reject = (row) => {
-        const catatan = window.prompt(
-            `Catatan penolakan SPR ${row.kode_spr}`,
-            "",
-        );
-
-        if (catatan === null) {
-            return;
-        }
-
         router.post(
             `${baseUrl}/${row.id}/reject`,
-            { catatan },
+            { catatan: rejectNote },
             {
                 preserveScroll: true,
+                onFinish: () => { setRejectRow(null); setRejectNote(""); },
                 onError: (errors) =>
                     setActionErrors(
                         Object.values(errors ?? {}).filter(Boolean),
@@ -1460,6 +1448,9 @@ export default function Index({
                         </p>
                     ))}
                 </div>
+            </Modal>
+            <Modal open={Boolean(rejectRow)} onClose={() => setRejectRow(null)} title={`Tolak SPR ${rejectRow?.kode_spr ?? ""}`} size="sm" footer={<><Button type="button" variant="outline" onClick={() => setRejectRow(null)}>Batal</Button><Button type="button" variant="danger" disabled={!rejectNote.trim()} onClick={() => reject(rejectRow)}>Kirim Penolakan</Button></>}>
+                <label className="grid gap-2 text-sm font-bold">Alasan penolakan wajib<textarea autoFocus value={rejectNote} onChange={(event) => setRejectNote(event.target.value)} className="min-h-28 rounded-lg border p-3" /></label>
             </Modal>
             <div className="grid gap-6">
                 <section className="rounded-lg border border-white/80 bg-white/78 p-5 shadow-soft dark:border-white/10 dark:bg-white/8">
@@ -1866,9 +1857,7 @@ export default function Index({
                                                             size="sm"
                                                             type="button"
                                                             variant="outline"
-                                                            onClick={() =>
-                                                                reject(row)
-                                                            }
+                                                            onClick={() => { setRejectRow(row); setRejectNote(""); }}
                                                         >
                                                             Reject
                                                         </Button>

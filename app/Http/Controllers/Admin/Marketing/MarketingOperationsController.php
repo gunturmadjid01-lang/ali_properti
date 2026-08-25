@@ -13,6 +13,7 @@ use App\Models\KprSubmission;
 use App\Models\MarketingCampaign;
 use App\Models\MarketingCommission;
 use App\Models\MarketingDocumentReview;
+use App\Models\MarketingLead;
 use App\Models\MarketingLeadActivity;
 use App\Models\MarketingReminder;
 use App\Models\MarketingSurveySchedule;
@@ -23,11 +24,11 @@ use App\Models\Spr;
 use App\Models\SprBerkasCostumer;
 use App\Models\User;
 use App\Services\ApprovalWorkflowService;
-use App\Services\Marketing\MarketingLeadStatusService;
 use App\Services\Marketing\MarketingOperationsService;
 use App\Support\CodeGenerator;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -42,7 +43,9 @@ class MarketingOperationsController extends Controller
     {
         abort_unless(in_array($section, $this->sections(), true), 404);
         $permissions = $this->permissionsForSection($request, $section);
-        if ($section !== 'dashboard') {
+        if ($section === 'dashboard') {
+            abort_unless($request->user()?->hasRole('super_admin') || $request->user()?->can('dashboard.view'), 403);
+        } else {
             $this->abortUnlessMarketingAccess(
                 $request,
                 $this->defaultRolesForSection($section),
@@ -50,21 +53,39 @@ class MarketingOperationsController extends Controller
             );
         }
 
-        $service->syncAutomaticReminders($request->user()?->id);
+        if (in_array($section, ['dashboard', 'reminder'], true)) {
+            $service->syncAutomaticReminders($request->user()?->id);
+        }
 
         return Inertia::render('Admin/Marketing/Operations/Index', [
             'title' => $this->title($section),
             'section' => $section,
             'baseUrl' => route('admin.marketing.operasional.show', $section, absolute: false),
             'data' => $this->data($request, $section),
-            'options' => $this->options($request),
             'permissions' => $permissions,
         ]);
     }
 
+    public function create(Request $request, string $section): Response
+    {
+        $this->authorizeSectionAction($request, $section, 'canCreate');
+
+        return $this->formResponse($request, $section);
+    }
+
+    public function edit(Request $request, string $section, string $id): Response
+    {
+        $this->authorizeSectionAction($request, $section, 'canUpdate');
+        $type = $this->formType($request, $section);
+        $row = $this->editableModel($request, $section, $id, $type);
+        abort_if(($row->record_status ?? 'draft') === 'locked', 422, 'Data yang sudah dikunci tidak dapat diubah.');
+
+        return $this->formResponse($request, $section, $row, $type);
+    }
+
     public function store(Request $request, string $section): RedirectResponse
     {
-        $this->abortUnlessMarketingAccess($request, $this->defaultRolesForSection($section), $this->permissionForSection($section));
+        $this->authorizeSectionAction($request, $section, 'canCreate');
         match ($section) {
             'campaign' => $this->storeCampaign($request),
             'reminder' => $this->storeReminder($request),
@@ -73,12 +94,12 @@ class MarketingOperationsController extends Controller
             default => abort(404),
         };
 
-        return back()->with('success', 'Data berhasil disimpan.');
+        return redirect()->route('admin.marketing.operasional.show', $section)->with('success', 'Data berhasil disimpan.');
     }
 
     public function update(Request $request, string $section, string $id): RedirectResponse
     {
-        $this->abortUnlessMarketingAccess($request, $this->defaultRolesForSection($section), $this->permissionForSection($section));
+        $this->authorizeSectionAction($request, $section, 'canUpdate');
         match ($section) {
             'campaign' => $this->updateCampaign($request, $id),
             'reminder' => $this->updateReminder($request, $id),
@@ -87,19 +108,19 @@ class MarketingOperationsController extends Controller
             default => abort(404),
         };
 
-        return back()->with('success', 'Data berhasil diperbarui.');
+        return redirect()->route('admin.marketing.operasional.show', $section)->with('success', 'Data berhasil diperbarui.');
     }
 
     public function destroy(Request $request, string $section, string $id): RedirectResponse
     {
-        $this->abortUnlessMarketingAccess($request, $this->defaultRolesForSection($section), $this->permissionForSection($section));
+        $this->authorizeSectionAction($request, $section, 'canDelete');
         $model = match ($section) {
             'campaign' => MarketingCampaign::query()
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
                 ->findOrFail($id),
             'reminder' => $this->reminderQueryFor($request)->findOrFail($id),
             'template' => MarketingTemplate::query()->findOrFail($id),
-            'target-komisi' => $request->query('type') === 'commission'
+            'target-komisi' => $request->input('type') === 'commission'
                 ? MarketingCommission::query()
                     ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
                     ->findOrFail($id)
@@ -118,6 +139,7 @@ class MarketingOperationsController extends Controller
 
     public function completeReminder(Request $request, string $id): RedirectResponse
     {
+        $this->authorizeSectionAction($request, 'reminder', 'canUpdate');
         $reminder = $this->reminderQueryFor($request)->findOrFail($id);
         $reminder->update([
             'status' => 'selesai',
@@ -130,7 +152,10 @@ class MarketingOperationsController extends Controller
 
     public function lock(string $section, string $id): RedirectResponse
     {
+        $permissionSection = in_array($section, ['target', 'commission'], true) ? 'target-komisi' : $section;
+        $this->authorizeSectionAction(request(), $permissionSection, 'canLock');
         $model = $this->lockableModel($section, $id);
+        abort_unless(($model->record_status ?? 'draft') === 'draft', 422, 'Data sudah dikunci.');
         $model->forceFill([
             'record_status' => 'locked',
             'locked_at' => now(),
@@ -146,11 +171,13 @@ class MarketingOperationsController extends Controller
 
     public function unlock(string $section, string $id): RedirectResponse
     {
-        $permissions = $this->permissionsForSection(request(), $section);
+        $permissionSection = in_array($section, ['target', 'commission'], true) ? 'target-komisi' : $section;
+        $permissions = $this->permissionsForSection(request(), $permissionSection);
         abort_unless(($permissions['canUnlock'] ?? false) === true, 403, 'Hanya user yang diberi akses yang dapat membuka lock data.');
 
         $model = $this->lockableModel($section, $id);
-        app(ApprovalWorkflowService::class)->cancelPendingLock($model);
+        abort_unless(($model->record_status ?? 'draft') === 'locked', 422, 'Data tidak sedang dikunci.');
+        app(ApprovalWorkflowService::class)->reverseLockApproval($model);
         $model->forceFill([
             'record_status' => 'draft',
             'locked_at' => null,
@@ -191,6 +218,7 @@ class MarketingOperationsController extends Controller
 
     public function receipt(Request $request, string $id): Response
     {
+        $this->abortUnlessMarketingAccess($request, ['owner', 'manajer_pimpro'], 'marketing.receivable.view');
         $payment = CustomerReceipt::query()
             ->with(['salesTransaction.customer', 'salesTransaction.spr', 'bankAccount'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('marketing_user_id', $request->user()?->id)))
@@ -231,10 +259,16 @@ class MarketingOperationsController extends Controller
         $year = now()->year;
         $months = collect(range(5, 0))->map(fn (int $offset) => now()->copy()->subMonths($offset));
         $trendStart = $months->first()->copy()->startOfMonth();
-        $leadsByMonth = $this->customerQueryFor($request)->where('created_at', '>=', $trendStart)->get(['created_at'])
-            ->countBy(fn (Costumer $row) => $row->created_at?->format('Y-m'));
-        $sprByMonth = $this->sprQueryFor($request)->whereDate('tanggal_spr', '>=', $trendStart)->get(['tanggal_spr'])
-            ->countBy(fn (Spr $row) => $row->tanggal_spr?->format('Y-m'));
+        $leadsByMonth = $this->customerQueryFor($request)
+            ->where('created_at', '>=', $trendStart)
+            ->selectRaw("DATE_FORMAT(created_at, '%Y-%m') as month_key, COUNT(*) as total")
+            ->groupByRaw("DATE_FORMAT(created_at, '%Y-%m')")
+            ->pluck('total', 'month_key');
+        $sprByMonth = $this->sprQueryFor($request)
+            ->whereDate('tanggal_spr', '>=', $trendStart)
+            ->selectRaw("DATE_FORMAT(tanggal_spr, '%Y-%m') as month_key, COUNT(*) as total")
+            ->groupByRaw("DATE_FORMAT(tanggal_spr, '%Y-%m')")
+            ->pluck('total', 'month_key');
 
         return [
             'stats' => [
@@ -271,7 +305,7 @@ class MarketingOperationsController extends Controller
                 ->values(),
             'recent' => MarketingLeadActivity::query()
                 ->with(['costumer:id,nama', 'user:id,name'])
-                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
                 ->latest('activity_at')
                 ->limit(10)
@@ -288,25 +322,35 @@ class MarketingOperationsController extends Controller
 
     protected function pipelineData(Request $request): array
     {
-        $statuses = app(MarketingLeadStatusService::class)->statusOptions();
-        $customers = $this->customerQueryFor($request)
-            ->with(['leadSource:id,nama_sumber', 'campaign:id,nama_campaign'])
-            ->withMax('leadActivities', 'activity_at')
+        $statuses = [
+            ['value' => 'new', 'label' => 'Lead Baru'],
+            ['value' => 'contacted', 'label' => 'Sudah Dihubungi'],
+            ['value' => 'nurturing', 'label' => 'Dalam Follow-up'],
+            ['value' => 'qualified', 'label' => 'Qualified'],
+            ['value' => 'postponed', 'label' => 'Ditunda'],
+            ['value' => 'lost', 'label' => 'Tidak Potensial'],
+            ['value' => 'converted', 'label' => 'Menjadi Customer'],
+        ];
+        $leads = MarketingLead::query()
+            ->with(['source:id,nama_sumber'])
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanId($request)))
             ->latest('id')
+            ->limit(500)
             ->get();
 
         return [
             'columns' => collect($statuses)->map(fn ($status) => [
                 ...$status,
-                'customers' => $customers->where('status_lead', $status['value'])->map(fn (Costumer $customer) => [
-                    'id' => $customer->id,
-                    'kode' => $customer->kode_costumer,
-                    'nama' => $customer->nama,
-                    'telepon' => $customer->telepon,
-                    'source' => $customer->leadSource?->nama_sumber ?? '-',
-                    'campaign' => $customer->campaign?->nama_campaign ?? '-',
-                    'last_activity' => $customer->lead_activities_max_activity_at
-                        ? Carbon::parse($customer->lead_activities_max_activity_at)->format('d/m/Y')
+                'leads' => $leads->where('stage', $status['value'])->map(fn (MarketingLead $lead) => [
+                    'id' => $lead->id,
+                    'kode' => $lead->lead_no,
+                    'nama' => $lead->name,
+                    'telepon' => $lead->phone,
+                    'source' => $lead->source?->nama_sumber ?? ($lead->source_channel ?: '-'),
+                    'campaign' => '-',
+                    'last_activity' => $lead->last_activity_at
+                        ? $lead->last_activity_at->format('d/m/Y')
                         : '-',
                 ])->values(),
             ])->values(),
@@ -321,6 +365,7 @@ class MarketingOperationsController extends Controller
                 ->withCount('customers')
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
                 ->latest('id')
+                ->limit(200)
                 ->get()
                 ->map(fn (MarketingCampaign $row) => [
                     ...$row->only(['id', 'kode_campaign', 'nama_campaign', 'kanal', 'anggaran', 'realisasi_biaya', 'target_lead', 'status', 'keterangan', 'record_status']),
@@ -335,7 +380,7 @@ class MarketingOperationsController extends Controller
     protected function reminderData(Request $request): array
     {
         return [
-            'rows' => $this->reminderQueryFor($request)->with(['costumer:id,nama,telepon', 'user:id,name'])->orderByRaw("CASE WHEN status = 'menunggu' THEN 0 ELSE 1 END")->orderBy('remind_at')->get()
+            'rows' => $this->reminderQueryFor($request)->with(['costumer:id,nama,telepon', 'user:id,name'])->orderByRaw("CASE WHEN status = 'menunggu' THEN 0 ELSE 1 END")->orderBy('remind_at')->limit(300)->get()
                 ->map(fn (MarketingReminder $row) => [
                     ...$row->only(['id', 'costumer_id', 'user_id', 'jenis', 'judul', 'status', 'catatan']),
                     'customer' => $row->costumer?->nama ?? '-',
@@ -349,32 +394,52 @@ class MarketingOperationsController extends Controller
 
     protected function documentData(Request $request): array
     {
-        $reviews = MarketingDocumentReview::query()->get()->keyBy(fn ($row) => $row->document_type.'-'.$row->document_id);
         $sprDocuments = SprBerkasCostumer::query()
             ->with(['spr.costumer:id,nama', 'spr:id,kode_spr,costumer_id,created_by', 'dokumen:id,nama_dokumen'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->latest('id')
-            ->get()
-            ->map(fn ($row) => $this->documentRow($row, SprBerkasCostumer::class, $reviews));
+            ->limit(150)
+            ->get();
         $kprDocuments = BerkasCostumer::query()
             ->with(['submission.spr.costumer:id,nama', 'submission:id,kode_kpr,spr_id', 'dokumen:id,nama_dokumen'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('submission.spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('submission.spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
             ->latest('id')
+            ->limit(150)
+            ->get();
+
+        $reviews = MarketingDocumentReview::query()
+            ->where(function (Builder $query) use ($sprDocuments, $kprDocuments): void {
+                $query->where(function (Builder $query) use ($sprDocuments): void {
+                    $query->where('document_type', SprBerkasCostumer::class)
+                        ->whereIn('document_id', $sprDocuments->pluck('id'));
+                })->orWhere(function (Builder $query) use ($kprDocuments): void {
+                    $query->where('document_type', BerkasCostumer::class)
+                        ->whereIn('document_id', $kprDocuments->pluck('id'));
+                });
+            })
             ->get()
-            ->map(fn ($row) => $this->documentRow($row, BerkasCostumer::class, $reviews));
+            ->keyBy(fn ($row) => $row->document_type.'-'.$row->document_id);
+
+        $sprDocuments = $sprDocuments->map(fn ($row) => $this->documentRow($row, SprBerkasCostumer::class, $reviews));
+        $kprDocuments = $kprDocuments->map(fn ($row) => $this->documentRow($row, BerkasCostumer::class, $reviews));
 
         return ['rows' => $sprDocuments->concat($kprDocuments)->sortByDesc('created_at')->values()];
     }
 
     protected function receivableData(Request $request): array
     {
-        $schedules = PaymentSchedule::query()->where('record_status', 'locked')
+        $scheduleQuery = PaymentSchedule::query()->where('record_status', 'locked')
             ->with(['salesTransaction.customer', 'salesTransaction.spr', 'salesTransaction.housingUnit'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('marketing_user_id', $request->user()?->id)))
-            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanId($request))))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('salesTransaction', fn (Builder $query) => $query->where('perumahan_id', $this->activePerumahanId($request))));
+        $totalBilled = (float) (clone $scheduleQuery)->sum('amount');
+        $totalPaid = (float) (clone $scheduleQuery)->sum('paid_amount');
+        $overdueCount = (clone $scheduleQuery)->whereDate('due_date', '<', today())->whereColumn('paid_amount', '<', 'amount')->count();
+        $schedules = $scheduleQuery
             ->orderBy('due_date')
+            ->limit(200)
             ->get();
         $payments = CustomerReceipt::query()->where('status', 'posted')
             ->with(['salesTransaction.customer', 'salesTransaction.spr', 'bankAccount'])
@@ -386,10 +451,10 @@ class MarketingOperationsController extends Controller
 
         return [
             'summary' => [
-                'tagihan' => (float) $schedules->sum('amount'),
-                'dibayar' => (float) $schedules->sum('paid_amount'),
-                'sisa' => (float) $schedules->sum(fn ($row) => max(0, $row->amount - $row->paid_amount)),
-                'jatuh_tempo' => $schedules->filter(fn ($row) => $row->due_date?->isPast() && (float) $row->paid_amount < (float) $row->amount)->count(),
+                'tagihan' => $totalBilled,
+                'dibayar' => $totalPaid,
+                'sisa' => max(0, $totalBilled - $totalPaid),
+                'jatuh_tempo' => $overdueCount,
             ],
             'schedules' => $schedules->map(fn ($row) => [
                 'id' => $row->id,
@@ -426,9 +491,10 @@ class MarketingOperationsController extends Controller
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
                 ->latest('tahun')
                 ->latest('bulan')
+                ->limit(200)
                 ->get()
                 ->map(fn ($row) => [
-                    ...$row->only(['id', 'user_id', 'tahun', 'bulan', 'target_lead', 'target_survey', 'target_spr', 'target_closing', 'target_nilai_penjualan', 'catatan', 'record_status']),
+                    ...$row->only(['id', 'user_id', 'tahun', 'bulan', 'target_lead', 'target_follow_up', 'target_visit', 'target_survey', 'target_reservation', 'target_spr', 'target_closing', 'target_nilai_penjualan', 'catatan', 'record_status']),
                     'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
                     'user' => $row->user?->name ?? '-',
                     'type' => 'target',
@@ -438,6 +504,7 @@ class MarketingOperationsController extends Controller
                 ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('user_id', $request->user()?->id))
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
                 ->latest('id')
+                ->limit(200)
                 ->get()
                 ->map(fn ($row) => [
                     ...$row->only(['id', 'spr_id', 'user_id', 'dasar_perhitungan', 'persentase', 'nominal', 'status', 'catatan', 'record_status']),
@@ -453,25 +520,133 @@ class MarketingOperationsController extends Controller
 
     protected function templateData(): array
     {
-        return ['rows' => MarketingTemplate::query()->latest('id')->get()];
+        return ['rows' => MarketingTemplate::query()->latest('id')->limit(200)->get()];
     }
 
-    protected function options(Request $request): array
+    private function authorizeSectionAction(Request $request, string $section, string $ability): void
     {
-        return [
-            'customers' => $this->customerQueryFor($request)->orderBy('nama')->get(['id', 'nama', 'no_identitas'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->nama} - {$row->no_identitas}"]),
-            'users' => User::query()
+        abort_unless(in_array($section, ['campaign', 'reminder', 'target-komisi', 'template'], true), 404);
+        $this->abortUnlessMarketingAccess($request, $this->defaultRolesForSection($section), $this->permissionForSection($section));
+        $permissions = $this->permissionsForSection($request, $section);
+        abort_unless($request->user()?->hasRole('super_admin') || ($permissions[$ability] ?? false), 403);
+    }
+
+    private function formType(Request $request, string $section): string
+    {
+        if ($section !== 'target-komisi') {
+            return $section;
+        }
+
+        $type = (string) $request->query('type', $request->input('type', 'target'));
+        abort_unless(in_array($type, ['target', 'commission'], true), 404);
+
+        return $type;
+    }
+
+    private function editableModel(Request $request, string $section, string $id, string $type): Model
+    {
+        return match ($section) {
+            'campaign' => MarketingCampaign::query()
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+                ->findOrFail($id),
+            'reminder' => $this->reminderQueryFor($request)->findOrFail($id),
+            'template' => MarketingTemplate::query()->findOrFail($id),
+            'target-komisi' => $type === 'commission'
+                ? MarketingCommission::query()
+                    ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
+                    ->findOrFail($id)
+                : MarketingTarget::query()
+                    ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+                    ->findOrFail($id),
+            default => abort(404),
+        };
+    }
+
+    private function formResponse(Request $request, string $section, ?Model $row = null, ?string $resolvedType = null): Response
+    {
+        $type = $resolvedType ?? $this->formType($request, $section);
+        $baseUrl = route('admin.marketing.operasional.show', $section, absolute: false);
+
+        return Inertia::render('Admin/Marketing/Operations/FormPage', [
+            'title' => ($row ? 'Edit ' : 'Tambah ').match ($type) {
+                'campaign' => 'Campaign',
+                'reminder' => 'Reminder',
+                'template' => 'Template Komunikasi',
+                'commission' => 'Komisi Marketing',
+                default => 'Target Marketing',
+            },
+            'section' => $section,
+            'type' => $type,
+            'baseUrl' => $baseUrl,
+            'actionUrl' => $row
+                ? route('admin.marketing.operasional.update', [$section, $row->getKey()], absolute: false)
+                : route('admin.marketing.operasional.store', $section, absolute: false),
+            'method' => $row ? 'put' : 'post',
+            'row' => $row ? $this->formRow($row, $type) : [],
+            'options' => $this->formOptions($request, $type),
+        ]);
+    }
+
+    private function formRow(Model $row, string $type): array
+    {
+        return match ($type) {
+            'campaign' => [
+                ...$row->only(['nama_campaign', 'kanal', 'anggaran', 'realisasi_biaya', 'target_lead', 'status', 'keterangan']),
+                'tanggal_mulai' => optional($row->tanggal_mulai)->format('Y-m-d'),
+                'tanggal_selesai' => optional($row->tanggal_selesai)->format('Y-m-d'),
+            ],
+            'reminder' => [
+                ...$row->only(['costumer_id', 'user_id', 'jenis', 'judul', 'status', 'catatan']),
+                'costumer_id' => (string) ($row->costumer_id ?? ''),
+                'user_id' => (string) ($row->user_id ?? ''),
+                'remind_at' => optional($row->remind_at)->format('Y-m-d\TH:i'),
+            ],
+            'template' => $row->only(['nama_template', 'kanal', 'tahapan', 'isi_template', 'status']),
+            'commission' => [
+                ...$row->only(['spr_id', 'user_id', 'dasar_perhitungan', 'persentase', 'status', 'catatan']),
+                'spr_id' => (string) $row->spr_id,
+                'user_id' => (string) $row->user_id,
+                'tanggal_jatuh_tempo' => optional($row->tanggal_jatuh_tempo)->format('Y-m-d'),
+                'tanggal_dibayar' => optional($row->tanggal_dibayar)->format('Y-m-d'),
+            ],
+            default => [
+                ...$row->only(['tahun', 'bulan', 'target_lead', 'target_follow_up', 'target_visit', 'target_survey', 'target_reservation', 'target_spr', 'target_closing', 'target_nilai_penjualan', 'catatan']),
+                'user_id' => (string) $row->user_id,
+            ],
+        };
+    }
+
+    private function formOptions(Request $request, string $type): array
+    {
+        $options = [
+            'hideUser' => $this->shouldScopeToCurrentMarketing($request),
+            'currentUser' => $request->user()?->name,
+        ];
+
+        if ($type === 'reminder') {
+            $options['customers'] = $this->customerQueryFor($request)->orderBy('nama')->limit(200)->get(['id', 'nama', 'no_identitas'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->nama} - {$row->no_identitas}"]);
+        }
+
+        if (in_array($type, ['reminder', 'target', 'commission'], true) && ! ($type === 'reminder' && $options['hideUser'])) {
+            $options['users'] = User::query()
+                ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['marketing', 'area_marketing', 'supervisor_marketing', 'manager', 'manajer_pimpro', 'owner']))
                 ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('perumahans', fn (Builder $query) => $query->whereKey($this->activePerumahanId($request))))
                 ->orderBy('name')
+                ->limit(200)
                 ->get(['id', 'name'])
-                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->name]),
-            'sprs' => $this->sprQueryFor($request)->with('costumer:id,nama')->where('status', Spr::STATUS_DISETUJUI)->latest('id')->get(['id', 'kode_spr', 'costumer_id', 'nilai_pengajuan_akhir', 'harga_jual', 'created_by'])->map(fn ($row) => [
+                ->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->name]);
+        }
+
+        if ($type === 'commission') {
+            $options['sprs'] = $this->sprQueryFor($request)->with('costumer:id,nama')->where('status', Spr::STATUS_DISETUJUI)->latest('id')->limit(200)->get(['id', 'kode_spr', 'costumer_id', 'nilai_pengajuan_akhir', 'harga_jual', 'created_by'])->map(fn ($row) => [
                 'value' => (string) $row->id,
                 'label' => "{$row->kode_spr} - ".($row->costumer?->nama ?? '-'),
                 'amount' => (float) ($row->nilai_pengajuan_akhir ?: $row->harga_jual),
                 'user_id' => $row->created_by,
-            ]),
-        ];
+            ]);
+        }
+
+        return $options;
     }
 
     protected function documentRow($row, string $type, $reviews): array
@@ -530,9 +705,13 @@ class MarketingOperationsController extends Controller
     protected function storeReminder(Request $request): void
     {
         $data = $request->validate($this->reminderRules());
+        if (! empty($data['costumer_id'])) {
+            $this->ensureCustomerCanBeUsed($request, (int) $data['costumer_id']);
+        }
         if ($this->shouldScopeToCurrentMarketing($request)) {
-            $this->ensureCustomerCanBeUsed($request, (int) ($data['costumer_id'] ?? 0));
             $data['user_id'] = $request->user()?->id;
+        } elseif (! empty($data['user_id'])) {
+            $this->ensureTeamUserCanBeUsed($request, (int) $data['user_id']);
         }
 
         MarketingReminder::create($data);
@@ -542,9 +721,13 @@ class MarketingOperationsController extends Controller
     {
         $reminder = $this->reminderQueryFor($request)->findOrFail($id);
         $data = $request->validate($this->reminderRules());
+        if (! empty($data['costumer_id'])) {
+            $this->ensureCustomerCanBeUsed($request, (int) $data['costumer_id']);
+        }
         if ($this->shouldScopeToCurrentMarketing($request)) {
-            $this->ensureCustomerCanBeUsed($request, (int) ($data['costumer_id'] ?? 0));
             $data['user_id'] = $request->user()?->id;
+        } elseif (! empty($data['user_id'])) {
+            $this->ensureTeamUserCanBeUsed($request, (int) $data['user_id']);
         }
 
         $reminder->update($data);
@@ -659,7 +842,10 @@ class MarketingOperationsController extends Controller
             'tahun' => ['required', 'integer', 'min:2020', 'max:2100'],
             'bulan' => ['required', 'integer', 'min:1', 'max:12'],
             'target_lead' => ['required', 'integer', 'min:0'],
+            'target_follow_up' => ['required', 'integer', 'min:0'],
+            'target_visit' => ['required', 'integer', 'min:0'],
             'target_survey' => ['required', 'integer', 'min:0'],
+            'target_reservation' => ['required', 'integer', 'min:0'],
             'target_spr' => ['required', 'integer', 'min:0'],
             'target_closing' => ['required', 'integer', 'min:0'],
             'target_nilai_penjualan' => ['required', 'numeric', 'min:0'],
@@ -719,7 +905,8 @@ class MarketingOperationsController extends Controller
 
         return match ($section) {
             'pipeline' => [
-                'canView' => $this->hasMarketingAccess($request, ['manajer_pimpro', 'owner'], 'marketing.pipeline-report.view'),
+                'canView' => $this->hasMarketingAccess($request, ['manajer_pimpro', 'owner'])
+                    || $this->hasAnyMarketingPermission($request, ['marketing.pipeline.view', 'marketing.pipeline-report.view']),
                 'canCreate' => false,
                 'canUpdate' => false,
                 'canDelete' => false,
@@ -730,14 +917,16 @@ class MarketingOperationsController extends Controller
                 'canCreate' => (bool) $user?->can('marketing.campaign.create') || $user?->can('marketing.campaign.manage'),
                 'canUpdate' => (bool) $user?->can('marketing.campaign.update') || $user?->can('marketing.campaign.manage'),
                 'canDelete' => (bool) $user?->can('marketing.campaign.delete') || $user?->can('marketing.campaign.manage'),
+                'canLock' => (bool) $user?->can('marketing.campaign.lock') || $user?->can('marketing.campaign.manage'),
                 'canUnlock' => (bool) $user?->can('marketing.campaign.unlock') || $user?->can('marketing.campaign.manage'),
             ],
             'reminder' => [
-                'canView' => $this->hasMarketingAccess($request, ['supervisor_marketing'], 'marketing.reminder.manage'),
-                'canCreate' => (bool) $user?->can('marketing.reminder.create') || $user?->can('marketing.reminder.manage'),
-                'canUpdate' => (bool) $user?->can('marketing.reminder.update') || $user?->can('marketing.reminder.manage'),
-                'canDelete' => (bool) $user?->can('marketing.reminder.delete') || $user?->can('marketing.reminder.manage'),
-                'canUnlock' => (bool) $user?->can('marketing.reminder.unlock') || $user?->can('marketing.reminder.manage'),
+                'canView' => $this->hasMarketingAccess($request, $this->defaultRolesForSection('reminder'), 'marketing-reminder.view'),
+                'canCreate' => (bool) $user?->can('marketing-reminder.create') || $user?->can('marketing.reminder.create') || $user?->can('marketing.reminder.manage'),
+                'canUpdate' => (bool) $user?->can('marketing-reminder.update') || $user?->can('marketing.reminder.update') || $user?->can('marketing.reminder.manage'),
+                'canDelete' => (bool) $user?->can('marketing-reminder.delete') || $user?->can('marketing.reminder.delete') || $user?->can('marketing.reminder.manage'),
+                'canLock' => false,
+                'canUnlock' => (bool) $user?->can('marketing-reminder.unlock') || $user?->can('marketing.reminder.unlock') || $user?->can('marketing.reminder.manage'),
             ],
             'dokumen' => [
                 'canView' => $this->hasMarketingAccess($request, ['supervisor_marketing'], 'marketing.document-review.manage'),
@@ -758,6 +947,7 @@ class MarketingOperationsController extends Controller
                 'canCreate' => (bool) $user?->can('marketing.target-commission.create') || $user?->can('marketing.target-commission.manage'),
                 'canUpdate' => (bool) $user?->can('marketing.target-commission.update') || $user?->can('marketing.target-commission.manage'),
                 'canDelete' => (bool) $user?->can('marketing.target-commission.delete') || $user?->can('marketing.target-commission.manage'),
+                'canLock' => (bool) $user?->can('marketing.target-commission.lock') || $user?->can('marketing.target-commission.manage'),
                 'canUnlock' => (bool) $user?->can('marketing.target-commission.unlock') || $user?->can('marketing.target-commission.manage'),
             ],
             'template' => [
@@ -765,6 +955,7 @@ class MarketingOperationsController extends Controller
                 'canCreate' => (bool) $user?->can('marketing.template.create') || $user?->can('marketing.template.manage'),
                 'canUpdate' => (bool) $user?->can('marketing.template.update') || $user?->can('marketing.template.manage'),
                 'canDelete' => (bool) $user?->can('marketing.template.delete') || $user?->can('marketing.template.manage'),
+                'canLock' => (bool) $user?->can('marketing.template.lock') || $user?->can('marketing.template.manage'),
                 'canUnlock' => (bool) $user?->can('marketing.template.unlock') || $user?->can('marketing.template.manage'),
             ],
             default => [
@@ -786,7 +977,7 @@ class MarketingOperationsController extends Controller
             'dokumen' => ['supervisor_marketing'],
             'piutang' => ['owner', 'manajer_pimpro'],
             'target-komisi' => ['supervisor_marketing', 'manajer_pimpro'],
-            'template' => ['marketing', 'area_marketing', 'supervisor_marketing', 'manajer_pimpro', 'owner'],
+            'template' => ['supervisor_marketing', 'manajer_pimpro', 'owner'],
             default => [],
         };
     }
@@ -796,7 +987,7 @@ class MarketingOperationsController extends Controller
         return match ($section) {
             'pipeline' => 'marketing.pipeline-report.view',
             'campaign' => 'marketing.campaign.manage',
-            'reminder' => 'marketing.reminder.manage',
+            'reminder' => 'marketing-reminder.view',
             'dokumen' => 'marketing.document-review.manage',
             'piutang' => 'marketing.receivable.view',
             'target-komisi' => 'marketing.target-commission.manage',
@@ -835,7 +1026,7 @@ class MarketingOperationsController extends Controller
     protected function customerQueryFor(Request $request): Builder
     {
         return Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request));
     }
 
@@ -858,22 +1049,22 @@ class MarketingOperationsController extends Controller
         return MarketingReminder::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where(function (Builder $query) use ($request): void {
                 $query->where('user_id', $request->user()?->id)
-                    ->orWhereHas('costumer', fn (Builder $query) => $query->where('created_by', $request->user()?->id));
+                    ->orWhereHas('costumer', fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id));
             }))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('costumer', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)));
     }
 
     protected function ensureCustomerCanBeUsed(Request $request, int $customerId): void
     {
-        if (! $this->shouldScopeToCurrentMarketing($request) || $customerId <= 0) {
+        if ($customerId <= 0) {
             return;
         }
 
         abort_unless(
             Costumer::query()
                 ->whereKey($customerId)
-                ->where('created_by', $request->user()?->id)
-                ->where('perumahan_id', $this->ensureActivePerumahan($request))
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
+                ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->where('perumahan_id', $this->ensureActivePerumahan($request)))
                 ->exists(),
             403,
         );
@@ -881,6 +1072,15 @@ class MarketingOperationsController extends Controller
 
     protected function ensureTeamUserCanBeUsed(Request $request, int $userId): void
     {
+        abort_unless(
+            User::query()
+                ->whereKey($userId)
+                ->whereHas('roles', fn (Builder $query) => $query->whereIn('name', ['marketing', 'area_marketing', 'supervisor_marketing']))
+                ->exists(),
+            422,
+            'Petugas harus berasal dari tim Marketing.',
+        );
+
         if (! $this->shouldScopeToActivePerumahan($request)) {
             return;
         }

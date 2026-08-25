@@ -20,7 +20,10 @@ use Inertia\Response;
 
 class MasterMaterialController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock {
+        lock as protected traitLock;
+        unlock as protected traitUnlock;
+    }
 
     public function index(Request $request): Response
     {
@@ -83,6 +86,8 @@ class MasterMaterialController extends Controller
                 'canCreate' => (bool) ($request->user()?->can('master-material.create') || $request->user()?->can('master-material.manage')),
                 'canUpdate' => (bool) ($request->user()?->can('master-material.update') || $request->user()?->can('master-material.manage')),
                 'canDelete' => (bool) ($request->user()?->can('master-material.delete') || $request->user()?->can('master-material.manage')),
+                'canLock' => (bool) ($request->user()?->can('master-material.lock') || $request->user()?->hasRole('super_admin')),
+                'canUnlock' => $this->currentUserCanManageLockedRecords(),
             ],
         ]);
     }
@@ -300,5 +305,19 @@ class MasterMaterialController extends Controller
     protected function modelClass(): string
     {
         return BarangMaterial::class;
+    }
+
+    public function lock(string $id): RedirectResponse
+    {
+        abort_unless(auth()->user()?->can('master-material.lock') || auth()->user()?->hasRole('super_admin'), 403);
+
+        return $this->traitLock($id);
+    }
+
+    public function unlock(string $id): RedirectResponse
+    {
+        abort_unless($this->currentUserCanManageLockedRecords(), 403);
+
+        return $this->traitUnlock($id);
     }
 }

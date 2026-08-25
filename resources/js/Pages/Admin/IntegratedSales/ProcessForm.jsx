@@ -6,6 +6,8 @@ import AdminLayout from "../../../Layouts/AdminLayout";
 
 export default function ProcessForm({ title, backUrl, transaction, step }) {
     const [finalizeResponse, setFinalizeResponse] = useState(null);
+    const [rejectOpen, setRejectOpen] = useState(false);
+    const [rejectNote, setRejectNote] = useState("");
     const fieldHelp = {
         grace_days:
             "Jumlah hari setelah jatuh tempo sebelum denda mulai dihitung. Nilainya berasal dari master skema.",
@@ -257,6 +259,9 @@ export default function ProcessForm({ title, backUrl, transaction, step }) {
                     )}
                 </div>
             </Modal>
+            <Modal open={rejectOpen} onClose={() => setRejectOpen(false)} title="Tolak tahap penjualan" size="sm" footer={<><Button type="button" variant="outline" onClick={() => setRejectOpen(false)}>Batal</Button><Button type="button" variant="danger" disabled={!rejectNote.trim()} onClick={() => router.post(`/admin/penjualan-terintegrasi/tahapan/${step.id}/review/reject`, { note: rejectNote }, { onFinish: () => { setRejectOpen(false); setRejectNote(""); } })}>Kirim Penolakan</Button></>}>
+                <label className="grid gap-2 text-sm font-bold">Alasan penolakan wajib<textarea autoFocus value={rejectNote} onChange={(event) => setRejectNote(event.target.value)} className="min-h-28 rounded-lg border p-3" /></label>
+            </Modal>
             <div className="grid gap-6">
                 <section className="rounded-xl border bg-white/80 p-6 shadow-soft">
                     <Button as={Link} href={backUrl} variant="outline">
@@ -365,7 +370,7 @@ export default function ProcessForm({ title, backUrl, transaction, step }) {
                     {!!transaction.existing_documents?.length && (
                         <div className="mt-5">
                             <h3 className="font-black">
-                                Dokumen Pelanggan yang Sudah Ada di SPR
+                                Berkas Pelanggan yang Sudah Ada di SPR
                             </h3>
                             <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                 {transaction.existing_documents.map(
@@ -1056,15 +1061,7 @@ export default function ProcessForm({ title, backUrl, transaction, step }) {
                                 <Button
                                     type="button"
                                     variant="danger"
-                                    onClick={() => {
-                                        const note =
-                                            window.prompt("Alasan penolakan");
-                                        if (note)
-                                            router.post(
-                                                `/admin/penjualan-terintegrasi/tahapan/${step.id}/review/reject`,
-                                                { note },
-                                            );
-                                    }}
+                                    onClick={() => setRejectOpen(true)}
                                 >
                                     Tolak
                                 </Button>

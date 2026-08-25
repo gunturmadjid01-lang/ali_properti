@@ -19,6 +19,7 @@ class SiteMaterialStock extends Model
         'qty_returned',
         'qty_reserved_return',
         'qty_available',
+        'average_unit_cost',
     ];
 
     protected $casts = [
@@ -27,6 +28,7 @@ class SiteMaterialStock extends Model
         'qty_returned' => 'float',
         'qty_reserved_return' => 'float',
         'qty_available' => 'float',
+        'average_unit_cost' => 'float',
     ];
 
     public function gudang(): BelongsTo

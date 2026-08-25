@@ -18,7 +18,9 @@ import {
     KeyRound,
     LayoutDashboard,
     Library,
+    ListTree,
     Megaphone,
+    MessageCircle,
     PackageCheck,
     ReceiptText,
     RotateCcw,
@@ -32,7 +34,6 @@ import {
     Users,
     WalletCards,
     Warehouse,
-    Wrench,
 } from "lucide-react";
 
 const inventoryItems = [
@@ -149,6 +150,12 @@ const sidebarMenu = [
                 icon: CalendarClock,
                 items: [
                     {
+                        title: "Data Pegawai",
+                        icon: Users,
+                        link: "/admin/management/employee",
+                        permission: "employee.view",
+                    },
+                    {
                         title: "Absensi Pegawai",
                         icon: Users,
                         link: "/admin/absensi-pegawai",
@@ -209,13 +216,13 @@ const sidebarMenu = [
                         permission: "dokumen-legalitas.view",
                     },
                     {
-                        title: "Dokumen Pelanggan",
+                        title: "Master Jenis Dokumen Pelanggan",
                         icon: FileText,
                         link: "/admin/management/master-dokumen-customer",
                         permission: "dokumen-customer.view",
                     },
                     {
-                        title: "Repositori Dokumen Pelanggan",
+                        title: "Berkas Pelanggan",
                         icon: FileText,
                         link: "/admin/repository-dokumen-customer",
                         permissionsAny: ["customer.view", "booking.view"],
@@ -238,11 +245,53 @@ const sidebarMenu = [
                         link: "/admin/management/tipe-post",
                         permission: "tipe-post.view",
                     },
+                ],
+            },
+            {
+                title: "Material & Logistik",
+                icon: Boxes,
+                items: [
                     {
-                        title: "Daftar Tukang",
-                        icon: Wrench,
-                        link: "/admin/tukang",
-                        permission: "tukang.view",
+                        title: "Daftar Gudang",
+                        icon: Warehouse,
+                        link: "/admin/gudang/manajemen/list",
+                        permission: "gudang.view",
+                    },
+                    {
+                        title: "Master Material",
+                        icon: Boxes,
+                        link: "/admin/master-material",
+                        permission: "master-material.view",
+                    },
+                    {
+                        title: "Jenis Material",
+                        icon: Boxes,
+                        link: "/admin/referensi-material/jenis",
+                        permission: "material-type.view",
+                    },
+                    {
+                        title: "Merk Material",
+                        icon: Boxes,
+                        link: "/admin/referensi-material/merk",
+                        permission: "material-brand.view",
+                    },
+                    {
+                        title: "Satuan Material",
+                        icon: Boxes,
+                        link: "/admin/referensi-material/satuan",
+                        permission: "material-unit.view",
+                    },
+                    {
+                        title: "Kelompok Material",
+                        icon: Boxes,
+                        link: "/admin/kelompok-material",
+                        permission: "material-group.view",
+                    },
+                    {
+                        title: "Supplier",
+                        icon: Users,
+                        link: "/admin/supplier",
+                        permission: "supplier.view",
                     },
                 ],
             },
@@ -275,7 +324,7 @@ const sidebarMenu = [
                         permission: "bank-housing-partnership.view",
                     },
                     {
-                        title: "Paket Persyaratan Dokumen",
+                        title: "Paket Persyaratan Kredit",
                         icon: FileText,
                         link: "/admin/paket-persyaratan-dokumen",
                         permission: "bank-document-requirement.view",
@@ -318,18 +367,18 @@ const sidebarMenu = [
                             "spk-template-unit.view",
                         ],
                     },
-                    {
-                        title: "Kelompok Material",
-                        icon: Boxes,
-                        link: "/admin/kelompok-material",
-                        permission: "material-group.view",
-                    },
                 ],
             },
             {
                 title: "Pelaksanaan Lapangan",
                 icon: HardHat,
                 items: [
+                    {
+                        title: "Workspace Harian Pengawas",
+                        icon: HardHat,
+                        link: "/admin/pengawasan",
+                        permission: "field-supervision.view",
+                    },
                     {
                         title: "Kemajuan Pembangunan",
                         icon: TrendingUp,
@@ -369,7 +418,8 @@ const sidebarMenu = [
                                 title: "Perubahan Pekerjaan",
                                 icon: FileText,
                                 link: "/admin/pengawasan/perubahan-pekerjaan",
-                                permission: "field-supervision.work-change.view",
+                                permission:
+                                    "field-supervision.work-change.view",
                             },
                             {
                                 title: "Tenaga Kerja & Alat",
@@ -418,32 +468,154 @@ const sidebarMenu = [
         title: "Penjualan & Marketing",
         items: [
             {
-                title: "Prospek & Pelanggan",
+                title: "Ruang Kerja Admin Sales",
+                icon: LayoutDashboard,
+                items: [
+                    {
+                        title: "Dashboard Admin Sales",
+                        icon: LayoutDashboard,
+                        link: "/admin/admin-sales",
+                        exact: true,
+                        permission: "admin-sales.dashboard.view",
+                    },
+                    {
+                        title: "Lead Perusahaan",
+                        icon: UserPlus,
+                        link: "/admin/marketing/leads?ownership_type=company",
+                        permission: "admin-sales.lead.view",
+                    },
+                    {
+                        title: "Monitoring Penjualan",
+                        icon: Activity,
+                        link: "/admin/admin-sales/monitoring",
+                        permission: "admin-sales.monitoring.view",
+                    },
+                    {
+                        title: "Kelengkapan Customer",
+                        icon: ClipboardCheck,
+                        link: "/admin/admin-sales/kelengkapan-customer",
+                        permission: "admin-sales.monitoring.view",
+                    },
+                    {
+                        title: "Kalender Proses Penjualan",
+                        icon: CalendarClock,
+                        link: "/admin/admin-sales/kalender-penjualan",
+                        permission: "admin-sales.monitoring.view",
+                    },
+                    {
+                        title: "Tugas Admin Sales",
+                        icon: ClipboardCheck,
+                        link: "/admin/admin-sales/tugas",
+                        permission: "admin-sales.work-item.view",
+                    },
+                    {
+                        title: "Laporan Admin Sales",
+                        icon: Activity,
+                        link: "/admin/admin-sales/laporan",
+                        permission: "admin-sales.report.view",
+                    },
+                ],
+            },
+            {
+                title: "Meja Kerja Hari Ini",
+                icon: LayoutDashboard,
+                link: "/admin/marketing",
+                exact: true,
+                permission: "dashboard.view",
+            },
+            {
+                title: "Kalender Kegiatan",
+                icon: CalendarClock,
+                link: "/admin/marketing/kalender-kegiatan",
+                permission: "marketing-calendar.view",
+            },
+            {
+                title: "1. Cari Prospek & Kelola Lead",
                 icon: Users,
                 items: [
                     {
-                        title: "Data Pelanggan",
+                        title: "Aktivitas Lapangan / Canvassing",
+                        icon: CalendarClock,
+                        link: "/admin/marketing/crm/visits",
+                        permission: "marketing-visit.view",
+                    },
+                    {
+                        title: "Lead & Prospek",
                         icon: UserPlus,
+                        link: "/admin/marketing/leads",
+                        permission: "marketing-lead.view",
+                    },
+                    {
+                        title: "Inbox Komunikasi",
+                        icon: MessageCircle,
+                        link: "/admin/marketing/komunikasi",
+                        permission: "marketing-lead.view",
+                    },
+                    {
+                        title: "Ruang Properti",
+                        icon: Building2,
+                        link: "/admin/marketing/ruang-properti",
+                        permission: "marketing-lead.view",
+                    },
+                    {
+                        title: "Customer Terkonversi",
+                        icon: Users,
                         link: "/admin/marketing/calon-konsumen",
                         permission: "customer.view",
                     },
                     {
-                        title: "Tindak Lanjut",
+                        title: "Penugasan Lead Saya",
+                        icon: ClipboardCheck,
+                        link: "/admin/admin-sales/assignments",
+                        permission: "marketing.lead-assignment.view",
+                    },
+                    {
+                        title: "Riwayat Follow-up",
                         icon: BellRing,
                         link: "/admin/marketing/jejak-follow-up",
                         permission: "customer.follow-up",
                     },
                     {
-                        title: "Pengingat Tindak Lanjut",
+                        title: "Agenda & Pengingat",
                         icon: BellRing,
                         link: "/admin/marketing/operasional/reminder",
                         badgeKey: "reminder_follow_up",
-                        permission: "marketing.reminder.manage",
+                        permission: "marketing-reminder.view",
+                    },
+                    {
+                        title: "Rencana Aktivitas / Action Plan",
+                        icon: ClipboardCheck,
+                        link: "/admin/marketing/crm/action-plans",
+                        permission: "marketing-action-plan.view",
                     },
                 ],
             },
             {
-                title: "Transaksi Penjualan",
+                title: "2. Survey & Persiapan Transaksi",
+                icon: CalendarClock,
+                items: [
+                    {
+                        title: "Jadwal & Hasil Survey Unit",
+                        icon: CalendarClock,
+                        link: "/admin/marketing/jadwal-survey",
+                        permission: "marketing-survey.view",
+                    },
+                    {
+                        title: "Pemeriksaan Berkas Customer",
+                        icon: FileText,
+                        link: "/admin/marketing/crm/document-checklists",
+                        permission: "customer-document-checklist.view",
+                    },
+                    {
+                        title: "Validasi Berkas",
+                        icon: FileText,
+                        link: "/admin/marketing/operasional/dokumen",
+                        permission: "marketing.document-review.manage",
+                    },
+                ],
+            },
+            {
+                title: "3. Transaksi Penjualan",
                 icon: ReceiptText,
                 items: [
                     {
@@ -457,6 +629,12 @@ const sidebarMenu = [
                         icon: FileText,
                         link: "/admin/marketing/spr",
                         permission: "booking.view",
+                    },
+                    {
+                        title: "Transaksi Cash",
+                        icon: Banknote,
+                        link: "/admin/marketing/transaksi-pembelian/cash",
+                        permission: "cash-sale.view",
                     },
                     {
                         title: "Daftar Transaksi Penjualan",
@@ -485,19 +663,70 @@ const sidebarMenu = [
                 ],
             },
             {
-                title: "Tunai Bertahap",
+                title: "4. Tunai Bertahap",
                 icon: CalendarClock,
                 items: cashInstallmentItems,
             },
-            { title: "KPR Developer", icon: Home, items: developerKprItems },
+            { title: "5. KPR Developer", icon: Home, items: developerKprItems },
             {
-                title: "Proses KPR Bank",
+                title: "6. Proses KPR Bank",
                 icon: Banknote,
                 items: bankKprProcessItems,
             },
             {
-                title: "Tools & Analitik Marketing",
+                title: "7. Tools Marketing",
                 icon: Target,
+                items: [
+                    {
+                        title: "Distribusi Lead",
+                        icon: UserPlus,
+                        link: "/admin/marketing/tools/distribusi-lead",
+                        permission: "marketing.lead-distribution.manage",
+                    },
+                    {
+                        title: "Alur Penjualan Marketing",
+                        icon: Target,
+                        link: "/admin/marketing/operasional/pipeline",
+                        permissionsAny: [
+                            "marketing.pipeline.view",
+                            "marketing.pipeline-report.view",
+                        ],
+                    },
+                    {
+                        title: "Hot Lead",
+                        icon: TrendingUp,
+                        link: "/admin/marketing/tools/hot-lead",
+                        permission: "marketing.pipeline.view",
+                    },
+                    {
+                        title: "Aging Lead",
+                        icon: CalendarClock,
+                        link: "/admin/marketing/tools/aging-lead",
+                        permission: "marketing.activity.view",
+                    },
+                    {
+                        title: "Riwayat Komunikasi",
+                        icon: Activity,
+                        link: "/admin/marketing/tools/riwayat-komunikasi",
+                        permission: "customer-follow-up.view",
+                    },
+                    {
+                        title: "Sumber Lead",
+                        icon: Megaphone,
+                        link: "/admin/marketing/sumber-lead",
+                        permission: "marketing.lead-source.manage",
+                    },
+                    {
+                        title: "Kampanye",
+                        icon: Megaphone,
+                        link: "/admin/marketing/operasional/campaign",
+                        permission: "marketing.campaign.manage",
+                    },
+                ],
+            },
+            {
+                title: "8. Produk & Simulasi",
+                icon: Home,
                 items: [
                     {
                         title: "Unit Tersedia",
@@ -517,44 +746,37 @@ const sidebarMenu = [
                         link: "/admin/marketing/tools/simulasi-pembayaran",
                         permission: "payment-simulation.view",
                     },
+                ],
+            },
+            {
+                title: "9. Laporan & Monitoring",
+                icon: BarChart3,
+                items: [
+                    ["Aktivitas Marketing", "activities"],
+                    ["Follow-up", "follow-ups"],
+                    ["Kunjungan & Peta", "visits"],
+                    ["Customer Tidak Aktif", "inactive-customers"],
+                    ["Pipeline Lead", "pipeline"],
+                    ["Konversi", "conversion"],
+                    ["Pencapaian Target", "targets"],
+                    ["Pembatalan", "cancellations"],
+                    ["Kinerja Marketing", "performance"],
+                ].map(([title, slug]) => ({
+                    title,
+                    icon: BarChart3,
+                    link: `/admin/marketing/reports/${slug}`,
+                    permission: "marketing-report.view",
+                })),
+            },
+            {
+                title: "10. Manajer & Master",
+                icon: ShieldCheck,
+                items: [
                     {
-                        title: "Sumber Lead",
-                        icon: Megaphone,
-                        link: "/admin/marketing/sumber-lead",
-                        permission: "marketing.lead-source.manage",
-                    },
-                    {
-                        title: "Laporan Lead",
-                        icon: BarChart3,
-                        link: "/admin/marketing/laporan-lead",
-                        permission: "marketing.lead-report.view",
-                    },
-                    {
-                        title: "Alur Penjualan Marketing",
-                        icon: Target,
-                        link: "/admin/marketing/operasional/pipeline",
-                        permissionsAny: [
-                            "marketing.pipeline.view",
-                            "marketing.pipeline-report.view",
-                        ],
-                    },
-                    {
-                        title: "Kampanye",
-                        icon: Megaphone,
-                        link: "/admin/marketing/operasional/campaign",
-                        permission: "marketing.campaign.manage",
-                    },
-                    {
-                        title: "Validasi Berkas",
-                        icon: FileText,
-                        link: "/admin/marketing/operasional/dokumen",
-                        permission: "marketing.document-review.manage",
-                    },
-                    {
-                        title: "Monitoring Aktivitas",
+                        title: "Monitoring Tim Marketing",
                         icon: Activity,
                         link: "/admin/marketing/tools/monitoring-aktivitas",
-                        permission: "marketing.activity.view",
+                        permission: "marketing.activity.view-all",
                     },
                     {
                         title: "Statistik & Ranking Marketing",
@@ -564,6 +786,18 @@ const sidebarMenu = [
                             "marketing.leaderboard.view",
                             "booking.view",
                         ],
+                    },
+                    {
+                        title: "Evaluasi Marketing",
+                        icon: ClipboardCheck,
+                        link: "/admin/marketing/evaluasi-marketing",
+                        permission: "marketing-evaluation.view",
+                    },
+                    {
+                        title: "Master Pilihan Marketing",
+                        icon: ListTree,
+                        link: "/admin/marketing/master-pilihan",
+                        permission: "marketing-reference.view",
                     },
                 ],
             },
@@ -584,37 +818,8 @@ const sidebarMenu = [
                             "site-material-stock.view",
                             "material-request.view",
                             "material-purchase.view",
+                            "material-receipt.view",
                         ],
-                    },
-                    {
-                        title: "Daftar Gudang",
-                        icon: Warehouse,
-                        link: "/admin/gudang/manajemen/list",
-                        permission: "gudang.view",
-                    },
-                    {
-                        title: "Master Material",
-                        icon: Boxes,
-                        link: "/admin/master-material",
-                        permission: "master-material.view",
-                    },
-                    {
-                        title: "Jenis Material",
-                        icon: Boxes,
-                        link: "/admin/referensi-material/jenis",
-                        permission: "material-type.view",
-                    },
-                    {
-                        title: "Merk Material",
-                        icon: Boxes,
-                        link: "/admin/referensi-material/merk",
-                        permission: "material-brand.view",
-                    },
-                    {
-                        title: "Satuan Material",
-                        icon: Boxes,
-                        link: "/admin/referensi-material/satuan",
-                        permission: "material-unit.view",
                     },
                     {
                         title: "Saldo Awal Material",
@@ -653,6 +858,12 @@ const sidebarMenu = [
                         permission: "material-purchase.view",
                     },
                     {
+                        title: "Pemeriksaan Barang Masuk",
+                        icon: PackageCheck,
+                        link: "/admin/pemeriksaan-barang-masuk",
+                        permission: "material-receipt.view",
+                    },
+                    {
                         title: "Pemakaian Material",
                         icon: Boxes,
                         link: "/admin/pemakaian-material",
@@ -665,12 +876,6 @@ const sidebarMenu = [
                         permission: "material-return.view",
                     },
                 ],
-            },
-            {
-                title: "Supplier",
-                icon: Users,
-                link: "/admin/supplier",
-                permission: "supplier.view",
             },
             {
                 title: "Inventaris Perusahaan",
@@ -749,7 +954,7 @@ const sidebarMenu = [
                 ],
             },
             {
-                title: "Akuntansi",
+                title: "Pencatatan Akuntansi",
                 icon: BookOpen,
                 items: [
                     {
@@ -776,6 +981,18 @@ const sidebarMenu = [
                         link: "/admin/keuangan/jurnal-umum",
                         permission: "keuangan.view",
                     },
+                    {
+                        title: "Daftar Akun",
+                        icon: ListTree,
+                        link: "/admin/keuangan/daftar-akun",
+                        permission: "keuangan.view",
+                    },
+                ],
+            },
+            {
+                title: "Laporan Keuangan",
+                icon: FileBarChart,
+                items: [
                     {
                         title: "Buku Besar",
                         icon: Library,
@@ -807,10 +1024,28 @@ const sidebarMenu = [
                         permission: "arus-kas.view",
                     },
                     {
-                        title: "Piutang Pelanggan",
+                        title: "Aging Piutang",
                         icon: TrendingUp,
-                        link: "/admin/keuangan/piutang",
+                        link: "/admin/keuangan/aging-piutang",
                         permission: "receivables.view",
+                    },
+                    {
+                        title: "Aging Hutang",
+                        icon: TrendingDown,
+                        link: "/admin/keuangan/hutang",
+                        permission: "hutang.view",
+                    },
+                ],
+            },
+            {
+                title: "Piutang & Pelanggan",
+                icon: BadgeDollarSign,
+                items: [
+                    {
+                        title: "Kontrak Penambahan Mutu",
+                        icon: ClipboardCheck,
+                        link: "/admin/keuangan/penambahan-mutu",
+                        permission: "quality-upgrade.view",
                     },
                     {
                         title: "Tagihan & Talangan Customer",
@@ -835,12 +1070,6 @@ const sidebarMenu = [
                         icon: ReceiptText,
                         link: "/admin/keuangan/penerimaan-customer",
                         permission: "customer-receipts.view",
-                    },
-                    {
-                        title: "Hutang Supplier & Kontraktor",
-                        icon: TrendingDown,
-                        link: "/admin/keuangan/hutang",
-                        permission: "hutang.view",
                     },
                 ],
             },
@@ -887,7 +1116,18 @@ const sidebarMenu = [
                         title: "Pusat Laporan",
                         icon: FileBarChart,
                         link: "/admin/laporan",
-                        permission: "laporan.view",
+                        permissionsAny: [
+                            "laporan.view",
+                            "laporan-master-data.view",
+                            "laporan-pembelian.view",
+                            "laporan-persediaan-material.view",
+                            "laporan-marketing.view",
+                            "laba-rugi.view",
+                            "neraca.view",
+                            "arus-kas.view",
+                            "buku-besar.view",
+                            "neraca-saldo.view",
+                        ],
                     },
                     {
                         title: "Kemajuan Pembangunan",

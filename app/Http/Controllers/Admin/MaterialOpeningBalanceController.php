@@ -118,7 +118,6 @@ class MaterialOpeningBalanceController extends Controller
                 'updated_by' => auth()->id(),
             ]);
 
-            $this->adjustStock((int) $row->gudang_id, (int) $row->barang_material_id, (float) $row->qty);
         });
 
         return back()->with('success', 'Saldo awal material berhasil disimpan.');
@@ -172,7 +171,6 @@ class MaterialOpeningBalanceController extends Controller
                 if ($inputQty <= 0) {
                     if ($existing) {
                         $this->abortIfLocked($existing);
-                        $this->adjustStock((int) $existing->gudang_id, (int) $existing->barang_material_id, -1 * (float) $existing->qty);
                         $existing->update([
                             'tanggal_saldo' => $validated['tanggal_saldo'],
                             'qty' => 0,
@@ -192,10 +190,6 @@ class MaterialOpeningBalanceController extends Controller
 
                 if ($existing) {
                     $this->abortIfLocked($existing);
-                    $delta = (float) $normalized['qty'] - (float) $existing->qty;
-                    if ($delta !== 0.0) {
-                        $this->adjustStock((int) $existing->gudang_id, (int) $existing->barang_material_id, $delta);
-                    }
                     $existing->update([
                         'tanggal_saldo' => $validated['tanggal_saldo'],
                         ...collect($normalized)->except(['gudang_id', 'barang_material_id'])->all(),
@@ -214,7 +208,6 @@ class MaterialOpeningBalanceController extends Controller
                     'updated_by' => auth()->id(),
                 ]);
 
-                $this->adjustStock((int) $row->gudang_id, (int) $row->barang_material_id, (float) $normalized['qty']);
             }
         });
 
@@ -230,15 +223,12 @@ class MaterialOpeningBalanceController extends Controller
         $this->assertGudangAccess($payload['gudang_id']);
 
         DB::transaction(function () use ($row, $payload): void {
-            $this->adjustStock((int) $row->gudang_id, (int) $row->barang_material_id, -1 * (float) $row->qty);
-
             $row->update([
                 ...$payload,
                 'total_nilai' => (float) $payload['qty'] * (float) $payload['harga_satuan'],
                 'updated_by' => auth()->id(),
             ]);
 
-            $this->adjustStock((int) $row->gudang_id, (int) $row->barang_material_id, (float) $row->qty);
         });
 
         return back()->with('success', 'Saldo awal material berhasil diperbarui.');
@@ -252,7 +242,7 @@ class MaterialOpeningBalanceController extends Controller
         $this->abortIfLocked($row);
 
         DB::transaction(function () use ($row): void {
-            $this->adjustStock((int) $row->gudang_id, (int) $row->barang_material_id, -1 * (float) $row->qty);
+            app(\App\Services\MaterialInventoryFinalizationService::class)->reverseOpeningBalance($row);
             $row->update([
                 'qty' => 0,
                 'input_qty' => 0,
@@ -358,6 +348,11 @@ class MaterialOpeningBalanceController extends Controller
     protected function modelClass(): string
     {
         return MaterialOpeningBalance::class;
+    }
+
+    protected function beforeUnlock(MaterialOpeningBalance $balance): void
+    {
+        app(\App\Services\MaterialInventoryFinalizationService::class)->reverseOpeningBalance($balance);
     }
 
     protected function accessibleGudangs()

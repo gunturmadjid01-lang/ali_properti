@@ -8,11 +8,16 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\Marketing\StoreCostumerRequest;
 use App\Http\Requests\Admin\Marketing\UpdateCostumerRequest;
 use App\Models\Costumer;
+use App\Models\CustomerUnitInterest;
+use App\Models\DetailRumah;
 use App\Models\MarketingCampaign;
 use App\Models\MarketingLeadSource;
+use App\Models\MarketingReferenceOption;
+use App\Models\MarketingVisit;
 use App\Services\ApprovalWorkflowService;
 use App\Services\Marketing\MarketingLeadStatusService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -24,12 +29,16 @@ class CostumerController extends Controller
 
     public function index(Request $request): Response
     {
+        $this->authorizePermission($request, 'view');
         $search = trim((string) $request->query('search', ''));
+        $administrativeGap = (string) $request->query('administrative_gap', '');
 
         $rows = Costumer::query()
             ->with(['leadSource:id,nama_sumber', 'campaign:id,nama_campaign', 'perumahan:id,nama_perusahaan'])
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+            ->when($administrativeGap === 'unit', fn (Builder $query) => $query->whereDoesntHave('unitInterests'))
+            ->when($administrativeGap === 'payment_method', fn (Builder $query) => $query->whereNull('preferred_payment_method'))
             ->when($search !== '', function (Builder $query) use ($search) {
                 $query->where(function (Builder $query) use ($search) {
                     $query->orWhere('nama', 'like', "%{$search}%")
@@ -57,6 +66,7 @@ class CostumerController extends Controller
                 'campaign' => $customer->campaign?->nama_campaign ?? '-',
                 'status_lead' => $customer->status_lead ?? 'lead_baru',
                 'status_lead_label' => $this->labelFromOptions($customer->status_lead ?? 'lead_baru', $this->leadStatusOptions()),
+                'customer_stage' => $customer->customer_stage ?? 'legacy',
                 'nama' => $customer->nama,
                 'jenis_kelamin' => $customer->jenis_kelamin,
                 'jenis_identitas' => $customer->jenis_identitas,
@@ -90,15 +100,15 @@ class CostumerController extends Controller
             ]);
 
         return Inertia::render('Admin/Marketing/Costumer/Index', [
-            'title' => 'Calon Konsumen',
-            'description' => 'Kelola data identitas, pekerjaan, dan pasangan customer sebelum masuk proses follow up atau SPR.',
+            'title' => 'Customer Terkonversi',
+            'description' => 'Customer hanya berasal dari Lead Qualified. Lengkapi identitas dan administrasi sebelum reservasi atau booking fee.',
             'baseUrl' => route('admin.marketing.calon-konsumen.index', absolute: false),
             'columns' => [
                 ['key' => 'kode_costumer', 'label' => 'Kode'],
                 ['key' => 'perumahan', 'label' => 'Perumahan'],
                 ['key' => 'sumber_lead', 'label' => 'Sumber Lead'],
                 ['key' => 'campaign', 'label' => 'Campaign'],
-                ['key' => 'status_lead_label', 'label' => 'Status Lead'],
+                ['key' => 'customer_stage', 'label' => 'Tahap Customer'],
                 ['key' => 'nama', 'label' => 'Nama'],
                 ['key' => 'no_identitas', 'label' => 'No Identitas'],
                 ['key' => 'telepon', 'label' => 'Telepon'],
@@ -120,29 +130,28 @@ class CostumerController extends Controller
             ],
             'filters' => [
                 'search' => $search,
+                'administrative_gap' => $administrativeGap,
             ],
         ]);
     }
 
-    public function create(Request $request): Response
+    public function create(Request $request): Response|RedirectResponse
     {
-        return Inertia::render('Admin/Marketing/Costumer/FormPage', [
-            'title' => 'Tambah Calon Konsumen',
-            'description' => 'Input identitas, pekerjaan, dan data pasangan customer.',
-            'baseUrl' => route('admin.marketing.calon-konsumen.index', absolute: false),
-            'actionUrl' => route('admin.marketing.calon-konsumen.store', absolute: false),
-            'method' => 'post', 'fields' => $this->fields(), 'options' => $this->formOptions(), 'row' => null,
-        ]);
+        $this->authorizePermission($request, 'create');
+
+        return redirect()->route('admin.marketing.leads.create')->with('warning', 'Customer tidak dibuat langsung. Input Lead terlebih dahulu, lakukan kualifikasi, lalu konversi menjadi Customer.');
     }
 
     public function edit(Request $request, string $id): Response
     {
+        $this->authorizePermission($request, 'update');
         $row = Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
         $this->abortIfLocked($row);
-        $payload = $row->only(collect($this->fields())->pluck('name')->all());
+        $payload = $row->loadMissing('unitInterests')->only(collect($this->fields())->pluck('name')->all());
+        $payload['unit_interests'] = $this->unitInterestPayload($row);
         foreach (['tanggal_lahir', 'tanggal_lahir_pasangan'] as $field) {
             $payload[$field] = optional($row->{$field})->format('Y-m-d');
         }
@@ -158,14 +167,35 @@ class CostumerController extends Controller
 
     public function show(Request $request, string $id): Response
     {
-        $row = Costumer::query()->with(['leadSource:id,nama_sumber', 'campaign:id,nama_campaign', 'perumahan:id,nama_perusahaan'])->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $q) => $q->where('created_by', $request->user()?->id))->when($this->shouldScopeToActivePerumahan($request), fn (Builder $q) => $this->scopeToActivePerumahan($q, $request))->findOrFail($id);
+        $this->authorizePermission($request, 'view');
+        $row = Costumer::query()->with([
+            'leadSource:id,nama_sumber', 'campaign:id,nama_campaign', 'perumahan:id,nama_perusahaan',
+            'unitInterests.unit:id,kode_nlok,nomor_rumah,tipe_rumah,harga_jual,status_penjualan', 'unitInterests.perumahan:id,nama_perusahaan',
+            'followUps.user:id,name', 'leadActivities.user:id,name', 'visits', 'actionPlans', 'reminders', 'documentChecklists', 'housingReservations.unit:id,kode_nlok,nomor_rumah', 'sprs.detailRumah:id,kode_nlok,nomor_rumah', 'salesTransactions.housingUnit:id,kode_nlok,nomor_rumah', 'salesTransactions.customerReceipts',
+        ])->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $q) => $q->where('assigned_marketing_id', $request->user()?->id))->when($this->shouldScopeToActivePerumahan($request), fn (Builder $q) => $this->scopeToActivePerumahan($q, $request))->findOrFail($id);
         $data = $row->only(collect($this->fields())->pluck('name')->all());
-        $data = ['id' => $row->id, 'kode_costumer' => $row->kode_costumer, 'perumahan' => $row->perumahan?->nama_perusahaan ?? '-', 'sumber_lead' => $row->leadSource?->nama_sumber ?? '-', 'campaign' => $row->campaign?->nama_campaign ?? '-', 'record_status' => $row->record_status ?? 'draft', ...$data];
+        $data = ['id' => $row->id, 'kode_costumer' => $row->kode_costumer, 'perumahan' => $row->perumahan?->nama_perusahaan ?? '-', 'sumber_lead' => $row->leadSource?->nama_sumber ?? '-', 'campaign' => $row->campaign?->nama_campaign ?? '-', 'record_status' => $row->record_status ?? 'draft', 'unit_interests' => $this->unitInterestPayload($row), ...$data];
         foreach (['tanggal_lahir', 'tanggal_lahir_pasangan'] as $field) {
             $data[$field] = optional($row->{$field})->format('d/m/Y');
         }
 
-        return Inertia::render('Admin/Marketing/Costumer/Show', ['title' => 'Detail Calon Konsumen '.$row->kode_costumer, 'baseUrl' => route('admin.marketing.calon-konsumen.index', absolute: false), 'row' => $data, 'fields' => $this->fields(), 'canEdit' => ($row->record_status ?? 'draft') !== 'locked']);
+        return Inertia::render('Admin/Marketing/Costumer/Show', [
+            'title' => 'Detail Calon Konsumen '.$row->kode_costumer,
+            'baseUrl' => route('admin.marketing.calon-konsumen.index', absolute: false),
+            'row' => $data,
+            'fields' => $this->fields(),
+            'canEdit' => ($row->record_status ?? 'draft') !== 'locked' && ($request->user()?->hasRole('super_admin') || $request->user()?->can('customer.update')),
+            'quickActions' => [
+                'followUpUrl' => $request->user()?->hasRole('super_admin') || $request->user()?->can('customer-follow-up.create')
+                    ? route('admin.marketing.jejak-follow-up.create', ['costumer_id' => $row->id], false)
+                    : null,
+                'visitUrl' => $request->user()?->hasRole('super_admin') || $request->user()?->can('marketing-visit.create')
+                    ? route('admin.marketing.crm.create', ['resource' => 'visits', 'costumer_id' => $row->id], false)
+                    : null,
+                'phone' => $row->telepon,
+            ],
+            'timeline' => $this->customerTimeline($row),
+        ]);
     }
 
     public function store(
@@ -173,19 +203,34 @@ class CostumerController extends Controller
         MarketingLeadStatusService $leadStatus,
         ApprovalWorkflowService $approvalWorkflow,
     ): RedirectResponse {
+        $this->authorizePermission($request, 'create');
+
+        return redirect()->route('admin.marketing.leads.create')->with('warning', 'Pembuatan Customer langsung dinonaktifkan. Gunakan alur Lead → Qualified → Customer.');
+
+        $this->ensureCustomerIsNotDuplicate($request);
         $this->ensureCampaignAllowed($request, $request->validated('marketing_campaign_id'));
 
+        $validated = $request->validated();
+        $unitInterests = $validated['unit_interests'] ?? [];
+        unset($validated['unit_interests']);
+
         $payload = [
-            ...$request->validated(),
-            'perumahan_id' => $this->propertyIdForWrite($request, $request->validated('perumahan_id')),
+            ...$validated,
+            'perumahan_id' => $this->propertyIdForWrite($request, $validated['perumahan_id'] ?? null),
             'kode_costumer' => $this->nextCustomerCode(),
             'status_lead' => 'lead_baru',
-            'created_by' => $this->shouldAutoAssignNewCustomer($request) ? $request->user()?->id : null,
+            'created_by' => $request->user()?->id,
+            'assigned_marketing_id' => $this->shouldAutoAssignNewCustomer($request) ? $request->user()?->id : null,
+            'assigned_at' => $this->shouldAutoAssignNewCustomer($request) ? now() : null,
+            'lead_received_at' => now(),
+            'first_response_due_at' => now()->addHours(2),
+            'lead_priority' => $validated['lead_priority'] ?? 'normal',
             'updated_by' => $request->user()?->id,
         ];
 
-        return $approvalWorkflow->create('customer', $payload, function (array $payload) use ($leadStatus): void {
+        return $approvalWorkflow->create('customer', $payload, function (array $payload) use ($leadStatus, $unitInterests): void {
             $customer = Costumer::create($payload);
+            $this->syncUnitInterests($customer, $unitInterests);
 
             $leadStatus->markCustomer(
                 $customer->id,
@@ -203,24 +248,31 @@ class CostumerController extends Controller
         string $id,
         ApprovalWorkflowService $approvalWorkflow,
     ): RedirectResponse {
+        $this->authorizePermission($request, 'update');
         $row = Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
+        $this->ensureCustomerIsNotDuplicate($request, (int) $row->id);
         $this->abortIfLocked($row);
         if ($this->shouldScopeToActivePerumahan($request)) {
             $this->ensurePerumahanAllowed($request, (int) $row->perumahan_id);
         }
         $this->ensureCampaignAllowed($request, $request->validated('marketing_campaign_id'), (int) $row->perumahan_id);
 
+        $validated = $request->validated();
+        $unitInterests = $validated['unit_interests'] ?? [];
+        unset($validated['unit_interests']);
+
         $payload = [
-            ...$request->validated(),
-            'perumahan_id' => $this->shouldScopeToActivePerumahan($request) ? $row->perumahan_id : ($request->validated('perumahan_id') ?: $row->perumahan_id),
+            ...$validated,
+            'perumahan_id' => $this->shouldScopeToActivePerumahan($request) ? $row->perumahan_id : (($validated['perumahan_id'] ?? null) ?: $row->perumahan_id),
             'updated_by' => $request->user()?->id,
         ];
 
-        return $approvalWorkflow->update('customer', $row, $payload, function (Costumer $row, array $payload): void {
+        return $approvalWorkflow->update('customer', $row, $payload, function (Costumer $row, array $payload) use ($unitInterests): void {
             $row->update($payload);
+            $this->syncUnitInterests($row, $unitInterests);
         });
     }
 
@@ -229,8 +281,9 @@ class CostumerController extends Controller
         string $id,
         ApprovalWorkflowService $approvalWorkflow,
     ): RedirectResponse {
+        $this->authorizePermission($request, 'delete');
         $row = Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('created_by', $request->user()?->id))
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('assigned_marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
         $this->abortIfLocked($row);
@@ -246,6 +299,11 @@ class CostumerController extends Controller
             ['name' => 'nama', 'label' => 'Nama Lengkap', 'type' => 'text', 'group' => 'profile', 'required' => true],
             ['name' => 'marketing_lead_source_id', 'label' => 'Sumber Lead', 'type' => 'select', 'optionsKey' => 'leadSourceOptions', 'group' => 'profile'],
             ['name' => 'marketing_campaign_id', 'label' => 'Campaign Promosi', 'type' => 'select', 'optionsKey' => 'campaignOptions', 'group' => 'profile'],
+            ['name' => 'lead_priority', 'label' => 'Prioritas Lead', 'type' => 'select', 'optionsKey' => 'priorityOptions', 'group' => 'profile'],
+            ['name' => 'interest_level', 'label' => 'Tingkat Minat', 'type' => 'select', 'optionsKey' => 'interestOptions', 'group' => 'profile'],
+            ['name' => 'budget_min', 'label' => 'Anggaran Minimum', 'type' => 'currency', 'group' => 'profile'],
+            ['name' => 'budget_max', 'label' => 'Anggaran Maksimum', 'type' => 'currency', 'group' => 'profile'],
+            ['name' => 'preferred_payment_method', 'label' => 'Rencana Pembayaran', 'type' => 'select', 'optionsKey' => 'paymentOptions', 'group' => 'profile'],
             ['name' => 'jenis_kelamin', 'label' => 'Jenis Kelamin', 'type' => 'select', 'optionsKey' => 'genderOptions', 'group' => 'profile', 'required' => true],
             ['name' => 'jenis_identitas', 'label' => 'Jenis Identitas', 'type' => 'select', 'optionsKey' => 'identityOptions', 'group' => 'profile', 'required' => true],
             ['name' => 'no_identitas', 'label' => 'No Identitas', 'type' => 'text', 'group' => 'profile', 'required' => true],
@@ -278,12 +336,49 @@ class CostumerController extends Controller
             ['name' => 'penghasilan_pasangan', 'label' => 'Penghasilan Pasangan', 'type' => 'currency', 'group' => 'pasangan'],
             ['name' => 'pengeluaran_bulanan_pasangan', 'label' => 'Pengeluaran Bulanan Pasangan', 'type' => 'currency', 'group' => 'pasangan'],
             ['name' => 'daftar_cicilan', 'label' => 'Daftar Cicilan Berjalan', 'type' => 'installments', 'group' => 'cicilan', 'full' => true],
+            ['name' => 'unit_interests', 'label' => 'Unit / Perumahan yang Diminati', 'type' => 'unit_interests', 'group' => 'minat', 'full' => true],
         ];
     }
 
     private function formOptions(): array
     {
-        return ['genderOptions' => $this->genderOptions(), 'identityOptions' => $this->identityOptions(), 'maritalOptions' => $this->maritalOptions(), 'employmentOptions' => $this->employmentOptions(), 'leadSourceOptions' => $this->leadSourceOptions(), 'campaignOptions' => $this->campaignOptions(), 'leadStatusOptions' => $this->leadStatusOptions()];
+        return ['genderOptions' => $this->genderOptions(), 'identityOptions' => $this->identityOptions(), 'maritalOptions' => $this->maritalOptions(), 'employmentOptions' => $this->employmentOptions(), 'leadSourceOptions' => $this->leadSourceOptions(), 'campaignOptions' => $this->campaignOptions(), 'leadStatusOptions' => $this->leadStatusOptions(), 'priorityOptions' => $this->simpleOptions(['low' => 'Rendah', 'normal' => 'Normal', 'high' => 'Tinggi', 'urgent' => 'Mendesak']), 'interestOptions' => MarketingReferenceOption::options('interest_level', $this->simpleOptions(['cold' => 'Dingin', 'warm' => 'Hangat', 'hot' => 'Panas'])), 'paymentOptions' => $this->simpleOptions(['cash' => 'Cash', 'cash_installment' => 'Cash Bertahap', 'kpr' => 'KPR']), 'unitOptions' => $this->unitOptions()];
+    }
+
+    private function prefillFromRequest(Request $request): ?array
+    {
+        $payload = array_filter([
+            'nama' => $request->query('nama'),
+            'telepon' => $request->query('telepon'),
+            'alamat' => $request->query('alamat'),
+            'keterangan' => $request->query('keterangan'),
+            'perumahan_id' => $request->query('perumahan_id'),
+        ], fn ($value) => $value !== null && $value !== '');
+
+        if ($request->filled('visit_id')) {
+            $visit = MarketingVisit::query()
+                ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+                ->find($request->integer('visit_id'));
+
+            if ($visit) {
+                $payload = array_filter([
+                    'nama' => $visit->contact_name,
+                    'telepon' => $visit->contact_phone,
+                    'alamat' => $visit->location,
+                    'keterangan' => trim(($visit->objective ?: '').($visit->lead_source_note ? "\nSumber: {$visit->lead_source_note}" : '')),
+                    'perumahan_id' => $visit->perumahan_id,
+                    'nama_perusahaan' => $visit->organization_name,
+                    'interest_level' => $visit->interest_level,
+                ], fn ($value) => $value !== null && $value !== '') + $payload;
+            }
+        }
+
+        return $payload ?: null;
+    }
+
+    private function simpleOptions(array $items): array
+    {
+        return collect($items)->map(fn (string $label, string $value) => compact('value', 'label'))->prepend(['value' => '', 'label' => 'Pilih'])->values()->all();
     }
 
     protected function employmentOptions(): array
@@ -405,6 +500,23 @@ class CostumerController extends Controller
         return Costumer::class;
     }
 
+    protected function abortIfLocked(Model $model): void
+    {
+        abort_if(($model->record_status ?? 'draft') === 'locked', 422, 'Data sudah dikunci. Gunakan Unlock sebelum melakukan perubahan.');
+    }
+
+    protected function lockableQuery()
+    {
+        return Costumer::query()
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('assigned_marketing_id', request()->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()));
+    }
+
+    protected function authorizeLockPermission(): void
+    {
+        $this->authorizePermission(request(), 'lock');
+    }
+
     protected function shouldScopeToCurrentMarketing(Request $request): bool
     {
         $user = $request->user();
@@ -419,5 +531,111 @@ class CostumerController extends Controller
 
         return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
             && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin', 'manager', 'manajer_pimpro']);
+    }
+
+    private function authorizePermission(Request $request, string $action): void
+    {
+        $user = $request->user();
+        abort_unless($user?->hasRole('super_admin') || $user?->can("customer.{$action}"), 403);
+    }
+
+    private function ensureCustomerIsNotDuplicate(Request $request, ?int $ignoreId = null): void
+    {
+        $identity = trim((string) $request->input('no_identitas'));
+        $email = mb_strtolower(trim((string) $request->input('email')));
+        $phone = preg_replace('/\D+/', '', (string) $request->input('telepon'));
+        if (str_starts_with($phone, '0')) {
+            $phone = '62'.substr($phone, 1);
+        }
+
+        $duplicate = Costumer::query()
+            ->when($ignoreId, fn (Builder $query) => $query->whereKeyNot($ignoreId))
+            ->where(function (Builder $query) use ($identity, $email, $phone): void {
+                if ($identity !== '') {
+                    $query->orWhere('no_identitas', $identity);
+                }
+                if ($email !== '') {
+                    $query->orWhereRaw('LOWER(email) = ?', [$email]);
+                }
+                if ($phone !== '') {
+                    $query->orWhereRaw("REPLACE(REPLACE(REPLACE(REPLACE(telepon, '+', ''), '-', ''), ' ', ''), '(', '') LIKE ?", ['%'.substr($phone, -10)]);
+                }
+            })
+            ->first(['id', 'kode_costumer', 'nama']);
+
+        abort_if($duplicate, 422, "Data mirip sudah terdaftar sebagai {$duplicate?->kode_costumer} - {$duplicate?->nama}. Buka data lama atau ajukan pemindahan PIC.");
+    }
+
+    private function customerTimeline(Costumer $customer): array
+    {
+        return collect()
+            ->concat($customer->followUps->map(fn ($row) => ['type' => 'follow_up', 'title' => 'Follow-up '.ucwords(str_replace('_', ' ', $row->metode_follow_up)), 'description' => $row->catatan, 'status' => $row->result_code ?: $row->status, 'at' => ($row->followed_up_at ?? $row->tanggal_follow_up)?->toISOString(), 'user' => $row->user?->name]))
+            ->concat($customer->visits->map(fn ($row) => ['type' => 'visit', 'title' => 'Kunjungan customer', 'description' => $row->result ?: $row->objective, 'status' => $row->verification_status ?: $row->status, 'at' => ($row->finished_at ?? $row->started_at ?? $row->planned_at)?->toISOString()]))
+            ->concat($customer->actionPlans->map(fn ($row) => ['type' => 'action', 'title' => $row->title, 'description' => $row->actual_result ?: $row->objective, 'status' => $row->status, 'at' => $row->start_at?->toISOString()]))
+            ->concat($customer->leadActivities->map(fn ($row) => ['type' => $row->activity_type ?: 'status', 'title' => $row->title ?: 'Status lead: '.($row->status_to ?: '-'), 'description' => $row->note, 'status' => $row->status_to, 'at' => $row->activity_at?->toISOString(), 'user' => $row->user?->name, 'url' => $row->source_url]))
+            ->concat($customer->reminders->map(fn ($row) => ['type' => 'reminder', 'title' => $row->judul, 'description' => $row->catatan, 'status' => $row->status, 'at' => $row->remind_at?->toISOString()]))
+            ->concat($customer->documentChecklists->map(fn ($row) => ['type' => 'document', 'title' => 'Checklist dokumen '.ucwords($row->process_stage), 'description' => $row->completion_percentage.'% lengkap', 'status' => $row->validation_status, 'at' => $row->updated_at?->toISOString()]))
+            ->concat($customer->housingReservations->map(fn ($row) => ['type' => 'reservation', 'title' => 'Reservasi unit '.trim(($row->unit?->kode_nlok ?? '').' '.($row->unit?->nomor_rumah ?? '')), 'description' => 'Booking fee Rp '.number_format((float) $row->booking_fee, 0, ',', '.'), 'status' => $row->status, 'at' => ($row->reserved_at ?? $row->created_at)?->toISOString()]))
+            ->concat($customer->sprs->map(fn ($row) => ['type' => 'spr', 'title' => 'SPR '.$row->kode_spr, 'description' => 'Unit '.trim(($row->detailRumah?->kode_nlok ?? '').' '.($row->detailRumah?->nomor_rumah ?? '')), 'status' => $row->status, 'at' => ($row->tanggal_spr ?? $row->created_at)?->toISOString()]))
+            ->concat($customer->salesTransactions->map(fn ($row) => ['type' => 'sale', 'title' => 'Transaksi Penjualan', 'description' => 'Nilai Rp '.number_format((float) $row->sale_price_snapshot, 0, ',', '.'), 'status' => $row->status, 'at' => ($row->closed_at ?? $row->approved_at ?? $row->created_at)?->toISOString()]))
+            ->concat($customer->salesTransactions->flatMap(fn ($sale) => $sale->customerReceipts->map(fn ($row) => ['type' => 'payment', 'title' => 'Pembayaran Customer', 'description' => 'Rp '.number_format((float) $row->amount, 0, ',', '.'), 'status' => $row->status, 'at' => ($row->payment_date ?? $row->created_at)?->toISOString()])))
+            ->filter(fn (array $item) => ! empty($item['at']))
+            ->sortByDesc('at')->take(50)->values()->all();
+    }
+
+    private function unitOptions(): array
+    {
+        return DetailRumah::query()
+            ->with('perumahan:id,nama_perusahaan')
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
+            ->whereNotIn('status_penjualan', ['terjual', 'sold', 'ditempati', 'batal'])
+            ->orderBy('perumahan_id')
+            ->orderBy('kode_nlok')
+            ->orderBy('nomor_rumah')
+            ->limit(500)
+            ->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah', 'tipe_rumah', 'harga_jual', 'status_penjualan'])
+            ->map(fn (DetailRumah $unit) => [
+                'value' => (string) $unit->id,
+                'perumahan_id' => (string) $unit->perumahan_id,
+                'label' => trim(($unit->perumahan?->nama_perusahaan ? $unit->perumahan->nama_perusahaan.' - ' : '').$unit->display_label.' - '.($unit->tipe_rumah ?: 'Tipe belum diisi')),
+                'price' => (float) ($unit->harga_jual ?? 0),
+                'status' => $unit->status_penjualan,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function syncUnitInterests(Costumer $customer, array $rows): void
+    {
+        $customer->unitInterests()->delete();
+        collect($rows)->filter(fn (array $row) => filled($row['detail_rumah_id'] ?? null) || filled($row['perumahan_id'] ?? null) || filled($row['notes'] ?? null))->values()->each(function (array $row) use ($customer): void {
+            $unit = ! empty($row['detail_rumah_id']) ? DetailRumah::query()->find($row['detail_rumah_id']) : null;
+            $customer->unitInterests()->create([
+                'detail_rumah_id' => $unit?->id,
+                'perumahan_id' => $unit?->perumahan_id ?: ($row['perumahan_id'] ?? $customer->perumahan_id),
+                'interest_level' => $row['interest_level'] ?? $customer->interest_level,
+                'payment_plan' => $row['payment_plan'] ?? $customer->preferred_payment_method,
+                'budget_min' => $row['budget_min'] ?? null,
+                'budget_max' => $row['budget_max'] ?? null,
+                'notes' => $row['notes'] ?? null,
+                'created_by' => auth()->id(),
+                'updated_by' => auth()->id(),
+            ]);
+        });
+    }
+
+    private function unitInterestPayload(Costumer $customer): array
+    {
+        return $customer->unitInterests->map(fn (CustomerUnitInterest $interest) => [
+            'detail_rumah_id' => (string) ($interest->detail_rumah_id ?? ''),
+            'perumahan_id' => (string) ($interest->perumahan_id ?? ''),
+            'unit_label' => $interest->unit?->display_label,
+            'perumahan' => $interest->perumahan?->nama_perusahaan,
+            'interest_level' => $interest->interest_level,
+            'payment_plan' => $interest->payment_plan,
+            'budget_min' => $interest->budget_min,
+            'budget_max' => $interest->budget_max,
+            'notes' => $interest->notes,
+        ])->values()->all();
     }
 }

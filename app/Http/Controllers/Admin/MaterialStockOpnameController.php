@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
+use App\Models\ApprovalRequest;
 use App\Models\Gudang;
 use App\Models\MaterialStockOpname;
 use App\Models\StokMaterial;
 use App\Models\TransaksiLogistik;
 use App\Services\MaterialUnitConversionService;
+use App\Services\ApprovalWorkflowService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -19,6 +22,10 @@ use Inertia\Response;
 
 class MaterialStockOpnameController extends Controller
 {
+    use HandlesCrudLock {
+        lock as protected traitLock;
+        unlock as protected traitUnlock;
+    }
     public function index(Request $request): Response
     {
         return Inertia::render('Admin/Logistik/StockOpname/Index', $this->indexProps($request));
@@ -55,9 +62,7 @@ class MaterialStockOpnameController extends Controller
                 'gudang_id' => $validated['gudang_id'],
                 'tanggal' => $validated['tanggal'],
                 'keterangan' => $validated['keterangan'] ?? null,
-                'record_status' => 'locked',
-                'locked_at' => now(),
-                'locked_by' => auth()->id(),
+                'record_status' => 'draft',
                 'created_by' => auth()->id(),
                 'updated_by' => auth()->id(),
             ]);
@@ -79,6 +84,10 @@ class MaterialStockOpnameController extends Controller
                     })
                     : (float) ($item['fisik'] ?? 0);
                 $selisih = round($fisik - $stokSistem, 6);
+                $stockRow = $stocks->get($materialId);
+                $unitCost = (float) ($stockRow?->average_unit_cost ?: $material?->harga_hpp ?? 0);
+                $valueBefore = (float) ($stockRow?->inventory_value ?? ($stokSistem * $unitCost));
+                $valueAdjustment = $selisih * $unitCost;
                 $masuk = $selisih > 0 ? $selisih : 0;
                 $keluar = $selisih < 0 ? abs($selisih) : 0;
 
@@ -90,6 +99,10 @@ class MaterialStockOpnameController extends Controller
                     'masuk' => $masuk,
                     'keluar' => $keluar,
                     'selisih' => $selisih,
+                    'unit_cost_snapshot' => $unitCost,
+                    'value_before' => $valueBefore,
+                    'value_adjustment' => $valueAdjustment,
+                    'value_after' => max(0, $valueBefore + $valueAdjustment),
                     'catatan' => $item['catatan'] ?? null,
                 ];
 
@@ -107,21 +120,12 @@ class MaterialStockOpnameController extends Controller
                     ];
                 }
 
-                $this->adjustStock((int) $validated['gudang_id'], $materialId, $selisih);
             }
 
             $opname->details()->createMany($details);
-
-            if ($inRows !== []) {
-                $this->createLogistikAdjustment($opname, $validated['tanggal'], TransaksiLogistik::JENIS_MASUK, $inRows);
-            }
-
-            if ($outRows !== []) {
-                $this->createLogistikAdjustment($opname, $validated['tanggal'], TransaksiLogistik::JENIS_KELUAR, $outRows);
-            }
         });
 
-        return redirect()->route('admin.material-stock-opname.index')->with('success', 'Stock opname berhasil disimpan.');
+        return redirect()->route('admin.material-stock-opname.index')->with('success', 'Draft stock opname berhasil disimpan. Lock data untuk mengajukan approval dan memposting koreksi stok.');
     }
 
     protected function indexProps(Request $request): array
@@ -287,6 +291,13 @@ class MaterialStockOpnameController extends Controller
     {
         $details = $row->details;
         $totalSelisih = (float) $details->sum('selisih');
+        $approval = ApprovalRequest::query()->where([
+            'module_key' => 'material-stock-opname',
+            'action' => 'lock',
+            'model_type' => MaterialStockOpname::class,
+            'model_id' => $row->id,
+        ])->latest('id')->first();
+        $isLocked = ($row->record_status ?? 'draft') === 'locked';
 
         return [
             'id' => (string) $row->id,
@@ -294,8 +305,18 @@ class MaterialStockOpnameController extends Controller
             'tanggal' => optional($row->tanggal)->format('d/m/Y'),
             'gudang' => $row->gudang?->nama_gudang ?? '-',
             'keterangan' => $row->keterangan ?? '-',
-            'status' => 'locked',
-            'status_label' => 'Selesai',
+            'status' => $row->record_status ?? 'draft',
+            'status_label' => ! $isLocked ? 'Draft' : match ($approval?->status) {
+                ApprovalRequest::STATUS_PENDING => "Approval {$approval->current_step}/{$approval->total_steps}",
+                ApprovalRequest::STATUS_APPROVED => 'Disetujui & Diposting',
+                ApprovalRequest::STATUS_REVERSED => 'Reversed',
+                ApprovalRequest::STATUS_REJECTED => 'Ditolak',
+                default => 'Locked',
+            },
+            'can_lock' => ! $isLocked && $this->canLock(),
+            'can_unlock' => $isLocked && $this->currentUserCanManageLockedRecords(),
+            'lock_url' => route('admin.material-stock-opname.lock', $row->id, false),
+            'unlock_url' => route('admin.material-stock-opname.unlock', $row->id, false),
             'total_item' => $details->count(),
             'total_selisih' => $totalSelisih,
             'created_by_name' => $row->creator?->name ?? '-',
@@ -371,7 +392,9 @@ class MaterialStockOpnameController extends Controller
         $nextQty = round(((float) $stock->qty) + $delta, 3);
         abort_if($nextQty < 0, 422, 'Stok material tidak boleh menjadi minus.');
 
-        $stock->update(['qty' => $nextQty]);
+        $unitCost = (float) ($stock->average_unit_cost ?: $stock->barangMaterial?->harga_hpp ?? 0);
+        $nextValue = max(0, (float) $stock->inventory_value + ($delta * $unitCost));
+        $stock->update(['qty' => $nextQty, 'average_unit_cost' => $nextQty > 0 ? $unitCost : 0, 'inventory_value' => $nextValue]);
     }
 
     protected function canCreate(): bool
@@ -383,11 +406,38 @@ class MaterialStockOpnameController extends Controller
             || $user?->hasRole('super_admin'));
     }
 
+    protected function canLock(): bool
+    {
+        return (bool) (auth()->user()?->can('material-stock-opname.lock') || auth()->user()?->hasRole('super_admin'));
+    }
+
+    public function lock(string $id): RedirectResponse
+    {
+        abort_unless($this->canLock(), 403);
+
+        return $this->traitLock($id);
+    }
+
+    public function unlock(string $id): RedirectResponse
+    {
+        return $this->traitUnlock($id);
+    }
+
     protected function canViewAllRecords(): bool
     {
         return (bool) (auth()->user()?->can('material-stock-opname.view-all')
             || auth()->user()?->can('material-stock-opname.manage')
             || auth()->user()?->hasRole('super_admin'));
+    }
+
+    protected function modelClass(): string
+    {
+        return MaterialStockOpname::class;
+    }
+
+    protected function beforeUnlock(MaterialStockOpname $opname): void
+    {
+        app(\App\Services\MaterialInventoryFinalizationService::class)->reverseStockOpname($opname);
     }
 
     protected function accessibleGudangs()

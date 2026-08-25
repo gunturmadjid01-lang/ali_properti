@@ -39,6 +39,11 @@ export default function Form({
     const transaction = transactions.find(
         (item) => item.value === String(form.data.sales_transaction_id),
     );
+    const availableBanks = (banks ?? []).filter(
+        (bank) =>
+            !transaction?.company_id ||
+            bank.company_id === transaction.company_id,
+    );
     const today = form.data.payment_date;
     const schedulePurpose = (schedule) =>
         schedule.purpose === "invoice_payment" && schedule.due_date > today
@@ -237,7 +242,7 @@ export default function Form({
                                 }
                             >
                                 <option value="">Pilih rekening tujuan</option>
-                                {banks.map((item) => (
+                                {availableBanks.map((item) => (
                                     <option value={item.value} key={item.value}>
                                         {item.label}
                                     </option>

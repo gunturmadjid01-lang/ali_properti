@@ -26,6 +26,7 @@ class MaterialOpeningBalance extends Model
         'record_status',
         'locked_at',
         'locked_by',
+        'stock_posted_at',
         'created_by',
         'updated_by',
     ];
@@ -38,6 +39,7 @@ class MaterialOpeningBalance extends Model
         'harga_satuan' => 'float',
         'total_nilai' => 'float',
         'locked_at' => 'datetime',
+        'stock_posted_at' => 'datetime',
     ];
 
     public function gudang(): BelongsTo

@@ -19,8 +19,6 @@ class MaterialReturnController extends Controller
 
     public function index(Request $request): Response
     {
-        abort_unless(! auth()->user()?->hasAnyRole(['user_area_gudang', 'admin_gudang']), 404);
-
         $search = trim((string) $request->query('search', ''));
 
         return Inertia::render('Admin/MaterialReturn/Index', [
@@ -29,7 +27,7 @@ class MaterialReturnController extends Controller
             'filters' => ['search' => $search],
             'permissions' => [
                 'canCreate' => (bool) auth()->user()?->can('material-return.create'),
-                'canReceive' => (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'owner', 'super_admin']),
+                'canReceive' => $this->canReceive(),
                 'canLock' => (bool) auth()->check(),
                 'canUnlock' => $this->currentUserCanManageLockedRecords(),
             ],
@@ -60,6 +58,7 @@ class MaterialReturnController extends Controller
                     'unit' => $row->detailRumah ? trim($row->detailRumah->kode_nlok.' '.$row->detailRumah->nomor_rumah) : 'Kawasan',
                     'tahapan' => $row->tahapanPembangunan?->nama_tahapan ?? '-',
                     'items_text' => $row->details->map(fn ($detail) => "{$detail->barangMaterial?->nama_barang} {$detail->qty} {$detail->satuan}")->join(', '),
+                    'condition_text' => $row->details->map(fn ($detail) => str($detail->condition_status)->replace('_', ' ')->title())->unique()->join(', '),
                     'status' => $row->status,
                     'keterangan' => $row->keterangan,
                     'record_status' => $row->record_status ?? 'draft',
@@ -101,6 +100,8 @@ class MaterialReturnController extends Controller
             'items' => ['required', 'array', 'min:1'],
             'items.*.site_material_stock_id' => ['required', 'exists:site_material_stocks,id'],
             'items.*.qty' => ['required', 'numeric', 'min:0.01'],
+            'items.*.condition_status' => ['required', 'in:utuh,layak_pakai,cacat_dapat_diperbaiki,rusak,sisa_potongan,scrap,hilang'],
+            'items.*.condition_note' => ['nullable', 'string'],
         ]);
 
         $workflow->submitReturn($validated);
@@ -129,6 +130,11 @@ class MaterialReturnController extends Controller
     protected function modelClass(): string
     {
         return MaterialReturn::class;
+    }
+
+    protected function beforeUnlock(MaterialReturn $return): void
+    {
+        app(MaterialWorkflowService::class)->reverseReturnForUnlock($return);
     }
 
     private function canCreateReturn(): bool

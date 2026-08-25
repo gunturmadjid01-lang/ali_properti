@@ -3,9 +3,11 @@ import {
     ArrowDownAZ,
     ArrowUpAZ,
     Eye,
+    LockKeyhole,
     Plus,
     RefreshCw,
     Search,
+    UnlockKeyhole,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import Pagination from "../../../../Components/Pagination";
@@ -220,6 +222,24 @@ export default function Index({
                                                 icon={Eye}
                                                 onClick={() => setDetail(row)}
                                             />
+                                            {row.can_lock && (
+                                                <IconButton
+                                                    title="Lock dan ajukan approval"
+                                                    icon={LockKeyhole}
+                                                    onClick={() => router.post(row.lock_url)}
+                                                />
+                                            )}
+                                            {row.can_unlock && (
+                                                <IconButton
+                                                    title="Unlock dan reversal stok"
+                                                    icon={UnlockKeyhole}
+                                                    onClick={() => {
+                                                        if (window.confirm("Unlock akan membalik approval dan koreksi saldo stok. Lanjutkan?")) {
+                                                            router.post(row.unlock_url);
+                                                        }
+                                                    }}
+                                                />
+                                            )}
                                         </TableActions>
                                     </td>
                                 </tr>

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ApprovalRequest;
 use App\Models\CabangPerusahaan;
 use App\Models\ChartOfAccount;
 use App\Models\Journal;
@@ -15,11 +16,14 @@ use App\Models\SpkKontraktorPayment;
 use App\Models\TipePost;
 use App\Models\TransaksiKeuangan;
 use App\Services\AccountingService;
+use App\Services\ApprovalWorkflowService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -45,14 +49,29 @@ class FinanceController extends Controller
         'laba-rugi' => 'Laba Rugi',
         'neraca' => 'Neraca',
         'arus-kas' => 'Arus Kas',
-        'piutang' => 'Piutang Customer',
+        'aging-piutang' => 'Aging Piutang Customer',
         'hutang' => 'Hutang Supplier & Kontraktor',
+    ];
+
+    protected array $sectionPermissions = [
+        'dashboard' => 'keuangan.view',
+        'pemasukan' => 'keuangan.view',
+        'pengeluaran' => 'keuangan.view',
+        'daftar-akun' => 'keuangan.view',
+        'jurnal-umum' => 'keuangan.view',
+        'buku-besar' => 'buku-besar.view',
+        'neraca-saldo' => 'neraca-saldo.view',
+        'laba-rugi' => 'laba-rugi.view',
+        'neraca' => 'neraca.view',
+        'arus-kas' => 'arus-kas.view',
+        'aging-piutang' => 'receivables.view',
+        'hutang' => 'hutang.view',
     ];
 
     public function show(Request $request, string $section): Response
     {
-        $this->authorizeFinanceView($request);
         abort_unless(array_key_exists($section, $this->sections), 404);
+        $this->authorizeFinanceView($request, $section);
 
         [$from, $to] = $this->period($request);
         if ($section === 'arus-kas' && ! $request->filled('date_from') && ! $request->filled('date_to')) {
@@ -69,6 +88,7 @@ class FinanceController extends Controller
                 'canCreate' => (bool) $request->user()?->can('keuangan.create') || $request->user()?->can('keuangan.manage'),
                 'canUpdate' => (bool) $request->user()?->can('keuangan.update') || $request->user()?->can('keuangan.manage'),
                 'canDelete' => (bool) $request->user()?->can('keuangan.delete') || $request->user()?->can('keuangan.manage'),
+                'canExport' => (bool) $request->user()?->can('laporan.export') || $request->user()?->hasAnyRole(['owner', 'super_admin']),
             ],
             'filters' => [
                 'date_from' => $from->toDateString(),
@@ -138,9 +158,10 @@ class FinanceController extends Controller
 
         DB::transaction(function () use ($request, $validated, $lines, $debit, $credit): void {
             $journal = Journal::query()->create([
-                'nomor_jurnal' => 'JRN-MANUAL-'.now()->format('YmdHis').'-'.str_pad((string) (Journal::withTrashed()->count() + 1), 5, '0', STR_PAD_LEFT),
+                'nomor_jurnal' => 'DRAFT-'.Str::uuid(),
                 'tanggal' => $validated['tanggal'],
                 'type' => 'manual',
+                'record_status' => 'draft',
                 'perumahan_id' => $validated['perumahan_id'] ?: null,
                 'total_debit' => $debit,
                 'total_kredit' => $credit,
@@ -151,7 +172,30 @@ class FinanceController extends Controller
             $journal->details()->createMany($lines->all());
         });
 
-        return back()->with('success', 'Jurnal umum berhasil diposting.');
+        return back()->with('success', 'Draft jurnal umum berhasil disimpan. Periksa lalu lock untuk mengajukan approval.');
+    }
+
+    public function lockJournal(Request $request, Journal $journal, ApprovalWorkflowService $workflow): RedirectResponse
+    {
+        $this->authorizeFinanceWrite($request);
+        abort_unless($journal->type === 'manual' && $journal->record_status === 'draft', 422);
+        abort_unless((int) $journal->created_by === (int) $request->user()?->id, 403);
+        DB::transaction(function () use ($request, $journal, $workflow): void {
+            $journal->forceFill(['record_status' => 'locked', 'locked_at' => now(), 'locked_by' => $request->user()?->id])->save();
+            $workflow->submitLocked($journal, 'manual-journal');
+        });
+        return back()->with('success', 'Jurnal dikunci dan diajukan mengikuti Setting Approval.');
+    }
+
+    public function unlockJournal(Request $request, Journal $journal, ApprovalWorkflowService $workflow): RedirectResponse
+    {
+        abort_unless($request->user()?->can('keuangan.update') || $request->user()?->hasAnyRole(['owner', 'super_admin']), 403);
+        abort_unless($journal->type === 'manual' && $journal->record_status === 'locked' && ! $journal->posted_at, 422);
+        DB::transaction(function () use ($journal, $workflow): void {
+            $workflow->cancelPendingLock($journal);
+            $journal->forceFill(['record_status' => 'draft', 'locked_at' => null, 'locked_by' => null])->save();
+        });
+        return back()->with('success', 'Jurnal dibuka kembali menjadi draft pembuat.');
     }
 
     public function storeTransaction(Request $request, AccountingService $accounting): RedirectResponse
@@ -200,8 +244,8 @@ class FinanceController extends Controller
             422,
             'Jenis pemasukan ini dicatat otomatis dari modul transaksi asal dan tidak boleh diposting manual.',
         );
-        DB::transaction(function () use ($request, $validated, $bank, $post, $accounting): void {
-            $transaction = TransaksiKeuangan::query()->create([
+        DB::transaction(function () use ($request, $validated, $bank, $post): void {
+            TransaksiKeuangan::query()->create([
                 'cabang_id' => $validated['cabang_id'],
                 'perumahan_id' => $bank->perumahan_id,
                 'master_bank_id' => $bank->id,
@@ -209,15 +253,56 @@ class FinanceController extends Controller
                 'tanggal' => $validated['tanggal'],
                 'nominal' => $validated['nominal'],
                 'nomor_referensi' => $validated['nomor_referensi'] ?: null,
-                'status' => 'posted',
+                'source_type' => 'manual_finance',
+                'status' => 'draft',
+                'record_status' => 'draft',
                 'keterangan' => $validated['keterangan'],
                 'user_id' => $request->user()?->id,
             ]);
 
-            $accounting->recordFinancialTransaction($transaction);
         });
 
-        return back()->with('success', 'Transaksi '.$post->jenis.' berhasil diposting ke kas/bank dan jurnal.');
+        return back()->with('success', 'Draft transaksi '.$post->jenis.' berhasil disimpan. Periksa lalu lock untuk mengajukan approval.');
+    }
+
+    public function lockTransaction(Request $request, TransaksiKeuangan $transaction, ApprovalWorkflowService $workflow): RedirectResponse
+    {
+        $this->authorizeFinanceWrite($request);
+        abort_unless($transaction->source_type === 'manual_finance', 422, 'Hanya transaksi manual yang dapat diajukan dari halaman ini.');
+        abort_unless($transaction->record_status === 'draft' && (int) $transaction->user_id === (int) $request->user()?->id, 403);
+
+        DB::transaction(function () use ($request, $transaction, $workflow): void {
+            $transaction->update([
+                'record_status' => 'locked',
+                'status' => 'pending_approval',
+                'locked_at' => now(),
+                'locked_by' => $request->user()?->id,
+            ]);
+            $workflow->submitLocked($transaction, 'financial-transaction');
+        });
+
+        return back()->with('success', 'Transaksi dikunci dan diajukan mengikuti Setting Approval.');
+    }
+
+    public function unlockTransaction(Request $request, TransaksiKeuangan $transaction, ApprovalWorkflowService $workflow): RedirectResponse
+    {
+        abort_unless(
+            $request->user()?->can('keuangan.update') || $request->user()?->hasAnyRole(['owner', 'super_admin']),
+            403,
+        );
+        abort_unless($transaction->source_type === 'manual_finance' && $transaction->record_status === 'locked' && $transaction->status !== 'posted', 422);
+
+        DB::transaction(function () use ($transaction, $workflow): void {
+            $workflow->cancelPendingLock($transaction);
+            $transaction->update([
+                'record_status' => 'draft',
+                'status' => 'draft',
+                'locked_at' => null,
+                'locked_by' => null,
+            ]);
+        });
+
+        return back()->with('success', 'Transaksi dibuka kembali menjadi draft pembuat.');
     }
 
     public function storeAccount(Request $request): RedirectResponse
@@ -252,7 +337,7 @@ class FinanceController extends Controller
             'laba-rugi' => $this->profitLossData($from, $to, $perumahanId),
             'neraca' => $this->balanceSheetData($to, $perumahanId),
             'arus-kas' => $this->cashFlowData($from, $to, $perumahanId),
-            'piutang' => $this->receivableData($perumahanId),
+            'aging-piutang' => $this->receivableData($perumahanId),
             'hutang' => $this->payableData($perumahanId),
         };
     }
@@ -261,6 +346,7 @@ class FinanceController extends Controller
     {
         $allowedBranches = $this->allowedCabangIds($request);
         $cabangId = $this->cabangId($request);
+        $workflow = app(ApprovalWorkflowService::class);
 
         return [
             'rows' => TransaksiKeuangan::query()
@@ -270,28 +356,51 @@ class FinanceController extends Controller
                     'masterBank:id,nama_bank,nomor_rekening',
                     'tipePost:id,nama_post,jenis',
                     'user:id,name',
+                    'latestApproval',
                 ])
                 ->whereBetween('tanggal', [$from, $to])
                 ->when($type, fn (Builder $query, string $type) => $query->whereHas('tipePost', fn (Builder $postQuery) => $postQuery->where('jenis', $type)))
                 ->when(! $request->user()?->hasAnyRole(['owner', 'super_admin']), fn (Builder $query) => $query->whereIn('cabang_id', $allowedBranches))
                 ->when($cabangId, fn (Builder $query, int $id) => $query->where('cabang_id', $id))
+                ->when($request->integer('perumahan_id'), fn (Builder $query, int $id) => $query->where('perumahan_id', $id))
                 ->latest('tanggal')
                 ->latest('id')
                 ->limit(300)
                 ->get()
-                ->map(fn (TransaksiKeuangan $row) => [
-                    'id' => $row->id,
-                    'date' => optional($row->tanggal)->format('Y-m-d'),
-                    'reference' => $row->nomor_referensi ?: '-',
-                    'company' => $row->cabang?->nama_cabang ?? '-',
-                    'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
-                    'bank' => trim(($row->masterBank?->nama_bank ?? '-').' '.($row->masterBank?->nomor_rekening ?? '')),
-                    'post' => $row->tipePost?->nama_post ?? '-',
-                    'type' => $row->tipePost?->jenis ?? '-',
-                    'amount' => (float) $row->nominal,
-                    'description' => $row->keterangan,
-                    'input_by' => $row->user?->name ?? '-',
-                ]),
+                ->map(function (TransaksiKeuangan $row) use ($workflow) {
+                    $approval = $row->latestApproval;
+
+                    return [
+                        'id' => $row->id,
+                        'date' => optional($row->tanggal)->format('Y-m-d'),
+                        'reference' => $row->nomor_referensi ?: '-',
+                        'company' => $row->cabang?->nama_cabang ?? '-',
+                        'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
+                        'bank' => trim(($row->masterBank?->nama_bank ?? '-').' '.($row->masterBank?->nomor_rekening ?? '')),
+                        'post' => $row->tipePost?->nama_post ?? '-',
+                        'type' => $row->tipePost?->jenis ?? '-',
+                        'amount' => (float) $row->nominal,
+                        'description' => $row->keterangan,
+                        'input_by' => $row->user?->name ?? '-',
+                        'record_status' => $row->record_status ?? 'locked',
+                        'status' => $row->status,
+                        'approval_status' => $approval?->status,
+                        'approval_step' => $approval?->current_step,
+                        'approval_total' => $approval?->total_steps,
+                        'can_review' => $approval ? $workflow->canReview($approval) : false,
+                        'can_lock' => $row->source_type === 'manual_finance'
+                            && $row->record_status === 'draft'
+                            && (int) $row->user_id === (int) auth()->id(),
+                        'can_unlock' => $row->source_type === 'manual_finance'
+                            && $row->record_status === 'locked'
+                            && $row->status !== 'posted'
+                            && (auth()->user()?->can('keuangan.update') || auth()->user()?->hasAnyRole(['owner', 'super_admin'])),
+                        'lock_url' => route('admin.finance.transaction.lock', $row, absolute: false),
+                        'unlock_url' => route('admin.finance.transaction.unlock', $row, absolute: false),
+                        'approve_url' => $approval ? route('admin.approval.requests.approve', $approval, absolute: false) : null,
+                        'reject_url' => $approval ? route('admin.approval.requests.reject', $approval, absolute: false) : null,
+                    ];
+                }),
         ];
     }
 
@@ -301,12 +410,18 @@ class FinanceController extends Controller
         $receivables = $this->receivableData($perumahanId);
         $payables = $this->payableData($perumahanId);
         $profit = $this->profitLossData($from, $to, $perumahanId);
+        $pendingTransactionIds = TransaksiKeuangan::query()
+            ->where('source_type', 'manual_finance')
+            ->where('status', 'pending_approval')
+            ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))
+            ->pluck('id');
 
         $cashAccountId = ChartOfAccount::query()->where('kode_akun', ChartOfAccount::KAS_BANK)->value('id');
         $monthly = JournalDetail::query()
             ->with('journal')
             ->where('chart_of_account_id', $cashAccountId)
             ->whereHas('journal', fn (Builder $query) => $query
+                ->where('record_status', 'posted')
                 ->whereBetween('tanggal', [$from, $to])
                 ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)))
             ->get()
@@ -332,6 +447,27 @@ class FinanceController extends Controller
                 'payable' => $payables['summary']['remaining'],
                 'profit' => $profit['net_profit'],
             ],
+            'work_queue' => [
+                [
+                    'label' => 'Transaksi menunggu approval',
+                    'count' => ApprovalRequest::query()
+                        ->where('module_key', 'financial-transaction')
+                        ->where('status', ApprovalRequest::STATUS_PENDING)
+                        ->whereIn('model_id', $pendingTransactionIds)
+                        ->count(),
+                    'href' => route('admin.finance.show', 'pemasukan', absolute: false),
+                ],
+                [
+                    'label' => 'Piutang telah jatuh tempo',
+                    'count' => collect($receivables['rows'])->filter(fn (array $row) => $row['remaining'] > 0 && $row['due_date'] && Carbon::parse($row['due_date'])->isPast())->count(),
+                    'href' => route('admin.receivables.due-monitor', absolute: false),
+                ],
+                [
+                    'label' => 'Hutang belum dibayar',
+                    'count' => collect($payables['rows'])->where('remaining', '>', 0)->count(),
+                    'href' => route('admin.finance.show', 'hutang', absolute: false),
+                ],
+            ],
             'monthly' => $monthly,
             'recent_journals' => $this->journalQuery($from, $to, $perumahanId)
                 ->with('perumahan:id,nama_perusahaan')
@@ -355,9 +491,14 @@ class FinanceController extends Controller
 
     protected function journalData(Carbon $from, Carbon $to, ?int $perumahanId): array
     {
-        $journals = $this->journalQuery($from, $to, $perumahanId)
-            ->with(['perumahan:id,nama_perusahaan', 'details.account:id,kode_akun,nama_akun'])
-            ->latest('tanggal')->latest('id')->limit(300)->get();
+        $journalQuery = Journal::query()
+            ->whereBetween('tanggal', [$from, $to])
+            ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))
+            ->where(fn (Builder $query) => $query->where('record_status', 'posted')->orWhere(fn (Builder $manual) => $manual->where('type', 'manual')->where('created_by', auth()->id())))
+            ->with(['perumahan:id,nama_perusahaan', 'details.account:id,kode_akun,nama_akun', 'latestApproval'])
+            ->latest('tanggal')->latest('id');
+        $paginator = $journalQuery->paginate(50, ['*'], 'journal_page')->withQueryString();
+        $journals = $paginator->getCollection();
 
         return [
             'trend' => $journals->groupBy(fn (Journal $row) => $row->tanggal?->format('Y-m-d'))
@@ -376,7 +517,21 @@ class FinanceController extends Controller
                         'kredit' => (float) $line->kredit,
                         'keterangan' => $line->keterangan,
                     ]),
+                    'record_status' => $row->record_status,
+                    'approval_status' => $row->latestApproval?->status,
+                    'approval_step' => $row->latestApproval?->current_step,
+                    'approval_total' => $row->latestApproval?->total_steps,
+                    'can_lock' => $row->type === 'manual' && $row->record_status === 'draft' && (int) $row->created_by === (int) auth()->id(),
+                    'can_unlock' => $row->type === 'manual' && $row->record_status === 'locked' && ! $row->posted_at && (auth()->user()?->can('keuangan.update') || auth()->user()?->hasAnyRole(['owner', 'super_admin'])),
+                    'lock_url' => route('admin.finance.journal.lock', $row, absolute: false),
+                    'unlock_url' => route('admin.finance.journal.unlock', $row, absolute: false),
                 ]),
+            'pagination' => [
+                'links' => $paginator->linkCollection()->toArray(),
+                'from' => $paginator->firstItem(),
+                'to' => $paginator->lastItem(),
+                'total' => $paginator->total(),
+            ],
         ];
     }
 
@@ -391,6 +546,7 @@ class FinanceController extends Controller
             ->with(['journal.perumahan:id,nama_perusahaan'])
             ->where('chart_of_account_id', $accountId)
             ->whereHas('journal', fn (Builder $query) => $query
+                ->where('record_status', 'posted')
                 ->whereBetween('tanggal', [$from, $to])
                 ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)))
             ->get()
@@ -474,6 +630,7 @@ class FinanceController extends Controller
             ->with(['journal', 'account:id,kategori'])
             ->whereIn('chart_of_account_id', $accounts->pluck('id'))
             ->whereHas('journal', fn (Builder $query) => $query
+                ->where('record_status', 'posted')
                 ->whereBetween('tanggal', [$from, $to])
                 ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)))
             ->get()
@@ -539,9 +696,10 @@ class FinanceController extends Controller
     {
         $cashAccountId = ChartOfAccount::query()->where('kode_akun', ChartOfAccount::KAS_BANK)->value('id');
         $query = JournalDetail::query()
-            ->with(['journal.perumahan:id,nama_perusahaan'])
+            ->with(['journal.perumahan:id,nama_perusahaan', 'journal.source'])
             ->where('chart_of_account_id', $cashAccountId)
             ->whereHas('journal', fn (Builder $query) => $query
+                ->where('record_status', 'posted')
                 ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)));
         $openingRows = (clone $query)->whereHas('journal', fn (Builder $query) => $query->where('tanggal', '<', $from))->get();
         $periodRows = (clone $query)
@@ -582,22 +740,43 @@ class FinanceController extends Controller
             'net_cash_flow' => $cashIn - $cashOut,
             'ending_balance' => $opening + $cashIn - $cashOut,
             'trend' => $trend,
-            'groups' => $periodRows->groupBy(fn (JournalDetail $row) => $row->journal?->type ?? 'Lainnya')
-                ->map(fn ($rows, string $name) => [
-                    'name' => $name,
-                    'type' => $rows->sum('debit') >= $rows->sum('kredit') ? 'pemasukan' : 'pengeluaran',
-                    'amount' => (float) abs($rows->sum('debit') - $rows->sum('kredit')),
+            'groups' => $periodRows->groupBy(fn (JournalDetail $row) => $this->cashFlowActivity($row->journal))
+                ->map(fn ($rows, string $activity) => [
+                    'name' => match ($activity) { 'operating' => 'Aktivitas Operasi', 'investing' => 'Aktivitas Investasi', 'financing' => 'Aktivitas Pendanaan' },
+                    'type' => $activity,
+                    'cash_in' => (float) $rows->sum('debit'),
+                    'cash_out' => (float) $rows->sum('kredit'),
+                    'amount' => (float) ($rows->sum('debit') - $rows->sum('kredit')),
                 ])->values(),
             'rows' => $periodRows->map(fn (JournalDetail $row) => [
                 'id' => $row->id,
                 'date' => optional($row->journal?->tanggal)->format('Y-m-d'),
                 'type' => $row->debit > 0 ? 'pemasukan' : 'pengeluaran',
                 'post' => $row->journal?->type,
+                'activity' => $this->cashFlowActivity($row->journal),
                 'bank' => $row->journal?->perumahan?->nama_perusahaan ?? 'Konsolidasi',
                 'description' => $row->keterangan ?: $row->journal?->keterangan,
                 'amount' => (float) ($row->debit > 0 ? $row->debit : $row->kredit),
             ]),
         ];
+    }
+
+    protected function cashFlowActivity(?Journal $journal): string
+    {
+        $type = strtolower((string) $journal?->type);
+        if (in_array($type, ['asset_purchase', 'fixed_asset_purchase', 'land_purchase', 'heavy_equipment_purchase', 'asset_sale'], true)) {
+            return 'investing';
+        }
+        if ($journal?->source instanceof TransaksiKeuangan) {
+            $name = strtolower((string) $journal->source->tipePost?->nama_post);
+            if (str_contains($name, 'modal') || str_contains($name, 'investor') || str_contains($name, 'pinjaman')) {
+                return 'financing';
+            }
+        }
+        if (in_array($type, ['capital_deposit', 'loan_receipt', 'loan_payment', 'dividend_payment'], true)) {
+            return 'financing';
+        }
+        return 'operating';
     }
 
     protected function receivableData(?int $perumahanId): array
@@ -634,8 +813,9 @@ class FinanceController extends Controller
     protected function payableData(?int $perumahanId): array
     {
         $supplier = MaterialPurchase::query()
-            ->with('perumahan:id,nama_perusahaan')
+            ->with(['perumahan:id,nama_perusahaan', 'supplierInvoice'])
             ->where('metode_pembayaran', 'hutang')
+            ->whereHas('supplierInvoice', fn (Builder $query) => $query->where('status', 'reconciled'))
             ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id))
             ->get()->map(fn (MaterialPurchase $row) => [
                 'id' => 'supplier-'.$row->id,
@@ -643,11 +823,11 @@ class FinanceController extends Controller
                 'reference' => $row->kode_pembelian,
                 'vendor' => $row->supplier ?: '-',
                 'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
-                'due_date' => optional($row->tanggal)->format('Y-m-d'),
-                'bill' => (float) $row->total_nominal,
-                'paid' => $row->fund_released_at ? (float) $row->total_nominal : 0,
-                'remaining' => $row->fund_released_at ? 0 : (float) $row->total_nominal,
-                'status' => $row->status,
+                'due_date' => optional($row->supplierInvoice?->invoice_date)->format('Y-m-d'),
+                'bill' => (float) $row->supplierInvoice?->payable_amount,
+                'paid' => (float) $row->supplierInvoice?->paid_amount,
+                'remaining' => (float) $row->supplierInvoice?->outstanding_amount,
+                'status' => $row->supplierInvoice?->status,
             ]);
         $contractor = SpkKontraktorPayment::query()
             ->with(['spkKontraktor.kontraktor:id,nama_kontraktor', 'spkKontraktor.perumahan:id,nama_perusahaan'])
@@ -708,6 +888,7 @@ class FinanceController extends Controller
         $query = JournalDetail::query()
             ->where('chart_of_account_id', $account->id)
             ->whereHas('journal', fn (Builder $query) => $query
+                ->where('record_status', 'posted')
                 ->when($from, fn (Builder $query) => $query->whereDate('tanggal', '>=', $from))
                 ->whereDate('tanggal', '<=', $to)
                 ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id)));
@@ -724,6 +905,7 @@ class FinanceController extends Controller
     protected function journalQuery(Carbon $from, Carbon $to, ?int $perumahanId): Builder
     {
         return Journal::query()
+            ->where('record_status', 'posted')
             ->whereBetween('tanggal', [$from, $to])
             ->when($perumahanId, fn (Builder $query, int $id) => $query->where('perumahan_id', $id));
     }
@@ -736,10 +918,84 @@ class FinanceController extends Controller
             'date' => optional($row->tanggal)->format('Y-m-d'),
             'type' => $row->type,
             'perumahan' => $row->perumahan?->nama_perusahaan ?? '-',
+            'company' => $row->company?->nama_cabang ?? $row->perumahan?->cabang?->nama_cabang ?? '-',
             'description' => $row->keterangan,
             'debit' => (float) $row->total_debit,
             'credit' => (float) $row->total_kredit,
         ];
+    }
+
+    public function export(Request $request, string $section, string $format)
+    {
+        abort_unless(in_array($section, ['buku-besar', 'neraca-saldo', 'laba-rugi', 'neraca', 'arus-kas', 'aging-piutang', 'hutang'], true), 404);
+        abort_unless(in_array($format, ['pdf', 'excel'], true), 404);
+        $this->authorizeFinanceView($request, $section);
+        abort_unless($request->user()?->can('laporan.export') || $request->user()?->hasAnyRole(['owner', 'super_admin']), 403);
+
+        [$from, $to] = $this->period($request);
+        $perumahanId = $this->perumahanId($request);
+        $data = $this->data($request, $section, $from, $to, $perumahanId);
+        $report = $this->exportDataset($section, $data);
+        $payload = [
+            ...$report,
+            'title' => $this->sections[$section],
+            'period' => $from->format('d/m/Y').' - '.$to->format('d/m/Y'),
+            'scope' => $perumahanId
+                ? Perumahan::query()->find($perumahanId)?->nama_perusahaan
+                : 'Konsolidasi Semua Perumahan',
+            'printedAt' => now()->format('d/m/Y H:i'),
+        ];
+
+        if ($format === 'pdf') {
+            return Pdf::loadView('reports.finance', $payload)
+                ->setPaper('a4', 'landscape')
+                ->download('laporan-'.$section.'-'.$from->format('Ymd').'-'.$to->format('Ymd').'.pdf');
+        }
+
+        return response(view('reports.finance', $payload)->render())
+            ->header('Content-Type', 'application/vnd.ms-excel; charset=UTF-8')
+            ->header('Content-Disposition', 'attachment; filename="laporan-'.$section.'-'.$from->format('Ymd').'-'.$to->format('Ymd').'.xls"');
+    }
+
+    protected function exportDataset(string $section, array $data): array
+    {
+        return match ($section) {
+            'buku-besar' => [
+                'columns' => ['date' => 'Tanggal', 'reference' => 'Referensi', 'description' => 'Keterangan', 'debit' => 'Debit', 'credit' => 'Kredit', 'balance' => 'Saldo'],
+                'rows' => $data['rows'] ?? [],
+                'summary' => ['Saldo Awal' => $data['opening_balance'] ?? 0, 'Saldo Akhir' => $data['ending_balance'] ?? 0],
+            ],
+            'neraca-saldo' => [
+                'columns' => ['code' => 'Kode Akun', 'name' => 'Nama Akun', 'opening' => 'Saldo Awal', 'debit' => 'Debit', 'credit' => 'Kredit', 'ending_debit' => 'Saldo Debit', 'ending_credit' => 'Saldo Kredit'],
+                'rows' => $data['rows'] ?? [],
+                'summary' => ['Total Debit' => $data['total_debit'] ?? 0, 'Total Kredit' => $data['total_credit'] ?? 0, 'Status' => ($data['balanced'] ?? false) ? 'Balance' : 'Tidak Balance'],
+            ],
+            'laba-rugi' => [
+                'columns' => ['code' => 'Kode Akun', 'name' => 'Nama Akun', 'category' => 'Kelompok', 'amount' => 'Nilai'],
+                'rows' => $data['rows'] ?? [],
+                'summary' => ['Pendapatan' => $data['revenue'] ?? 0, 'HPP' => $data['cost_of_sales'] ?? 0, 'Laba Kotor' => $data['gross_profit'] ?? 0, 'Beban Operasional' => $data['operating_expense'] ?? 0, 'Laba Bersih' => $data['net_profit'] ?? 0],
+            ],
+            'neraca' => [
+                'columns' => ['code' => 'Kode Akun', 'name' => 'Nama Akun', 'category' => 'Kelompok', 'amount' => 'Nilai'],
+                'rows' => $data['rows'] ?? [],
+                'summary' => ['Aset' => $data['assets'] ?? 0, 'Liabilitas' => $data['liabilities'] ?? 0, 'Ekuitas' => $data['equity'] ?? 0, 'Liabilitas + Ekuitas' => $data['liabilities_equity'] ?? 0, 'Status' => ($data['balanced'] ?? false) ? 'Balance' : 'Tidak Balance'],
+            ],
+            'arus-kas' => [
+                'columns' => ['date' => 'Tanggal', 'type' => 'Jenis', 'post' => 'Sumber', 'bank' => 'Perumahan', 'description' => 'Keterangan', 'amount' => 'Nilai'],
+                'rows' => $data['rows'] ?? [],
+                'summary' => ['Saldo Awal' => $data['opening_balance'] ?? 0, 'Kas Masuk' => $data['cash_in'] ?? 0, 'Kas Keluar' => $data['cash_out'] ?? 0, 'Arus Bersih' => $data['net_cash_flow'] ?? 0, 'Saldo Akhir' => $data['ending_balance'] ?? 0],
+            ],
+            'aging-piutang' => [
+                'columns' => ['reference' => 'Transaksi', 'customer' => 'Customer', 'perumahan' => 'Perumahan', 'type' => 'Tagihan', 'due_date' => 'Jatuh Tempo', 'bill' => 'Tagihan', 'paid' => 'Dibayar', 'remaining' => 'Sisa', 'status' => 'Status'],
+                'rows' => $data['rows'] ?? [],
+                'summary' => ['Total Tagihan' => $data['summary']['bill'] ?? 0, 'Dibayar' => $data['summary']['paid'] ?? 0, 'Sisa' => $data['summary']['remaining'] ?? 0, 'Jatuh Tempo' => $data['summary']['overdue'] ?? 0],
+            ],
+            'hutang' => [
+                'columns' => ['source' => 'Sumber', 'reference' => 'Referensi', 'vendor' => 'Supplier/Kontraktor', 'perumahan' => 'Perumahan', 'due_date' => 'Jatuh Tempo', 'bill' => 'Tagihan', 'paid' => 'Dibayar', 'remaining' => 'Sisa', 'status' => 'Status'],
+                'rows' => $data['rows'] ?? [],
+                'summary' => ['Total Tagihan' => $data['summary']['bill'] ?? 0, 'Dibayar' => $data['summary']['paid'] ?? 0, 'Sisa' => $data['summary']['remaining'] ?? 0],
+            ],
+        };
     }
 
     protected function period(Request $request): array
@@ -868,11 +1124,12 @@ class FinanceController extends Controller
         ];
     }
 
-    protected function authorizeFinanceView(Request $request): void
+    protected function authorizeFinanceView(Request $request, ?string $section = null): void
     {
+        $permission = $section ? ($this->sectionPermissions[$section] ?? 'keuangan.view') : 'keuangan.view';
+
         abort_unless(
-            $request->user()?->can('keuangan.view')
-            || $request->user()?->can('laporan.view')
+            $request->user()?->can($permission)
             || $request->user()?->hasAnyRole(['super_admin', 'owner']),
             403,
         );

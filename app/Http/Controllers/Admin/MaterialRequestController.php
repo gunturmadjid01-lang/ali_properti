@@ -5,13 +5,16 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
+use App\Models\ApprovalRequest;
 use App\Models\DetailRumah;
 use App\Models\Gudang;
 use App\Models\MaterialRequest;
 use App\Models\Perumahan;
 use App\Services\AppNotificationService;
 use App\Services\MaterialRequestTemplateService;
+use App\Services\MaterialUnitConversionService;
 use App\Services\MaterialWorkflowService;
+use App\Services\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -58,8 +61,8 @@ class MaterialRequestController extends Controller
                 'canCreate' => $this->canCreateRequest(),
                 'canUpdate' => $this->canUpdateRequest(),
                 'canDelete' => $this->canDeleteRequest(),
-                'canApproveGudang' => $this->canApproveGudang(),
-                'canApproveOwner' => $this->canApproveOwner(),
+                'canApproveGudang' => true,
+                'canApproveOwner' => false,
                 'canLock' => $this->canLockRequest(),
                 'canUnlock' => $this->canManageLock(),
                 'canIssue' => (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'owner', 'super_admin']),
@@ -68,7 +71,7 @@ class MaterialRequestController extends Controller
                 ->with([
                     'gudang:id,nama_gudang',
                     'detailRumah:id,kode_nlok,nomor_rumah',
-                    'details.barangMaterial:id,nama_barang',
+                    'details.barangMaterial:id,nama_barang,base_unit_id,satuan',
                     'creator:id,name',
                     'updater:id,name',
                     'requestedBy:id,name',
@@ -80,7 +83,15 @@ class MaterialRequestController extends Controller
                 ->latest('id')
                 ->paginate(10)
                 ->withQueryString()
-                ->through(fn (MaterialRequest $row) => [
+                ->through(function (MaterialRequest $row) {
+                    $approval = ApprovalRequest::query()->where([
+                        'module_key' => 'material-request',
+                        'action' => 'lock',
+                        'model_type' => MaterialRequest::class,
+                        'model_id' => $row->id,
+                    ])->latest('id')->first();
+
+                    return [
                     'id' => $row->id,
                     'kode_request' => $row->kode_request,
                     'tanggal' => optional($row->tanggal)->format('Y-m-d'),
@@ -98,24 +109,30 @@ class MaterialRequestController extends Controller
                     'approved_at_owner' => optional($row->approved_at_owner)->format('Y-m-d H:i'),
                     'issued_at' => optional($row->issued_at)->format('Y-m-d H:i'),
                     'issued_by_name' => $row->issuedBy?->name ?? '-',
-                    'items_text' => $row->details->map(fn ($detail) => $detail->barangMaterial?->nama_barang.' '.$detail->qty.' '.$detail->satuan)->join(', '),
+                    'items_text' => $row->details->map(fn ($detail) => $detail->barangMaterial?->nama_barang.' '.($detail->input_qty ?? $detail->qty).' '.$detail->satuan)->join(', '),
                     'items' => $row->details->map(fn ($detail) => [
                         'barang_material_id' => (string) $detail->barang_material_id,
-                        'qty' => $detail->qty,
+                        'qty' => $detail->input_qty ?? $detail->qty,
+                        'material_unit_id' => (string) ($detail->input_unit_id ?? $detail->barangMaterial?->base_unit_id ?? ''),
                         'satuan' => $detail->satuan,
                         'catatan' => $detail->catatan,
                     ])->values(),
                     'keterangan' => $row->keterangan,
-                    'can_approve_gudang' => ($row->record_status ?? 'draft') === 'locked' && $this->canApproveGudang() && ($row->approved_at_gudang === null),
-                    'can_approve_owner' => ($row->record_status ?? 'draft') === 'locked' && $this->canApproveOwner() && ($row->approved_at_owner === null),
+                    'approval_status' => $approval?->status,
+                    'approval_stage' => $approval?->status === ApprovalRequest::STATUS_PENDING
+                        ? "Tahap {$approval->current_step}/{$approval->total_steps}"
+                        : ($approval?->status ?? 'Belum diajukan'),
+                    'can_approve_gudang' => $approval?->status === ApprovalRequest::STATUS_PENDING && app(ApprovalWorkflowService::class)->canReview($approval),
+                    'can_approve_owner' => false,
                     'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->canLockRequest(),
-                    'can_unlock' => $this->canManageLock(),
+                    'can_unlock' => ($row->record_status ?? 'draft') === 'locked' && $this->canManageLock(),
                     'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && ! $row->issued_at && $this->canUpdateRequest(),
                     'can_delete' => ($row->record_status ?? 'draft') !== 'locked' && ! $row->issued_at && $this->canDeleteRequest(),
                     'can_issue' => $this->canIssueMaterial($row),
                     'record_status' => $row->record_status ?? 'draft',
                     'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-                ]),
+                    ];
+                }),
             'filters' => ['search' => $search],
             'options' => $this->options(),
             'canCreate' => $this->canCreateRequest(),
@@ -130,7 +147,7 @@ class MaterialRequestController extends Controller
     public function edit(Request $request, string $id): Response
     {
         $materialRequest = MaterialRequest::query()
-            ->with(['details', 'gudang:id,nama_gudang', 'perumahan:id,nama_perusahaan', 'detailRumah:id,perumahan_id,kode_nlok,nomor_rumah'])
+            ->with(['details.barangMaterial', 'gudang:id,nama_gudang', 'perumahan:id,nama_perusahaan', 'detailRumah:id,perumahan_id,kode_nlok,nomor_rumah'])
             ->findOrFail($id);
 
         return Inertia::render('Admin/MaterialRequest/Create', $this->formProps($request, $materialRequest));
@@ -154,9 +171,14 @@ class MaterialRequestController extends Controller
 
             foreach ($validated['items'] as $item) {
                 $barang = BarangMaterial::query()->findOrFail($item['barang_material_id']);
+                $normalized = app(MaterialUnitConversionService::class)->normalize($barang, $item['material_unit_id'], (float) $item['qty']);
                 $request->details()->create([
                     ...$item,
-                    'satuan' => $item['satuan'] ?? $barang->satuan,
+                    'qty' => $normalized['quantity_base'],
+                    'input_qty' => (float) $item['qty'],
+                    'input_unit_id' => $normalized['unit_id'],
+                    'conversion_to_base' => $normalized['factor_to_base'],
+                    'satuan' => $normalized['unit_symbol'],
                     'created_by' => auth()->id(),
                     'updated_by' => auth()->id(),
                 ]);
@@ -173,21 +195,15 @@ class MaterialRequestController extends Controller
         return back()->with('success', 'Permintaan barang berhasil dikirim.');
     }
 
-    public function approve(string $id, MaterialWorkflowService $workflow): RedirectResponse
+    public function approve(string $id, ApprovalWorkflowService $workflow): RedirectResponse
     {
-        abort_unless($this->canApproveGudang(), 403, 'Hanya gudang yang dapat menyetujui permintaan barang.');
-
         $request = MaterialRequest::query()->findOrFail($id);
         abort_unless(($request->record_status ?? 'draft') === 'locked', 422, 'Permintaan barang harus di-lock terlebih dahulu.');
-        $result = $workflow->approveGudang($request);
+        $approval = $this->pendingApproval($request);
+        abort_unless($workflow->canReview($approval), 403, 'Role Anda tidak terdaftar pada tahap approval aktif.');
+        $workflow->approve($approval);
 
-        if ($result->approved_at_owner && ! $result->issued_at) {
-            return back()->with('error', 'Persetujuan gudang tersimpan, tetapi stok gudang belum cukup sehingga barang belum dapat dikeluarkan.');
-        }
-
-        return back()->with('success', $result->issued_at
-            ? 'Persetujuan lengkap. Stok gudang berhasil dikeluarkan.'
-            : 'Persetujuan gudang tersimpan dan menunggu approval owner.');
+        return back()->with('success', 'Tahap persetujuan permintaan material berhasil diproses.');
     }
 
     public function update(Request $request, string $id): RedirectResponse
@@ -216,9 +232,14 @@ class MaterialRequestController extends Controller
             $materialRequest->details()->delete();
             foreach ($validated['items'] as $item) {
                 $barang = BarangMaterial::query()->findOrFail($item['barang_material_id']);
+                $normalized = app(MaterialUnitConversionService::class)->normalize($barang, $item['material_unit_id'], (float) $item['qty']);
                 $materialRequest->details()->create([
                     ...$item,
-                    'satuan' => $item['satuan'] ?? $barang->satuan,
+                    'qty' => $normalized['quantity_base'],
+                    'input_qty' => (float) $item['qty'],
+                    'input_unit_id' => $normalized['unit_id'],
+                    'conversion_to_base' => $normalized['factor_to_base'],
+                    'satuan' => $normalized['unit_symbol'],
                     'created_by' => auth()->id(),
                     'updated_by' => auth()->id(),
                 ]);
@@ -239,21 +260,19 @@ class MaterialRequestController extends Controller
         return back()->with('success', 'Permintaan barang berhasil dihapus.');
     }
 
-    public function approveOwner(string $id, MaterialWorkflowService $workflow): RedirectResponse
+    public function approveOwner(string $id, ApprovalWorkflowService $workflow): RedirectResponse
     {
-        abort_unless($this->canApproveOwner(), 403, 'Hanya owner yang dapat memberi persetujuan akhir.');
+        return $this->approve($id, $workflow);
+    }
 
-        $request = MaterialRequest::query()->findOrFail($id);
-        abort_unless(($request->record_status ?? 'draft') === 'locked', 422, 'Permintaan barang harus di-lock terlebih dahulu.');
-        $result = $workflow->approveOwner($request);
+    public function reject(Request $httpRequest, string $id, ApprovalWorkflowService $workflow): RedirectResponse
+    {
+        $materialRequest = MaterialRequest::query()->findOrFail($id);
+        $approval = $this->pendingApproval($materialRequest);
+        abort_unless($workflow->canReview($approval), 403, 'Role Anda tidak terdaftar pada tahap approval aktif.');
+        $workflow->reject($approval, $httpRequest->string('note')->toString());
 
-        if ($result->approved_at_gudang && ! $result->issued_at) {
-            return back()->with('error', 'Approval owner berhasil disimpan, tetapi stok pada gudang tujuan belum cukup. Isi stok gudang terlebih dahulu.');
-        }
-
-        return back()->with('success', $result->issued_at
-            ? 'Approval owner berhasil. Stok gudang langsung dikeluarkan.'
-            : 'Approval owner tersimpan dan menunggu approval gudang.');
+        return back()->with('success', 'Permintaan material ditolak.');
     }
 
     public function issue(string $id, MaterialWorkflowService $workflow): RedirectResponse
@@ -277,7 +296,7 @@ class MaterialRequestController extends Controller
 
     public function lock(string $id): RedirectResponse
     {
-        abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci permintaan.');
+        abort_unless($this->canLockRequest(), 403, 'Anda tidak memiliki permission finalisasi permintaan material.');
 
         return $this->traitLock($id);
     }
@@ -287,6 +306,11 @@ class MaterialRequestController extends Controller
         abort_unless($this->canManageLock(), 403, 'Hanya user yang diberi akses yang dapat membuka lock permintaan.');
 
         return $this->traitUnlock($id);
+    }
+
+    protected function beforeUnlock(MaterialRequest $request): void
+    {
+        app(MaterialWorkflowService::class)->reverseIssuedRequest($request);
     }
 
     protected function modelClass(): string
@@ -300,12 +324,14 @@ class MaterialRequestController extends Controller
             'perumahans' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan])->values(),
             'gudangs' => Gudang::query()->where('status', 'aktif')->orderBy('nama_gudang')->get(['id', 'nama_gudang'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_gudang])->values(),
             'detailRumahs' => DetailRumah::query()->finalized()->with('perumahan:id,nama_perusahaan')->orderBy('kode_nlok')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->perumahan?->nama_perusahaan} - {$row->kode_nlok} {$row->nomor_rumah}", 'perumahan_id' => (string) $row->perumahan_id])->values(),
-            'barangMaterials' => BarangMaterial::query()->where('status', 'aktif')->orderBy('nama_barang')->get(['id', 'kode_barang', 'nama_barang', 'satuan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->kode_barang} - {$row->nama_barang}", 'satuan' => $row->satuan])->values(),
+            'barangMaterials' => BarangMaterial::query()->with(['baseUnit', 'unitConversions.childUnit'])->where('status', 'aktif')->orderBy('nama_barang')->get()->map(fn ($row) => ['value' => (string) $row->id, 'label' => "{$row->kode_barang} - {$row->nama_barang}", 'satuan' => $row->satuan, 'base_unit_id' => (string) $row->base_unit_id, 'unit_options' => app(MaterialUnitConversionService::class)->options($row)])->values(),
         ];
     }
 
     protected function formProps(Request $request, ?MaterialRequest $row = null): array
     {
+        $qualityUpgradeId = $row?->quality_upgrade_contract_id ?: $request->integer('quality_upgrade_contract_id');
+        $qualityUpgrade = $qualityUpgradeId ? \App\Models\QualityUpgradeContract::query()->with(['unit', 'items'])->findOrFail($qualityUpgradeId) : null;
         return [
             'title' => $row ? 'Edit Permintaan Barang' : 'Tambah Permintaan Barang',
             'baseUrl' => $row ? route('admin.material-request.update', $row->id, absolute: false) : route('admin.material-request.store', absolute: false),
@@ -318,17 +344,21 @@ class MaterialRequestController extends Controller
                 'gudang_id' => (string) ($row->gudang_id ?? ''),
                 'perumahan_id' => (string) ($row->perumahan_id ?? ''),
                 'detail_rumah_id' => (string) ($row->detail_rumah_id ?? ''),
+                'quality_upgrade_contract_id' => (string) ($row->quality_upgrade_contract_id ?? ''),
+                'quality_upgrade_contract_item_id' => (string) ($row->quality_upgrade_contract_item_id ?? ''),
                 'keterangan' => $row->keterangan ?? '',
                 'items' => $row->details->map(fn ($detail) => [
                     'barang_material_id' => (string) $detail->barang_material_id,
                     'kode_barang' => $detail->barangMaterial?->kode_barang ?? '',
                     'nama_barang' => $detail->barangMaterial?->nama_barang ?? '',
-                    'satuan' => $detail->satuan ?? $detail->barangMaterial?->satuan ?? '',
-                    'qty' => $detail->qty,
+                'satuan' => $detail->satuan ?? $detail->barangMaterial?->satuan ?? '',
+                    'material_unit_id' => (string) ($detail->input_unit_id ?? $detail->barangMaterial?->base_unit_id ?? ''),
+                    'qty' => $detail->input_qty ?? $detail->qty,
                     'catatan' => $detail->catatan ?? '',
                 ])->values(),
             ] : null,
             'options' => $this->options(),
+            'qualityUpgrade' => $qualityUpgrade ? ['id' => (string) $qualityUpgrade->id, 'label' => $qualityUpgrade->contract_no, 'perumahan_id' => (string) $qualityUpgrade->unit?->perumahan_id, 'detail_rumah_id' => (string) $qualityUpgrade->detail_rumah_id, 'items' => $qualityUpgrade->items->map(fn ($item) => ['value' => (string) $item->id, 'label' => $item->name])] : null,
             'canCreate' => $this->canCreateRequest(),
         ];
     }
@@ -350,28 +380,49 @@ class MaterialRequestController extends Controller
 
     protected function canLockRequest(): bool
     {
-        return (bool) auth()->check();
+        return (bool) (auth()->user()?->can('material-request.lock') || auth()->user()?->hasRole('super_admin'));
     }
 
     private function validatePayload(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'tanggal' => ['required', 'date'],
             'gudang_id' => ['required', 'exists:gudangs,id'],
             'perumahan_id' => ['nullable', 'exists:perumahans,id'],
             'detail_rumah_id' => ['nullable', 'exists:detail_rumahs,id'],
+            'quality_upgrade_contract_id' => ['nullable', 'exists:quality_upgrade_contracts,id'],
+            'quality_upgrade_contract_item_id' => ['nullable', 'required_with:quality_upgrade_contract_id', 'exists:quality_upgrade_contract_items,id'],
             'keterangan' => ['nullable', 'string'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.barang_material_id' => ['required', 'exists:barang_materials,id'],
             'items.*.qty' => ['required', 'numeric', 'min:0.01'],
+            'items.*.material_unit_id' => ['required', 'exists:material_units,id'],
             'items.*.satuan' => ['nullable', 'string'],
             'items.*.catatan' => ['nullable', 'string'],
         ]);
+        if (! empty($data['quality_upgrade_contract_id'])) {
+            $contract = \App\Models\QualityUpgradeContract::query()->with('items')->findOrFail($data['quality_upgrade_contract_id']);
+            abort_unless($contract->business_status === 'active', 422, 'Kontrak Penambahan Mutu belum aktif.');
+            abort_unless((int) $contract->detail_rumah_id === (int) ($data['detail_rumah_id'] ?? 0), 422, 'Unit tidak sesuai dengan kontrak Penambahan Mutu.');
+            abort_unless($contract->items->contains('id', (int) $data['quality_upgrade_contract_item_id']), 422, 'Item pekerjaan tidak sesuai dengan kontrak.');
+        }
+        return $data;
     }
 
     protected function canApproveGudang(): bool
     {
         return (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'owner', 'super_admin']);
+    }
+
+    private function pendingApproval(MaterialRequest $request): ApprovalRequest
+    {
+        return ApprovalRequest::query()->where([
+            'module_key' => 'material-request',
+            'action' => 'lock',
+            'model_type' => MaterialRequest::class,
+            'model_id' => $request->id,
+            'status' => ApprovalRequest::STATUS_PENDING,
+        ])->latest('id')->firstOrFail();
     }
 
     protected function canApproveOwner(): bool
@@ -396,9 +447,15 @@ class MaterialRequestController extends Controller
             return false;
         }
 
-        return (bool) $row->approved_at_gudang
-            && (bool) $row->approved_at_owner
-            && ! $row->issued_at
+        $approved = ApprovalRequest::query()->where([
+            'module_key' => 'material-request',
+            'action' => 'lock',
+            'model_type' => MaterialRequest::class,
+            'model_id' => $row->id,
+            'status' => ApprovalRequest::STATUS_APPROVED,
+        ])->exists();
+
+        return $approved && ! $row->issued_at
             && in_array($row->status, [
                 MaterialRequest::STATUS_DIPROSES,
                 MaterialRequest::STATUS_MENUNGGU_STOK,

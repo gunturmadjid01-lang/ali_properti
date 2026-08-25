@@ -5,16 +5,21 @@ import {
     BarChart3,
     BookOpen,
     CheckCircle2,
+    Check,
     Eye,
+    FileDown,
     Landmark,
     Library,
     ListTree,
+    LockKeyhole,
     Plus,
     ReceiptText,
     Scale,
     TrendingDown,
     TrendingUp,
+    Unlock,
     WalletCards,
+    X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -28,6 +33,7 @@ import {
     TableActions,
 } from "../../../Components/UI";
 import AdminLayout from "../../../Layouts/AdminLayout";
+import Pagination from "../../../Components/Pagination";
 import {
     FinanceChart,
     FinanceTrendChart,
@@ -185,7 +191,7 @@ function StatGrid({ rows }) {
     );
 }
 
-function Table({ columns, rows = [], detailTitle = "Detail" }) {
+function Table({ columns, rows = [], detailTitle = "Detail", renderActions }) {
     const [detail, setDetail] = useState(null);
     return (
         <>
@@ -225,6 +231,7 @@ function Table({ columns, rows = [], detailTitle = "Detail" }) {
                                             >
                                                 <Eye size={14} /> Detail
                                             </Button>
+                                            {renderActions?.(row)}
                                         </TableActions>
                                     </td>
                                 </tr>
@@ -297,6 +304,31 @@ function Dashboard({ data }) {
                     ],
                 ]}
             />
+            <Card className="p-5">
+                <div className="mb-4">
+                    <p className="text-xs font-extrabold uppercase text-ink-soft">
+                        Perlu Tindakan
+                    </p>
+                    <h2 className="mt-1 text-xl font-extrabold">
+                        Antrian kerja Keuangan hari ini
+                    </h2>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                    {(data.work_queue ?? []).map((item) => (
+                        <button
+                            type="button"
+                            key={item.label}
+                            onClick={() => router.visit(item.href)}
+                            className="rounded-xl border border-silver-deep/60 p-4 text-left transition hover:border-gold hover:bg-gold/5 dark:border-white/10"
+                        >
+                            <strong className="text-2xl">{item.count}</strong>
+                            <span className="mt-1 block text-sm font-bold text-ink-soft">
+                                {item.label}
+                            </span>
+                        </button>
+                    ))}
+                </div>
+            </Card>
             <FinanceTrendChart
                 title="Tren Saldo Kas & Bank"
                 subtitle="Garis biru menunjukkan saldo kumulatif; pemasukan dan pengeluaran tetap terlihat sebagai pembanding."
@@ -408,7 +440,7 @@ function CashTransaction({ data, options, canCreate, type }) {
                             <p className="mt-1 text-sm text-white/75">
                                 {income
                                     ? "Hanya untuk pemasukan non-customer yang belum memiliki modul transaksi khusus."
-                                    : "Transaksi akan langsung membentuk jurnal berdasarkan tipe transaksi yang dipilih."}
+                                    : "Simpan sebagai draft, lalu lock untuk mengajukan approval sebelum jurnal dibentuk."}
                             </p>
                         </div>
                     </div>
@@ -594,8 +626,8 @@ function CashTransaction({ data, options, canCreate, type }) {
                             >
                                 <ReceiptText size={17} />{" "}
                                 {form.processing
-                                    ? "Memposting..."
-                                    : `Posting ${income ? "Pemasukan" : "Pengeluaran"}`}
+                                    ? "Menyimpan..."
+                                    : `Simpan Draft ${income ? "Pemasukan" : "Pengeluaran"}`}
                             </Button>
                         </footer>
                     </form>
@@ -618,7 +650,90 @@ function CashTransaction({ data, options, canCreate, type }) {
                     },
                     { key: "description", label: "Keterangan" },
                     { key: "input_by", label: "Input Oleh" },
+                    {
+                        key: "approval_status",
+                        label: "Approval",
+                        render: (row) =>
+                            row.status === "posted"
+                                ? "Diposting"
+                                : row.approval_status === "pending"
+                                  ? `Tahap ${row.approval_step}/${row.approval_total}`
+                                  : row.approval_status === "rejected"
+                                    ? "Ditolak"
+                                    : row.record_status === "draft"
+                                      ? "Draft"
+                                      : row.status,
+                    },
                 ]}
+                renderActions={(row) => (
+                    <>
+                        {row.can_lock && (
+                            <Button
+                                size="sm"
+                                type="button"
+                                onClick={() =>
+                                    router.post(
+                                        row.lock_url,
+                                        {},
+                                        { preserveScroll: true },
+                                    )
+                                }
+                            >
+                                <LockKeyhole size={14} /> Lock
+                            </Button>
+                        )}
+                        {row.can_unlock && (
+                            <Button
+                                size="sm"
+                                type="button"
+                                variant="outline"
+                                onClick={() =>
+                                    router.post(
+                                        row.unlock_url,
+                                        {},
+                                        { preserveScroll: true },
+                                    )
+                                }
+                            >
+                                <Unlock size={14} /> Unlock
+                            </Button>
+                        )}
+                        {row.can_review && (
+                            <>
+                                <Button
+                                    size="sm"
+                                    type="button"
+                                    onClick={() =>
+                                        router.post(
+                                            row.approve_url,
+                                            {},
+                                            { preserveScroll: true },
+                                        )
+                                    }
+                                >
+                                    <Check size={14} /> Setujui
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    type="button"
+                                    variant="danger"
+                                    onClick={() =>
+                                        router.post(
+                                            row.reject_url,
+                                            {
+                                                rejection_note:
+                                                    "Ditolak dari halaman transaksi keuangan.",
+                                            },
+                                            { preserveScroll: true },
+                                        )
+                                    }
+                                >
+                                    <X size={14} /> Tolak
+                                </Button>
+                            </>
+                        )}
+                    </>
+                )}
             />
         </div>
     );
@@ -629,6 +744,11 @@ const journalColumns = [
     { key: "date", label: "Tanggal" },
     { key: "perumahan", label: "Perumahan" },
     { key: "type", label: "Tipe" },
+    {
+        key: "record_status",
+        label: "Status Approval",
+        render: (row) => row.record_status === "posted" ? "Diposting" : row.approval_status === "pending" ? `Tahap ${row.approval_step}/${row.approval_total}` : row.record_status === "locked" ? "Terkunci" : "Draft",
+    },
     { key: "description", label: "Keterangan" },
     { key: "debit", label: "Debit", render: (row) => money(row.debit) },
     { key: "credit", label: "Kredit", render: (row) => money(row.credit) },
@@ -847,7 +967,27 @@ function JournalList({ data, options, canCreate }) {
                 detailTitle="Detail Jurnal"
                 rows={data.rows ?? []}
                 columns={journalColumns}
+                renderActions={(row) => (
+                    <>
+                        {row.can_lock && (
+                            <Button size="sm" type="button" onClick={() => router.post(row.lock_url, {}, { preserveScroll: true })}>
+                                <LockKeyhole size={14} /> Lock
+                            </Button>
+                        )}
+                        {row.can_unlock && (
+                            <Button size="sm" type="button" variant="outline" onClick={() => router.post(row.unlock_url, {}, { preserveScroll: true })}>
+                                Buka Draft
+                            </Button>
+                        )}
+                    </>
+                )}
             />
+            <div className="rounded-lg border border-silver-deep/60 bg-white/70 dark:border-white/10 dark:bg-white/5">
+                <p className="px-4 pt-3 text-xs font-semibold text-ink-soft">
+                    Menampilkan {data.pagination?.from ?? 0} - {data.pagination?.to ?? 0} dari {data.pagination?.total ?? 0} jurnal
+                </p>
+                <Pagination links={data.pagination?.links ?? []} />
+            </div>
             {canCreate && (
                 <Modal
                     open={open}
@@ -945,7 +1085,7 @@ function JournalList({ data, options, canCreate }) {
                                     totals.debit !== totals.credit
                                 }
                             >
-                                Posting Jurnal
+                                Simpan Draft Jurnal
                             </Button>
                         </div>
                     </form>
@@ -1368,7 +1508,7 @@ const icons = {
     "laba-rugi": BarChart3,
     neraca: Landmark,
     "arus-kas": Activity,
-    piutang: TrendingUp,
+    "aging-piutang": TrendingUp,
     hutang: TrendingDown,
 };
 
@@ -1384,6 +1524,25 @@ export default function Index({
     const Icon = icons[section] ?? WalletCards;
     const canCreate = permissions.canCreate ?? false;
     const canUpdate = permissions.canUpdate ?? false;
+    const exportable = [
+        "buku-besar",
+        "neraca-saldo",
+        "laba-rugi",
+        "neraca",
+        "arus-kas",
+        "aging-piutang",
+        "hutang",
+    ].includes(section);
+    const exportReport = (format) => {
+        const params = new URLSearchParams(
+            Object.entries(filters ?? {}).filter(([, value]) => value !== ""),
+        );
+        window.open(
+            `/admin/keuangan/${section}/export/${format}?${params.toString()}`,
+            "_blank",
+            "noopener,noreferrer",
+        );
+    };
     const content = {
         dashboard: <Dashboard data={data} />,
         pemasukan: (
@@ -1413,28 +1572,48 @@ export default function Index({
         "laba-rugi": <ProfitLoss data={data} />,
         neraca: <BalanceSheet data={data} />,
         "arus-kas": <CashFlow data={data} />,
-        piutang: <Receivable data={data} />,
+        "aging-piutang": <Receivable data={data} />,
         hutang: <Payable data={data} />,
     }[section];
-    const filterable = !["daftar-akun", "pemasukan", "pengeluaran"].includes(
-        section,
-    );
+    const filterable = section !== "daftar-akun";
 
     return (
         <>
             <Head title={title} />
             <div className="grid gap-5">
                 <Card className="p-6">
-                    <div className="flex items-center gap-3">
-                        <span className="grid h-11 w-11 place-items-center rounded-lg bg-ink text-white dark:bg-white dark:text-ink">
-                            <Icon size={20} />
-                        </span>
-                        <div>
-                            <p className="text-xs font-extrabold uppercase text-ink-soft">
-                                ERP Keuangan
-                            </p>
-                            <h1 className="text-2xl font-extrabold">{title}</h1>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3">
+                            <span className="grid h-11 w-11 place-items-center rounded-lg bg-ink text-white dark:bg-white dark:text-ink">
+                                <Icon size={20} />
+                            </span>
+                            <div>
+                                <p className="text-xs font-extrabold uppercase text-ink-soft">
+                                    ERP Keuangan
+                                </p>
+                                <h1 className="text-2xl font-extrabold">
+                                    {title}
+                                </h1>
+                            </div>
                         </div>
+                        {exportable && permissions.canExport && (
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => exportReport("pdf")}
+                                >
+                                    <FileDown size={16} /> PDF
+                                </Button>
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() => exportReport("excel")}
+                                >
+                                    <FileDown size={16} /> Excel
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </Card>
                 {filterable && (

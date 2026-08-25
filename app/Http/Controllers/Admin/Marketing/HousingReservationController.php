@@ -4,23 +4,23 @@ namespace App\Http\Controllers\Admin\Marketing;
 
 use App\Http\Controllers\Concerns\ScopesActivePerumahan;
 use App\Http\Controllers\Controller;
+use App\Models\ApprovalRequest;
+use App\Models\BankCreditProduct;
+use App\Models\CashInstallmentScheme;
 use App\Models\Costumer;
 use App\Models\DetailRumah;
-use App\Models\HousingReservation;
-use App\Models\CashInstallmentScheme;
 use App\Models\DeveloperKprProduct;
-use App\Models\BankCreditProduct;
+use App\Models\HousingReservation;
 use App\Models\MasterBank;
 use App\Models\PettyCashAccount;
-use App\Models\ApprovalRequest;
-use App\Services\HousingReservationService;
 use App\Services\ApprovalWorkflowService;
+use App\Services\HousingReservationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
-use Inertia\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
+use Inertia\Response;
 
 class HousingReservationController extends Controller
 {
@@ -44,8 +44,15 @@ class HousingReservationController extends Controller
         } else {
             $query->whereYear('reserved_at', $year);
         }
-        if ($request->filled('status')) $query->where('status', $request->input('status'));
-        if ($request->filled('payment_status')) $query->where('payment_status', $request->input('payment_status'));
+        if ($request->filled('status')) {
+            $query->where('status', $request->input('status'));
+        }
+        if ($request->filled('payment_status')) {
+            $query->where('payment_status', $request->input('payment_status'));
+        }
+        if ($request->query('queue') === 'expiring') {
+            $query->where('payment_status', '!=', 'paid')->whereBetween('payment_due_at', [now(), now()->addDays(3)]);
+        }
         if ($request->filled('search')) {
             $search = '%'.$request->string('search').'%';
             $query->where(fn ($q) => $q->where('reservation_no', 'like', $search)->orWhere('invoice_no', 'like', $search)->orWhereHas('customer', fn ($c) => $c->where('nama', 'like', $search)));
@@ -53,13 +60,16 @@ class HousingReservationController extends Controller
         $chartRows = (clone $period)->selectRaw(($month ? 'DAY(reserved_at)' : 'MONTH(reserved_at)').' as bucket, COUNT(*) as total, SUM(booking_fee) as billed, SUM(paid_amount) as paid')->groupBy('bucket')->get()->keyBy('bucket');
         $chart = collect(range(1, $month ? now()->setYear($year)->setMonth($month)->daysInMonth : 12))->map(function ($bucket) use ($chartRows, $month) {
             $value = $chartRows->get($bucket);
+
             return ['label' => $month ? (string) $bucket : now()->setMonth($bucket)->translatedFormat('M'), 'total' => (int) ($value?->total ?? 0), 'billed' => (float) ($value?->billed ?? 0), 'paid' => (float) ($value?->paid ?? 0)];
         });
+
         return Inertia::render('Admin/Marketing/Reservations/Index', [
             'title' => 'Reservasi Perumahan',
             'rows' => $query->latest('reserved_at')->paginate(15)->withQueryString()->through(function ($row) use ($request) {
                 $ownDraft = $row->record_status === 'draft' && $row->created_by === $request->user()->id;
                 $canCancel = $ownDraft && ! $row->spr_id && ! in_array($row->status, ['completed', 'cancelled', 'customer_cancelled', 'expired'], true);
+
                 return [...$row->toArray(),
                     'can_edit' => $ownDraft && ($request->user()->can('housing-reservation.update') || $request->user()->hasRole('super_admin')),
                     'can_delete' => $ownDraft && ($request->user()->can('housing-reservation.delete') || $request->user()->hasRole('super_admin')),
@@ -73,7 +83,7 @@ class HousingReservationController extends Controller
                     'show_url' => route('admin.marketing.reservations.show', $row, false), 'edit_url' => route('admin.marketing.reservations.edit', $row, false),
                     'invoice_url' => $row->paymentSchedule && ($request->user()->can('housing-reservation.print') || $request->user()->hasRole('super_admin')) ? route('admin.marketing.reservations.invoice', $row, false) : null];
             }),
-            'filters' => ['year' => $year, 'month' => $month, 'status' => $request->input('status'), 'payment_status' => $request->input('payment_status'), 'search' => $request->input('search')],
+            'filters' => ['year' => $year, 'month' => $month, 'status' => $request->input('status'), 'payment_status' => $request->input('payment_status'), 'search' => $request->input('search'), 'queue' => $request->input('queue')],
             'statistics' => ['total' => (clone $period)->count(), 'active' => (clone $period)->whereNotIn('status', ['cancelled', 'customer_cancelled', 'expired', 'completed'])->count(), 'completed' => (clone $period)->where('status', 'completed')->count(), 'cancelled' => (clone $period)->whereIn('status', ['cancelled', 'customer_cancelled', 'expired'])->count(), 'billed' => (float) (clone $period)->sum('booking_fee'), 'paid' => (float) (clone $period)->sum('paid_amount')],
             'chart' => $chart,
             'years' => HousingReservation::query()
@@ -87,6 +97,7 @@ class HousingReservationController extends Controller
     public function create(Request $request): Response
     {
         abort_unless($request->user()?->can('housing-reservation.create') || $request->user()?->hasRole('super_admin'), 403);
+
         return Inertia::render('Admin/Marketing/Reservations/Create', $this->formProps($request, null) + [
             'title' => 'Buat Reservasi Perumahan',
         ]);
@@ -97,6 +108,7 @@ class HousingReservationController extends Controller
         abort_unless($request->user()?->can('housing-reservation.create') || $request->user()?->hasRole('super_admin'), 403);
         $data = $this->prepareReservationData($request, $this->validatedReservation($request, true));
         $service->create($data);
+
         return to_route('admin.marketing.reservations.index')->with('success', 'Reservasi dan penerimaan Booking Fee disimpan sebagai draft privat. Lock untuk mengajukan verifikasi Keuangan.');
     }
 
@@ -104,6 +116,7 @@ class HousingReservationController extends Controller
     {
         abort_unless($request->user()?->can('housing-reservation.update') || $request->user()?->hasRole('super_admin'), 403);
         $this->assertDraftOwner($request, $reservation);
+
         return Inertia::render('Admin/Marketing/Reservations/Create', $this->formProps($request, $reservation) + ['title' => 'Edit Reservasi Perumahan']);
     }
 
@@ -112,6 +125,7 @@ class HousingReservationController extends Controller
         abort_unless($request->user()?->can('housing-reservation.update') || $request->user()?->hasRole('super_admin'), 403);
         $this->assertDraftOwner($request, $reservation);
         $service->updateDraft($reservation, $this->prepareReservationData($request, $this->validatedReservation($request, false), $reservation));
+
         return to_route('admin.marketing.reservations.index')->with('success', 'Draft reservasi diperbarui.');
     }
 
@@ -120,6 +134,7 @@ class HousingReservationController extends Controller
         abort_unless($request->user()?->can('housing-reservation.delete') || $request->user()?->hasRole('super_admin'), 403);
         $this->assertDraftOwner($request, $reservation);
         $reservation->delete();
+
         return back()->with('success', 'Draft reservasi dihapus.');
     }
 
@@ -133,6 +148,7 @@ class HousingReservationController extends Controller
             $workflow->skipCurrentStep($approval, 'Metode pembayaran Cash tidak memerlukan verifikasi transaksi Keuangan.');
             $approval->refresh();
         }
+
         return back()->with('success', $approval->status === 'approved'
             ? 'Reservasi dan Booking Fee disetujui serta langsung dibukukan sesuai lokasi dana.'
             : ($row->payment_method === 'cash'
@@ -163,6 +179,7 @@ class HousingReservationController extends Controller
         $this->assertVisible($request, $reservation);
         abort_unless($reservation->record_status === 'locked' && $reservation->paymentSchedule()->exists(), 404);
         $reservation->load(['customer', 'unit.perumahan', 'creator', 'paymentSchedule', 'spr:id,kode_spr,status', 'fundBank', 'pettyCashAccount']);
+
         return Inertia::render('Admin/Marketing/Reservations/Invoice', ['title' => 'Invoice '.$reservation->invoice_no, 'row' => $reservation]);
     }
 
@@ -171,6 +188,7 @@ class HousingReservationController extends Controller
         $approval = $reservation->latestApproval;
         abort_unless($request->user()?->can('housing-reservation.view') || $request->user()?->hasRole('super_admin') || ($approval && app(ApprovalWorkflowService::class)->canReview($approval)), 403);
         abort_unless($reservation->payment_proof_path && Storage::disk('public')->exists($reservation->payment_proof_path), 404);
+
         return Storage::disk('public')->response($reservation->payment_proof_path, $reservation->payment_proof_original_name);
     }
 
@@ -180,6 +198,7 @@ class HousingReservationController extends Controller
         abort_unless($workflow->canReview($approval), 403);
         abort_unless($approval->current_step === 1 && $reservation->payment_method !== 'cash', 404);
         $reservation->load(['customer', 'unit.perumahan', 'creator', 'fundBank', 'pettyCashAccount']);
+
         return Inertia::render('Admin/Marketing/Reservations/PaymentReview', ['title' => 'Verifikasi Booking Fee '.$reservation->invoice_no, 'row' => $reservation, 'approval' => $approval, 'proofUrl' => route('admin.marketing.reservations.payment-proof', $reservation, false)]);
     }
 
@@ -191,12 +210,14 @@ class HousingReservationController extends Controller
         abort_unless($approval->current_step === 1 && $reservation->payment_method !== 'cash', 404);
         if ($decision === 'reject') {
             $workflow->reject($approval, $request->validate(['note' => 'required|string|max:1000'])['note']);
+
             return to_route('admin.customer-receipts.index')->with('success', 'Reservasi dan penerimaan Booking Fee ditolak. Draft dikembalikan kepada Marketing untuk diperbaiki.');
         }
         $data = $request->validate(['fund_received_at' => 'required|date|before_or_equal:now', 'settlement_proof' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120', 'finance_verification_notes' => 'required|string|max:2000']);
         $proof = $request->file('settlement_proof')?->store('reservation-booking-fees/settlements/'.now()->format('Y/m'), 'public');
         $reservation->update(['fund_received_at' => $data['fund_received_at'], 'fund_received_by' => $request->user()?->id, 'settlement_proof_path' => $proof, 'settlement_proof_original_name' => $request->file('settlement_proof')?->getClientOriginalName(), 'finance_verification_notes' => $data['finance_verification_notes']]);
         $workflow->approve($approval);
+
         return to_route('admin.customer-receipts.index')->with('success', 'Reservasi dan Booking Fee disetujui, penerimaan dibukukan, dan jurnal dibuat.');
     }
 
@@ -205,6 +226,7 @@ class HousingReservationController extends Controller
         abort_unless($request->user()?->can('housing-reservation.update') || $request->user()?->hasRole('super_admin'), 403);
         $data = $request->validate(['reason' => 'required|string|max:1000', 'type' => 'required|in:customer,internal']);
         $service->cancel($reservation, $data['reason'], $data['type']);
+
         return back()->with('success', 'Reservasi dibatalkan dan unit kembali tersedia.');
     }
 
@@ -255,7 +277,9 @@ class HousingReservationController extends Controller
 
         if ($source) {
             $configured = $source instanceof CashInstallmentScheme ? (float) $source->minimum_booking_fee : (float) data_get($source, 'fees.booking_fee', 0);
-            if ($configured > 0) $data['booking_fee'] = $configured;
+            if ($configured > 0) {
+                $data['booking_fee'] = $configured;
+            }
             $data['booking_fee_source_type'] = $source::class;
             $data['booking_fee_source_id'] = $source->id;
             $data['booking_fee_snapshot'] = ['label' => $source->name ?? $source->product_name, 'booking_fee' => $data['booking_fee']];
@@ -299,13 +323,16 @@ class HousingReservationController extends Controller
     {
         $units = DetailRumah::with('perumahan:id,nama_perusahaan')->where(function ($query) use ($reservation) {
             $query->whereIn('status_penjualan', ['tersedia', 'available']);
-            if ($reservation) $query->orWhereKey($reservation->detail_rumah_id);
+            if ($reservation) {
+                $query->orWhereKey($reservation->detail_rumah_id);
+            }
         });
         $this->scopeToActivePerumahan($units, $request);
-        $units = $units->orderBy('perumahan_id')->orderBy('nomor_rumah')->get(['id','perumahan_id','kode_nlok','nomor_rumah','tipe_rumah','harga_jual','luas_tanah','luas_bangunan']);
+        $units = $units->orderBy('perumahan_id')->orderBy('nomor_rumah')->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah', 'tipe_rumah', 'harga_jual', 'luas_tanah', 'luas_bangunan']);
+
         return [
             'row' => $reservation,
-            'customers' => $this->scopeToActivePerumahan(Costumer::query(), $request)->orderBy('nama')->get(['id', 'nama', 'kode_costumer', 'telepon']),
+            'customers' => $this->scopeToActivePerumahan(Costumer::query(), $request)->whereNotNull('source_marketing_lead_id')->whereIn('customer_stage', ['pre_reservation', 'reservation_draft'])->orderBy('nama')->get(['id', 'nama', 'kode_costumer', 'telepon', 'customer_stage']),
             'units' => $units,
             'bookingSources' => [
                 'cash_bertahap' => CashInstallmentScheme::query()->where('status', 'aktif')->where('record_status', 'locked')->get()->map(fn ($row) => ['id' => $row->id, 'label' => $row->name, 'booking_fee' => (float) $row->minimum_booking_fee]),

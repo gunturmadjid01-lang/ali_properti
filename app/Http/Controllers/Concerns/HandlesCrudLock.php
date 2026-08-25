@@ -6,6 +6,7 @@ use App\Services\ApprovalWorkflowService;
 use App\Support\ApprovalResources;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 
 trait HandlesCrudLock
 {
@@ -21,6 +22,9 @@ trait HandlesCrudLock
     public function lock(string $id): RedirectResponse
     {
         abort_unless(auth()->check(), 403, 'Silakan login untuk mengunci data.');
+        if (method_exists($this, 'authorizeLockPermission')) {
+            $this->authorizeLockPermission();
+        }
 
         $model = $this->lockableQuery()->findOrFail($id);
 
@@ -48,20 +52,28 @@ trait HandlesCrudLock
     {
         abort_unless($this->currentUserCanManageLockedRecords(), 403, 'Hanya user yang diberi akses yang dapat membuka lock data.');
 
-        $model = $this->lockableQuery()->findOrFail($id);
-        app(ApprovalWorkflowService::class)->cancelPendingLock($model);
+        DB::transaction(function () use ($id): void {
+            $model = $this->lockableQuery()->lockForUpdate()->findOrFail($id);
+            abort_unless(($model->record_status ?? 'draft') === 'locked', 422, 'Data tidak sedang terkunci.');
 
-        $data = [
-            'record_status' => 'draft',
-            'locked_at' => null,
-            'locked_by' => null,
-        ];
+            if (method_exists($this, 'beforeUnlock')) {
+                $this->beforeUnlock($model);
+            }
 
-        if ($model->isFillable('updated_by')) {
-            $data['updated_by'] = auth()->id();
-        }
+            app(ApprovalWorkflowService::class)->reverseLockApproval($model);
 
-        $model->forceFill($data)->save();
+            $data = [
+                'record_status' => 'draft',
+                'locked_at' => null,
+                'locked_by' => null,
+            ];
+
+            if ($model->isFillable('updated_by')) {
+                $data['updated_by'] = auth()->id();
+            }
+
+            $model->forceFill($data)->save();
+        });
 
         return back()->with('success', 'Lock data berhasil dibuka.');
     }
@@ -81,17 +93,16 @@ trait HandlesCrudLock
             return false;
         }
 
-        if ($user->hasAnyRole(['super_admin', 'owner', 'manager', 'manajer_pimpro'])) {
+        if ($user->hasRole('super_admin')) {
             return true;
         }
 
-        return $user->getAllPermissions()->contains(function ($permission): bool {
-            $name = (string) $permission->name;
+        $modelClass = method_exists($this, 'modelClass') ? $this->modelClass() : $this->lockableModelClass();
+        $moduleKey = ApprovalResources::keyForModel(new $modelClass);
 
-            return str_ends_with($name, '.unlock')
-                || str_ends_with($name, '-unlock')
-                || str_ends_with($name, '.manage')
-                || str_ends_with($name, '-manage');
-        });
+        return $user->can("{$moduleKey}.unlock")
+            || $user->can("{$moduleKey}.manage")
+            || $user->can("{$moduleKey}-unlock")
+            || $user->can("{$moduleKey}-manage");
     }
 }

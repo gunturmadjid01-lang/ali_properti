@@ -614,6 +614,7 @@ export default function Index({
                                             </td>
                                             <td className="px-5 py-4 font-bold">
                                                 {row.approval_status}
+                                                {row.approval_stage && <span className="block text-xs text-ink-soft">Tahap {row.approval_stage}/{row.approval_total}</span>}
                                             </td>
                                             <td className="min-w-44 px-5 py-4 text-xs">
                                                 <span className="font-bold">
@@ -687,6 +688,7 @@ export default function Index({
                                                                 />
                                                             </Button>
                                                         )}
+                                                    {row.can_approve && <Button type="button" size="sm" variant="outline" className="text-red-600" onClick={() => { const note = window.prompt('Alasan penolakan/koreksi:'); if (note) router.post(`${baseUrl}/${row.id}/reject`, { note }); }}>Tolak</Button>}
                                                     {permissions.canDelete &&
                                                         row.can_delete && (
                                                             <Button

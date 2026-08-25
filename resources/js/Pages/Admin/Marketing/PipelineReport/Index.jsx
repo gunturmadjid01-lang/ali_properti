@@ -18,6 +18,7 @@ export default function Index({
     marketingRows = [],
     dailyRows = [],
     timeline = [],
+    forecast = {},
 }) {
     const [dateFrom, setDateFrom] = useState(filters.date_from ?? '');
     const [dateTo, setDateTo] = useState(filters.date_to ?? '');
@@ -63,6 +64,19 @@ export default function Index({
                         </Card>
                     ))}
                 </div>
+
+                <Card className="p-5">
+                    <h2 className="text-lg font-extrabold">Perkiraan Penjualan Aktif</h2>
+                    <p className="mt-1 text-sm text-ink-soft">Perkiraan dihitung dari harga unit atau anggaran lead dan bobot tahap saat ini.</p>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                        {[
+                            ['Lead aktif', forecast.leads ?? 0],
+                            ['Nilai potensi', `Rp ${(forecast.potential_value ?? 0).toLocaleString('id-ID')}`],
+                            ['Nilai tertimbang', `Rp ${(forecast.weighted_value ?? 0).toLocaleString('id-ID')}`],
+                            ['Lead lebih 7 hari', forecast.aging_over_7_days ?? 0],
+                        ].map(([label, value]) => <div className="rounded-xl bg-silver-soft p-4 dark:bg-white/5" key={label}><div className="text-2xl font-extrabold">{value}</div><div className="mt-1 text-xs font-bold text-ink-soft">{label}</div></div>)}
+                    </div>
+                </Card>
 
                 <Card className="overflow-hidden">
                     <div className="border-b border-silver-deep/60 px-5 py-4 dark:border-white/10">

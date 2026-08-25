@@ -12,6 +12,7 @@ use App\Models\Perumahan;
 use App\Services\Marketing\MarketingLeadStatusService;
 use App\Support\CodeGenerator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -20,17 +21,20 @@ use Inertia\Response;
 
 class SurveyScheduleController extends Controller
 {
-    use HandlesCrudLock, ScopesActivePerumahan;
+    use HandlesCrudLock, ScopesActivePerumahan {
+        HandlesCrudLock::lock as private lockRecord;
+    }
 
     public function index(Request $request): Response
     {
+        $this->authorizePermission($request, 'view');
+        $user = $request->user();
         $search = trim((string) $request->query('search', ''));
         $status = $request->query('status');
         $perumahanId = $request->query('perumahan_id');
         $detailRumahId = $request->query('detail_rumah_id');
         $dateFrom = $request->query('date_from');
         $dateTo = $request->query('date_to');
-
         $rows = MarketingSurveySchedule::query()
             ->with([
                 'costumer:id,kode_costumer,nama,no_identitas,telepon',
@@ -86,9 +90,12 @@ class SurveyScheduleController extends Controller
                 'record_status' => $schedule->record_status ?? 'draft',
                 'created_by_name' => $schedule->creator?->name ?? '-',
                 'updated_by_name' => $schedule->updater?->name ?? '-',
-                'can_edit' => ($schedule->record_status ?? 'draft') !== 'locked',
-                'can_delete' => ($schedule->record_status ?? 'draft') !== 'locked',
-                'can_lock' => (bool) auth()->check() && ($schedule->record_status ?? 'draft') !== 'locked',
+                'can_edit' => ($schedule->record_status ?? 'draft') !== 'locked' && (bool) ($user?->hasRole('super_admin') || $user?->can('marketing-survey.update')),
+                'can_delete' => ($schedule->record_status ?? 'draft') !== 'locked' && (bool) ($user?->hasRole('super_admin') || $user?->can('marketing-survey.delete')),
+                'can_lock' => ($schedule->record_status ?? 'draft') !== 'locked'
+                    && $schedule->status === 'selesai'
+                    && filled($schedule->hasil_survey)
+                    && (bool) ($user?->hasRole('super_admin') || $user?->can('marketing-survey.lock')),
                 'can_unlock' => $this->currentUserCanManageLockedRecords() && ($schedule->record_status ?? 'draft') === 'locked',
             ]);
 
@@ -106,17 +113,62 @@ class SurveyScheduleController extends Controller
                 'date_to' => $dateTo,
             ],
             'options' => [
-                'customers' => $this->customerOptions(),
                 'perumahans' => $this->perumahanOptions(),
                 'detailRumahs' => $this->detailRumahOptions(),
-                'methodOptions' => $this->methodOptions(),
                 'statusOptions' => $this->statusOptions(),
+            ],
+            'permissions' => [
+                'canCreate' => (bool) ($user?->hasRole('super_admin') || $user?->can('marketing-survey.create')),
+            ],
+        ]);
+    }
+
+    public function create(Request $request): Response
+    {
+        $this->authorizePermission($request, 'create');
+
+        return $this->formResponse($request);
+    }
+
+    public function edit(Request $request, string $id): Response
+    {
+        $this->authorizePermission($request, 'update');
+        $schedule = $this->findSchedule($request, $id);
+        $this->abortIfLocked($schedule);
+
+        return $this->formResponse($request, $schedule);
+    }
+
+    public function result(Request $request, string $id): Response
+    {
+        $this->authorizePermission($request, 'update');
+        $schedule = $this->findSchedule($request, $id)->load(['costumer:id,kode_costumer,nama,telepon', 'perumahan:id,nama_perusahaan', 'detailRumah:id,kode_nlok,nomor_rumah']);
+
+        return Inertia::render('Admin/Marketing/SurveySchedule/ResultForm', [
+            'title' => 'Hasil Survey '.$schedule->kode_survey,
+            'baseUrl' => route('admin.marketing.jadwal-survey.index', absolute: false),
+            'actionUrl' => route('admin.marketing.jadwal-survey.status.update', $schedule->id, absolute: false),
+            'statusOptions' => $this->statusOptions(),
+            'row' => [
+                'id' => $schedule->id,
+                'kode_survey' => $schedule->kode_survey,
+                'customer' => $schedule->costumer?->nama ?? '-',
+                'kode_customer' => $schedule->costumer?->kode_costumer ?? '-',
+                'telepon' => $schedule->costumer?->telepon ?? '-',
+                'location' => trim(($schedule->perumahan?->nama_perusahaan ?? '-').' · '.($schedule->detailRumah ? trim($schedule->detailRumah->kode_nlok.' '.$schedule->detailRumah->nomor_rumah) : 'Unit belum dipilih')),
+                'status' => $schedule->status,
+                'tanggal_survey' => optional($schedule->tanggal_survey)->format('Y-m-d\TH:i'),
+                'tanggal_survey_display' => optional($schedule->tanggal_survey)->format('d/m/Y H:i'),
+                'hasil_survey' => $schedule->hasil_survey,
+                'catatan' => $schedule->catatan,
+                'rencana_follow_up_at' => optional($schedule->rencana_follow_up_at)->format('Y-m-d\TH:i'),
             ],
         ]);
     }
 
     public function store(Request $request, MarketingLeadStatusService $leadStatus): RedirectResponse
     {
+        $this->authorizePermission($request, 'create');
         $validated = $this->validatePayload($request);
         if ($this->shouldScopeToActivePerumahan($request)) {
             $validated['perumahan_id'] = $this->ensureActivePerumahan($request);
@@ -138,11 +190,12 @@ class SurveyScheduleController extends Controller
             'Jadwal survey dibuat.'
         );
 
-        return back()->with('success', 'Jadwal survey berhasil ditambahkan.');
+        return redirect()->route('admin.marketing.jadwal-survey.index')->with('success', 'Jadwal survey berhasil ditambahkan.');
     }
 
     public function update(Request $request, string $id): RedirectResponse
     {
+        $this->authorizePermission($request, 'update');
         $leadStatus = app(MarketingLeadStatusService::class);
         $schedule = MarketingSurveySchedule::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
@@ -167,21 +220,23 @@ class SurveyScheduleController extends Controller
             'Jadwal survey diperbarui.'
         );
 
-        return back()->with('success', 'Jadwal survey berhasil diperbarui.');
+        return redirect()->route('admin.marketing.jadwal-survey.index')->with('success', 'Jadwal survey berhasil diperbarui.');
     }
 
     public function updateStatus(Request $request, string $id): RedirectResponse
     {
+        $this->authorizePermission($request, 'update');
         $leadStatus = app(MarketingLeadStatusService::class);
         $schedule = MarketingSurveySchedule::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
             ->findOrFail($id);
+        $this->abortIfLocked($schedule);
 
         $validated = $request->validate([
             'status' => ['required', Rule::in(array_column($this->statusOptions(), 'value'))],
             'tanggal_survey' => ['nullable', 'date', 'required_if:status,reschedule'],
-            'hasil_survey' => ['nullable', 'string'],
+            'hasil_survey' => ['nullable', 'string', Rule::requiredIf(fn () => $request->input('status') === 'selesai')],
             'catatan' => ['nullable', 'string'],
             'rencana_follow_up_at' => ['nullable', 'date'],
         ], [
@@ -204,11 +259,12 @@ class SurveyScheduleController extends Controller
             'Status survey diperbarui menjadi '.$this->labelFromOptions($validated['status'], $this->statusOptions()).'.'
         );
 
-        return back()->with('success', 'Status survey berhasil diperbarui.');
+        return redirect()->route('admin.marketing.jadwal-survey.index')->with('success', 'Status survey berhasil diperbarui.');
     }
 
     public function destroy(Request $request, string $id): RedirectResponse
     {
+        $this->authorizePermission($request, 'delete');
         $schedule = MarketingSurveySchedule::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
@@ -222,6 +278,90 @@ class SurveyScheduleController extends Controller
     protected function modelClass(): string
     {
         return MarketingSurveySchedule::class;
+    }
+
+    protected function abortIfLocked(Model $model): void
+    {
+        abort_if(($model->record_status ?? 'draft') === 'locked', 422, 'Data sudah dikunci. Gunakan Unlock sebelum melakukan perubahan.');
+    }
+
+    public function lock(string $id): RedirectResponse
+    {
+        $schedule = $this->lockableQuery()->findOrFail($id);
+        abort_unless($schedule->status === 'selesai' && filled($schedule->hasil_survey), 422, 'Isi hasil survey dan tandai selesai sebelum data dikunci.');
+
+        return $this->lockRecord($id);
+    }
+
+    protected function lockableQuery()
+    {
+        return MarketingSurveySchedule::query()
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('marketing_id', request()->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()));
+    }
+
+    protected function authorizeLockPermission(): void
+    {
+        $this->authorizePermission(request(), 'lock');
+    }
+
+    private function findSchedule(Request $request, string $id): MarketingSurveySchedule
+    {
+        return MarketingSurveySchedule::query()
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->where('marketing_id', $request->user()?->id))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $this->scopeToActivePerumahan($query, $request))
+            ->findOrFail($id);
+    }
+
+    private function formResponse(Request $request, ?MarketingSurveySchedule $schedule = null): Response
+    {
+        $defaultPerumahanId = $this->shouldScopeToActivePerumahan($request)
+            ? (string) $this->ensureActivePerumahan($request)
+            : '';
+
+        $perumahanOptions = $this->perumahanOptions();
+
+        return Inertia::render('Admin/Marketing/SurveySchedule/FormPage', [
+            'title' => $schedule ? 'Edit Jadwal Survey' : 'Tambah Jadwal Survey',
+            'baseUrl' => route('admin.marketing.jadwal-survey.index', absolute: false),
+            'actionUrl' => $schedule
+                ? route('admin.marketing.jadwal-survey.update', $schedule->id, absolute: false)
+                : route('admin.marketing.jadwal-survey.store', absolute: false),
+            'method' => $schedule ? 'put' : 'post',
+            'row' => $schedule ? [
+                'id' => $schedule->id,
+                'costumer_id' => (string) $schedule->costumer_id,
+                'perumahan_id' => (string) ($schedule->perumahan_id ?? ''),
+                'detail_rumah_id' => (string) ($schedule->detail_rumah_id ?? ''),
+                'tanggal_survey' => optional($schedule->tanggal_survey)->format('Y-m-d\TH:i'),
+                'metode_survey' => $schedule->metode_survey,
+                'status' => $schedule->status,
+                'hasil_survey' => $schedule->hasil_survey,
+                'catatan' => $schedule->catatan,
+                'rencana_follow_up_at' => optional($schedule->rencana_follow_up_at)->format('Y-m-d\TH:i'),
+            ] : [
+                'costumer_id' => (string) $request->query('costumer_id', ''),
+                'perumahan_id' => $defaultPerumahanId,
+                'detail_rumah_id' => '',
+                'tanggal_survey' => '',
+                'metode_survey' => 'kunjungan_lokasi',
+                'status' => 'dijadwalkan',
+                'hasil_survey' => '',
+                'catatan' => '',
+                'rencana_follow_up_at' => '',
+            ],
+            'options' => [
+                'customers' => $this->customerOptions(),
+                'perumahans' => $perumahanOptions,
+                'detailRumahs' => $this->detailRumahOptions(),
+                'methodOptions' => $this->methodOptions(),
+                'statusOptions' => $this->statusOptions(),
+                'hidePerumahan' => $this->shouldScopeToActivePerumahan($request),
+                'activePerumahan' => $defaultPerumahanId
+                    ? data_get(collect($perumahanOptions)->firstWhere('value', $defaultPerumahanId), 'label')
+                    : null,
+            ],
+        ]);
     }
 
     private function validatePayload(Request $request): array
@@ -260,7 +400,7 @@ class SurveyScheduleController extends Controller
         abort_unless(
             Costumer::query()
                 ->whereKey($customerId)
-                ->where('created_by', $request->user()?->id)
+                ->where('assigned_marketing_id', $request->user()?->id)
                 ->where('perumahan_id', $this->ensureActivePerumahan($request))
                 ->exists(),
             403,
@@ -270,10 +410,10 @@ class SurveyScheduleController extends Controller
     private function customerOptions(): array
     {
         return Costumer::query()
-            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('created_by', request()->user()?->id))
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->where('assigned_marketing_id', request()->user()?->id))
             ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->latest('id')
-            ->limit(300)
+            ->limit(150)
             ->get(['id', 'kode_costumer', 'nama', 'no_identitas', 'telepon'])
             ->map(fn (Costumer $customer) => [
                 'value' => (string) $customer->id,
@@ -302,6 +442,7 @@ class SurveyScheduleController extends Controller
             ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $this->scopeToActivePerumahan($query, request()))
             ->orderBy('kode_nlok')
             ->orderBy('nomor_rumah')
+            ->limit(400)
             ->get(['id', 'perumahan_id', 'kode_nlok', 'nomor_rumah'])
             ->map(fn (DetailRumah $unit) => [
                 'value' => (string) $unit->id,
@@ -363,5 +504,16 @@ class SurveyScheduleController extends Controller
 
         return (bool) $user?->hasAnyRole(['marketing', 'area_marketing'])
             && ! $user->hasAnyRole(['supervisor_marketing', 'owner', 'super_admin']);
+    }
+
+    private function authorizePermission(Request $request, string $action): void
+    {
+        $user = $request->user();
+        abort_unless(
+            $user?->hasRole('super_admin')
+                || $user?->can("marketing-survey.{$action}")
+                || $user?->can('marketing-survey.manage'),
+            403,
+        );
     }
 }

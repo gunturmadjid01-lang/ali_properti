@@ -261,5 +261,7 @@ export default function Index({
     );
 }
 Index.layout = (page) => (
-    <AdminLayout title={page.props.title}>{page}</AdminLayout>
+    <AdminLayout title={page?.props?.title ?? "Pembayaran Air"}>
+        {page}
+    </AdminLayout>
 );

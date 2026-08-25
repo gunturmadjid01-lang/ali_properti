@@ -1,19 +1,11 @@
 import { Head, router, useForm } from "@inertiajs/react";
-import {
-    CheckCircle2,
-    MinusCircle,
-    PlusCircle,
-    RefreshCw,
-    Save,
-    Search,
-} from "lucide-react";
+import { MinusCircle, PlusCircle, RefreshCw, Save, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
     Button,
     Dropdown,
     Input,
     MaterialSelectorModal,
-    Modal,
 } from "../../../Components/UI";
 import AdminLayout from "../../../Layouts/AdminLayout";
 
@@ -78,7 +70,15 @@ export default function Create({
         gudang_id: purchase?.gudang_id ?? selectedRequest?.gudang_id ?? "",
         keterangan: purchase?.keterangan ?? selectedRequest?.keterangan ?? "",
         diskon_transaksi: purchase?.diskon_transaksi ?? 0,
-        update_material_prices: false,
+        nomor_faktur: purchase?.nomor_faktur ?? "",
+        tanggal_faktur: purchase?.tanggal_faktur ?? "",
+        nomor_surat_jalan: purchase?.nomor_surat_jalan ?? "",
+        nama_ekspedisi: purchase?.nama_ekspedisi ?? "",
+        nomor_kendaraan: purchase?.nomor_kendaraan ?? "",
+        biaya_ekspedisi: purchase?.biaya_ekspedisi ?? 0,
+        upah_buruh_logistik: purchase?.upah_buruh_logistik ?? 0,
+        biaya_lain_perolehan: purchase?.biaya_lain_perolehan ?? 0,
+        metode_alokasi_biaya: purchase?.metode_alokasi_biaya ?? "nilai",
         items: initialItems.map((item) => ({
             barang_material_id: item.barang_material_id ?? "",
             kode_barang: item.kode_barang ?? "",
@@ -91,7 +91,6 @@ export default function Create({
         })),
     });
 
-    const [showPriceModal, setShowPriceModal] = useState(false);
     const [materialPicker, setMaterialPicker] = useState({
         open: false,
         mode: "append",
@@ -139,10 +138,15 @@ export default function Create({
                 }
 
                 if (key === "material_unit_id") {
-                    const material = selectedMaterials.get(String(next.barang_material_id));
-                    const unit = (material?.unit_options ?? []).find((option) => String(option.value) === String(value));
+                    const material = selectedMaterials.get(
+                        String(next.barang_material_id),
+                    );
+                    const unit = (material?.unit_options ?? []).find(
+                        (option) => String(option.value) === String(value),
+                    );
                     next.satuan = unit?.symbol ?? next.satuan;
-                    next.harga_satuan = unit?.standard_price ?? next.harga_satuan;
+                    next.harga_satuan =
+                        unit?.standard_price ?? next.harga_satuan;
                 }
 
                 return next;
@@ -166,28 +170,16 @@ export default function Create({
     );
     const totalAkhir = Math.max(0, subtotal - transactionDiscount);
 
-    const hasPriceDifference = form.data.items.some((item) => {
-        const material = selectedMaterials.get(String(item.barang_material_id));
-        if (!material) {
-            return false;
-        }
+    const acquisitionCost =
+        Number(form.data.biaya_ekspedisi || 0) +
+        Number(form.data.upah_buruh_logistik || 0) +
+        Number(form.data.biaya_lain_perolehan || 0);
+    const landedTotal = totalAkhir + acquisitionCost;
 
-        return (
-            Number(item.harga_satuan || 0) !==
-                Number(material.harga_hpp || 0) || Number(item.diskon || 0) > 0
-        );
-    });
-
-    const hasAnyDiscount =
-        Number(form.data.diskon_transaksi || 0) > 0 ||
-        form.data.items.some((item) => Number(item.diskon || 0) > 0);
-    const shouldSuggestPriceUpdate = hasPriceDifference || hasAnyDiscount;
-
-    const submitForm = (updatePrices) => {
+    const submitForm = () => {
         form.transform((data) => ({
             ...data,
             diskon_transaksi: Number(data.diskon_transaksi || 0),
-            update_material_prices: updatePrices,
         }));
         form[isEdit ? "put" : "post"](baseUrl, {
             preserveScroll: true,
@@ -198,12 +190,7 @@ export default function Create({
     const handleSubmit = (event) => {
         event.preventDefault();
 
-        if (shouldSuggestPriceUpdate) {
-            setShowPriceModal(true);
-            return;
-        }
-
-        submitForm(false);
+        submitForm();
     };
 
     const choosePurchaseRequest = (value) => {
@@ -283,7 +270,6 @@ export default function Create({
                         `${material.kode_barang ?? ""} - ${material.nama_barang ?? ""}`,
                 }),
             ]);
-            closePicker();
             return;
         }
 
@@ -429,6 +415,101 @@ export default function Create({
                     </label>
                 </div>
 
+                <div className="grid gap-3 border-b border-silver-deep/50 px-4 py-4 dark:border-white/10 md:grid-cols-3 lg:grid-cols-5">
+                    <Input
+                        label="Nomor Faktur Supplier"
+                        value={form.data.nomor_faktur}
+                        onChange={(event) =>
+                            form.setData("nomor_faktur", event.target.value)
+                        }
+                    />
+                    <Input
+                        label="Tanggal Faktur"
+                        type="date"
+                        value={form.data.tanggal_faktur}
+                        onChange={(event) =>
+                            form.setData("tanggal_faktur", event.target.value)
+                        }
+                    />
+                    <Input
+                        label="Nomor Surat Jalan"
+                        value={form.data.nomor_surat_jalan}
+                        onChange={(event) =>
+                            form.setData(
+                                "nomor_surat_jalan",
+                                event.target.value,
+                            )
+                        }
+                    />
+                    <Input
+                        label="Ekspedisi / Pengangkut"
+                        value={form.data.nama_ekspedisi}
+                        onChange={(event) =>
+                            form.setData("nama_ekspedisi", event.target.value)
+                        }
+                    />
+                    <Input
+                        label="Nomor Kendaraan"
+                        value={form.data.nomor_kendaraan}
+                        onChange={(event) =>
+                            form.setData("nomor_kendaraan", event.target.value)
+                        }
+                    />
+                    <Input
+                        label="Biaya Ekspedisi"
+                        type="number"
+                        min="0"
+                        value={form.data.biaya_ekspedisi}
+                        onChange={(event) =>
+                            form.setData("biaya_ekspedisi", event.target.value)
+                        }
+                    />
+                    <Input
+                        label="Upah Buruh Logistik"
+                        type="number"
+                        min="0"
+                        value={form.data.upah_buruh_logistik}
+                        onChange={(event) =>
+                            form.setData(
+                                "upah_buruh_logistik",
+                                event.target.value,
+                            )
+                        }
+                    />
+                    <Input
+                        label="Biaya Perolehan Lain"
+                        type="number"
+                        min="0"
+                        value={form.data.biaya_lain_perolehan}
+                        onChange={(event) =>
+                            form.setData(
+                                "biaya_lain_perolehan",
+                                event.target.value,
+                            )
+                        }
+                    />
+                    <label className="grid gap-2 text-sm font-extrabold text-ink/75 dark:text-white/78 md:col-span-2">
+                        Dasar Alokasi Biaya
+                        <Dropdown
+                            value={form.data.metode_alokasi_biaya}
+                            options={[
+                                {
+                                    value: "nilai",
+                                    label: "Proporsional Nilai Material",
+                                },
+                                {
+                                    value: "kuantitas",
+                                    label: "Proporsional Kuantitas Dasar",
+                                },
+                            ]}
+                            onChange={(value) =>
+                                form.setData("metode_alokasi_biaya", value)
+                            }
+                            searchable={false}
+                        />
+                    </label>
+                </div>
+
                 <div className="grid gap-3 border-b border-silver-deep/50 bg-silver-soft/35 px-4 py-3 dark:border-white/10 dark:bg-white/3 lg:grid-cols-4">
                     <SummaryCard title="Sub Total" value={money(totalGross)} />
                     <SummaryCard
@@ -436,8 +517,8 @@ export default function Create({
                         value={money(totalItemDiscount)}
                     />
                     <SummaryCard
-                        title="Total Akhir"
-                        value={money(totalAkhir)}
+                        title="Modal Persediaan"
+                        value={money(landedTotal)}
                         strong
                     />
                 </div>
@@ -483,9 +564,18 @@ export default function Create({
                                     0,
                                     lineGross - lineDiscount,
                                 );
-                                const selectedUnit = (material?.unit_options ?? []).find((option) => String(option.value) === String(item.material_unit_id));
-                                const normalizedQty = Number(item.qty || 0) / Number(selectedUnit?.factor_to_base || 1);
-                                const baseUnit = (material?.unit_options ?? [])[0];
+                                const selectedUnit = (
+                                    material?.unit_options ?? []
+                                ).find(
+                                    (option) =>
+                                        String(option.value) ===
+                                        String(item.material_unit_id),
+                                );
+                                const normalizedQty =
+                                    Number(item.qty || 0) /
+                                    Number(selectedUnit?.factor_to_base || 1);
+                                const baseUnit = (material?.unit_options ??
+                                    [])[0];
 
                                 return (
                                     <tr key={index}>
@@ -563,13 +653,34 @@ export default function Create({
                                             />
                                         </td>
                                         <td className="px-3 py-2">
-                                            <div className="min-w-32"><Dropdown
-                                                value={item.material_unit_id ?? ""}
-                                                options={material?.unit_options ?? []}
-                                                onChange={(value) => setItem(index, "material_unit_id", value)}
-                                            /></div>
+                                            <div className="min-w-32">
+                                                <Dropdown
+                                                    value={
+                                                        item.material_unit_id ??
+                                                        ""
+                                                    }
+                                                    options={
+                                                        material?.unit_options ??
+                                                        []
+                                                    }
+                                                    onChange={(value) =>
+                                                        setItem(
+                                                            index,
+                                                            "material_unit_id",
+                                                            value,
+                                                        )
+                                                    }
+                                                />
+                                            </div>
                                         </td>
-                                        <td className="px-3 py-2 text-right font-black">{Number(normalizedQty || 0).toLocaleString('id-ID', { maximumFractionDigits: 6 })} {baseUnit?.symbol ?? ''}</td>
+                                        <td className="px-3 py-2 text-right font-black">
+                                            {Number(
+                                                normalizedQty || 0,
+                                            ).toLocaleString("id-ID", {
+                                                maximumFractionDigits: 6,
+                                            })}{" "}
+                                            {baseUnit?.symbol ?? ""}
+                                        </td>
                                         <td className="px-3 py-2">
                                             <input
                                                 className="h-9 w-36 rounded-md border border-silver-deep/70 bg-white/85 px-3 text-right font-bold dark:border-white/10 dark:bg-white/8"
@@ -680,58 +791,19 @@ export default function Create({
                                 inputClassName="h-9 min-h-9 text-right font-black"
                             />
                         </div>
+                        <FooterTotal label="Total Akhir" value={totalAkhir} />
                         <FooterTotal
-                            label="Total Akhir"
-                            value={totalAkhir}
+                            label="Biaya Perolehan"
+                            value={acquisitionCost}
+                        />
+                        <FooterTotal
+                            label="Modal Persediaan (Landed Cost)"
+                            value={landedTotal}
                             strong
                         />
                     </div>
                 </div>
             </form>
-
-            <Modal
-                open={showPriceModal}
-                onClose={() => setShowPriceModal(false)}
-                title="Perbarui Harga Material?"
-                footer={
-                    <>
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                                setShowPriceModal(false);
-                                submitForm(false);
-                            }}
-                        >
-                            Tidak
-                        </Button>
-                        <Button
-                            type="button"
-                            onClick={() => {
-                                setShowPriceModal(false);
-                                submitForm(true);
-                            }}
-                        >
-                            <CheckCircle2 size={16} /> Ya, Update
-                        </Button>
-                    </>
-                }
-            >
-                <div className="space-y-3 text-sm text-ink dark:text-white">
-                    <p>
-                        Di transaksi ini ada potongan harga atau harga pembelian
-                        yang berubah. Jika Anda pilih{" "}
-                        <span className="font-black">Ya</span>, harga dasar
-                        material akan ikut diperbarui setelah pembelian
-                        disimpan.
-                    </p>
-                    <p className="text-xs font-semibold text-ink-soft dark:text-white/60">
-                        Kalau dipilih <span className="font-black">Tidak</span>,
-                        pembelian tetap tersimpan tetapi harga material master
-                        tidak berubah.
-                    </p>
-                </div>
-            </Modal>
 
             <MaterialSelectorModal
                 open={materialPicker.open}

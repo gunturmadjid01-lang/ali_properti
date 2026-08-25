@@ -24,7 +24,7 @@ class StoreUserRequest extends FormRequest
         $employee = $this->input('profile_section') === 'pegawai' || $this->boolean('create_employee_profile');
 
         return [
-            'profile_section' => ['required', Rule::in(['marketing', 'manager', 'manajer_pimpro', 'pengawas', 'keuangan', 'gudang', 'admin', 'owner', 'petugas', 'super_admin', 'pegawai'])],
+            'profile_section' => ['required', Rule::in(['marketing', 'admin_sales', 'manager', 'manajer_pimpro', 'pengawas', 'keuangan', 'gudang', 'admin', 'owner', 'petugas', 'super_admin', 'pegawai'])],
             'create_employee_profile' => ['nullable', 'boolean'],
             'kantor_cabang_id' => ['nullable', 'exists:cabang_perusahaans,id'],
             'gudang_ids' => [Rule::requiredIf($this->input('profile_section') === 'gudang'), 'nullable', 'array'],

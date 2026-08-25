@@ -168,7 +168,7 @@ export default function Wizard({
                     {page === 1 && (
                         <div className="grid gap-4">
                             <p className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-blue-900 dark:border-blue-400/25 dark:bg-blue-400/10 dark:text-blue-100">
-                                Pilih dari Master Dokumen Pelanggan. Kondisi
+                                Pilih dari Jenis Dokumen Pelanggan. Kondisi
                                 kosong berarti berlaku untuk semua
                                 pekerjaan/status perkawinan.
                             </p>

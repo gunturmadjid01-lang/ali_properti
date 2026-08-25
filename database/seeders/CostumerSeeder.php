@@ -12,6 +12,10 @@ class CostumerSeeder extends Seeder
 {
     public function run(): void
     {
+        $this->command?->warn('CostumerSeeder dinonaktifkan: data customer harus berasal dari proses CRM nyata, bukan data contoh.');
+
+        return;
+
         $perumahanIds = Perumahan::query()->orderBy('id')->pluck('id')->values();
 
         if ($perumahanIds->isEmpty()) {

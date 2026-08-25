@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
+use App\Models\ApprovalRequest;
 use App\Models\Gudang;
 use App\Models\MasterBank;
 use App\Models\MaterialPurchase;
@@ -13,6 +14,7 @@ use App\Models\MaterialPurchaseRequest;
 use App\Models\MaterialRequest;
 use App\Models\Supplier;
 use App\Services\MaterialPurchaseService;
+use App\Services\ApprovalWorkflowService;
 use App\Services\MaterialUnitConversionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -39,7 +41,7 @@ class MaterialPurchaseController extends Controller
             'permissions' => [
                 'canCreate' => $this->canCreatePurchase(),
                 'canUpdate' => $this->canUpdatePurchase(),
-                'canApprove' => (bool) auth()->user()?->hasAnyRole(['manajer_pimpro', 'owner', 'super_admin']),
+                'canApprove' => (bool) auth()->check(),
                 'canRelease' => (bool) auth()->user()?->hasAnyRole(['keuangan', 'admin_keuangan', 'owner', 'super_admin']),
                 'canMarkPurchased' => (bool) auth()->user()?->hasAnyRole(['user_area_gudang', 'admin', 'super_admin']),
                 'canLock' => (bool) auth()->check(),
@@ -78,7 +80,11 @@ class MaterialPurchaseController extends Controller
                 ->orderBy('id', $direction)
                 ->paginate(10)
                 ->withQueryString()
-                ->through(fn (MaterialPurchase $row) => [
+                ->through(function (MaterialPurchase $row) {
+                    $approvalRequest = ApprovalRequest::query()->where('module_key', 'material-purchase')->where('action', 'lock')
+                        ->where('model_type', MaterialPurchase::class)->where('model_id', $row->id)->latest('id')->first();
+
+                    return [
                     'id' => $row->id,
                     'kode_pembelian' => $row->kode_pembelian,
                     'tanggal' => optional($row->tanggal)->format('Y-m-d'),
@@ -98,7 +104,14 @@ class MaterialPurchaseController extends Controller
                     'planned_master_bank_id' => (string) ($row->planned_master_bank_id ?? ''),
                     'subtotal_nominal' => (float) ($row->subtotal_nominal ?? $row->total_nominal),
                     'diskon_transaksi' => (float) ($row->diskon_transaksi ?? 0),
-                    'can_approve' => ($row->record_status ?? 'draft') !== 'locked' && in_array($row->status, [MaterialPurchase::STATUS_MENUNGGU_APPROVAL, MaterialPurchase::STATUS_MENUNGGU_MANAGER], true),
+                    'biaya_ekspedisi' => (float) $row->biaya_ekspedisi,
+                    'upah_buruh_logistik' => (float) $row->upah_buruh_logistik,
+                    'biaya_lain_perolehan' => (float) $row->biaya_lain_perolehan,
+                    'total_landed_cost' => (float) $row->total_landed_cost,
+                    'approval_status' => $approvalRequest?->status,
+                    'approval_step' => $approvalRequest?->current_step,
+                    'approval_total_steps' => $approvalRequest?->total_steps,
+                    'can_approve' => $approvalRequest ? app(ApprovalWorkflowService::class)->canReview($approvalRequest) : false,
                     'can_edit' => ($row->record_status ?? 'draft') !== 'locked' && $row->details->every(fn ($detail) => ($detail->inspection_status ?? 'pending') === 'pending' && (float) ($detail->qty_diterima ?? 0) <= 0),
                     'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && auth()->check(),
                     'can_unlock' => ($row->record_status ?? 'draft') === 'locked' && $this->currentUserCanManageLockedRecords(),
@@ -121,7 +134,19 @@ class MaterialPurchaseController extends Controller
                         'kode_barang' => $detail->barangMaterial?->kode_barang ?? '-',
                         'barang' => $detail->barangMaterial?->nama_barang ?? '-',
                         'qty' => $detail->qty,
+                        'harga_satuan' => $detail->harga_satuan,
                         'qty_diterima' => $detail->qty_diterima,
+                        'qty_faktur' => $detail->qty_faktur,
+                        'qty_fisik_tiba' => $detail->qty_fisik_tiba,
+                        'qty_cacat' => $detail->qty_cacat,
+                        'qty_ditolak' => $detail->qty_ditolak,
+                        'qty_kurang' => $detail->qty_kurang,
+                        'qty_lebih' => $detail->qty_lebih,
+                        'landed_unit_cost' => $detail->landed_unit_cost,
+                        'invoice_unit_price' => $detail->invoice_unit_price,
+                        'price_variance' => $detail->price_variance,
+                        'price_variance_percent' => $detail->price_variance_percent,
+                        'price_variance_requires_approval' => $detail->price_variance_requires_approval,
                         'satuan' => $detail->satuan,
                         'harga_satuan' => $detail->harga_satuan,
                         'diskon' => (float) ($detail->diskon ?? 0),
@@ -131,7 +156,8 @@ class MaterialPurchaseController extends Controller
                     ])->values(),
                     'record_status' => $row->record_status ?? 'draft',
                     'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-                ]),
+                    ];
+                }),
             'filters' => ['search' => $search, 'gudang_id' => $gudangId, 'days' => $days, 'sort' => $sort, 'direction' => $direction],
             'options' => $this->options(),
         ]);
@@ -221,14 +247,15 @@ class MaterialPurchaseController extends Controller
         return back()->with('success', 'Pembelian dari permintaan barang berhasil dibuat.');
     }
 
-    public function approve(string $id, MaterialPurchaseService $service): RedirectResponse
+    public function approve(string $id, ApprovalWorkflowService $workflow): RedirectResponse
     {
         $row = MaterialPurchase::query()->findOrFail($id);
-        abort_unless($this->canApprovePurchase(), 403, 'Anda tidak memiliki permission approval pembelian material.');
-        $this->abortIfLocked($row);
-        $service->approve($row);
+        $approvalRequest = ApprovalRequest::query()->where('module_key', 'material-purchase')->where('action', 'lock')
+            ->where('model_type', MaterialPurchase::class)->where('model_id', $row->id)
+            ->where('status', ApprovalRequest::STATUS_PENDING)->latest('id')->firstOrFail();
+        $workflow->approve($approvalRequest);
 
-        return back()->with('success', 'Pembelian berhasil di-approve dan menunggu pembayaran.');
+        return back()->with('success', 'Tahap approval pembelian berhasil diproses sesuai Setting Approval.');
     }
 
     public function releaseFund(Request $request, string $id, MaterialPurchaseService $service): RedirectResponse
@@ -271,6 +298,7 @@ class MaterialPurchaseController extends Controller
 
     public function inspectionIndex(Request $request): Response
     {
+        abort_unless(auth()->user()?->can('material-receipt.view') || auth()->user()?->hasRole('super_admin'), 403);
         $search = trim((string) $request->query('search', ''));
         $dateFrom = $request->query('date_from');
         $dateTo = $request->query('date_to');
@@ -316,6 +344,12 @@ class MaterialPurchaseController extends Controller
                     'tanggal_barang_masuk' => $row->tanggal_barang_masuk?->format('Y-m-d') ?? '',
                     'gudang' => $row->gudang?->nama_gudang ?? '-',
                     'supplier' => $row->supplier ?? '-',
+                    'nomor_faktur' => $row->nomor_faktur ?? '-',
+                    'nomor_surat_jalan' => $row->nomor_surat_jalan ?? '-',
+                    'nama_ekspedisi' => $row->nama_ekspedisi ?? '-',
+                    'biaya_ekspedisi' => (float) $row->biaya_ekspedisi,
+                    'upah_buruh_logistik' => (float) $row->upah_buruh_logistik,
+                    'total_landed_cost' => (float) $row->total_landed_cost,
                     'status' => $row->status,
                     'status_label' => $this->purchaseStatusLabel($row->status),
                     'items_count' => $row->details->count(),
@@ -329,7 +363,18 @@ class MaterialPurchaseController extends Controller
                         'id' => $detail->id,
                         'barang' => $detail->barangMaterial?->nama_barang ?? '-',
                         'qty' => $detail->qty,
+                        'harga_satuan' => $detail->harga_satuan,
                         'qty_diterima' => $detail->qty_diterima,
+                        'qty_faktur' => $detail->qty_faktur,
+                        'qty_fisik_tiba' => $detail->qty_fisik_tiba,
+                        'qty_cacat' => $detail->qty_cacat,
+                        'qty_ditolak' => $detail->qty_ditolak,
+                        'qty_kurang' => $detail->qty_kurang,
+                        'qty_lebih' => $detail->qty_lebih,
+                        'kondisi_fisik' => $detail->kondisi_fisik,
+                        'status_selisih' => $detail->status_selisih,
+                        'alasan_selisih' => $detail->alasan_selisih,
+                        'landed_unit_cost' => $detail->landed_unit_cost,
                         'satuan' => $detail->satuan,
                         'inspection_status' => $detail->inspection_status,
                         'inspection_note' => $detail->inspection_note,
@@ -362,9 +407,17 @@ class MaterialPurchaseController extends Controller
 
     public function inspectItem(Request $request, string $id, string $detailId, MaterialPurchaseService $service): RedirectResponse
     {
+        abort_unless(auth()->user()?->can('material-receipt.update') || auth()->user()?->hasRole('super_admin'), 403);
         $validated = $request->validate([
             'status' => ['required', 'in:sesuai,tidak_sesuai'],
             'qty_diterima' => ['nullable', 'numeric', 'min:0'],
+            'qty_faktur' => ['required', 'numeric', 'min:0'],
+            'qty_fisik_tiba' => ['required', 'numeric', 'min:0'],
+            'qty_cacat' => ['nullable', 'numeric', 'min:0'],
+            'qty_ditolak' => ['nullable', 'numeric', 'min:0'],
+            'invoice_unit_price' => ['required', 'numeric', 'min:0'],
+            'kondisi_fisik' => ['required', 'in:baik,layak_pakai,cacat,rusak'],
+            'alasan_selisih' => ['nullable', 'string'],
             'tanggal_barang_masuk' => ['required', 'date'],
             'catatan' => ['nullable', 'string'],
         ]);
@@ -375,15 +428,46 @@ class MaterialPurchaseController extends Controller
 
         return back()->with(
             'success',
-            $validated['status'] === 'sesuai'
-                ? 'Item dinyatakan sesuai dan stok gudang telah ditambahkan.'
-                : 'Item dinyatakan tidak sesuai dan tidak ditambahkan ke stok.'
+            (float) ($validated['qty_diterima'] ?? 0) > 0
+                ? 'Pemeriksaan tersimpan. Qty diterima baik masuk ke stok dengan landed cost; selisih dan barang cacat tercatat terpisah.'
+                : 'Pemeriksaan tersimpan tanpa penambahan stok karena tidak ada qty yang diterima baik.'
         );
+    }
+
+    public function inspectionShow(string $id): Response
+    {
+        abort_unless(auth()->user()?->can('material-receipt.view') || auth()->user()?->hasRole('super_admin'), 403);
+        $row = MaterialPurchase::query()->with(['gudang:id,nama_gudang', 'supplierData:id,nama_supplier', 'details.barangMaterial:id,kode_barang,nama_barang'])->findOrFail($id);
+
+        return Inertia::render('Admin/MaterialPurchase/InspectionForm', [
+            'title' => 'Pemeriksaan '.$row->kode_pembelian,
+            'indexUrl' => route('admin.material-purchase.inspection.index', absolute: false),
+            'submitBaseUrl' => route('admin.material-purchase.inspection.index', absolute: false),
+            'purchase' => [
+                'id' => $row->id, 'kode' => $row->kode_pembelian, 'tanggal' => $row->tanggal?->format('Y-m-d'),
+                'tanggal_barang_masuk' => $row->tanggal_barang_masuk?->format('Y-m-d') ?? now()->toDateString(),
+                'gudang' => $row->gudang?->nama_gudang ?? '-', 'supplier' => $row->supplierData?->nama_supplier ?? $row->supplier ?? '-',
+                'nomor_faktur' => $row->nomor_faktur, 'nomor_surat_jalan' => $row->nomor_surat_jalan,
+                'items' => $row->details->map(fn (MaterialPurchaseDetail $detail) => [
+                    'id' => $detail->id, 'material' => ($detail->barangMaterial?->kode_barang ?? '-').' - '.($detail->barangMaterial?->nama_barang ?? '-'),
+                    'qty' => $detail->qty, 'satuan' => $detail->satuan, 'harga_satuan' => $detail->harga_satuan,
+                    'inspection_status' => $detail->inspection_status, 'qty_faktur' => $detail->qty_faktur,
+                    'qty_fisik_tiba' => $detail->qty_fisik_tiba, 'qty_diterima' => $detail->qty_diterima,
+                    'qty_cacat' => $detail->qty_cacat, 'qty_ditolak' => $detail->qty_ditolak,
+                    'status_selisih' => $detail->status_selisih, 'inspection_note' => $detail->inspection_note,
+                ])->values(),
+            ],
+        ]);
     }
 
     protected function modelClass(): string
     {
         return MaterialPurchase::class;
+    }
+
+    protected function beforeUnlock(MaterialPurchase $purchase): void
+    {
+        app(MaterialPurchaseService::class)->reverseForUnlock($purchase);
     }
 
     protected function validated(Request $request, ?int $ignoreId = null): array
@@ -399,7 +483,15 @@ class MaterialPurchaseController extends Controller
             'planned_master_bank_id' => ['nullable', 'required_if:metode_pembayaran,tunai', 'exists:master_banks,id'],
             'keterangan' => ['nullable', 'string'],
             'diskon_transaksi' => ['nullable', 'numeric', 'min:0'],
-            'update_material_prices' => ['nullable', 'boolean'],
+            'nomor_faktur' => ['nullable', 'string', 'max:100'],
+            'tanggal_faktur' => ['nullable', 'date'],
+            'nomor_surat_jalan' => ['nullable', 'string', 'max:100'],
+            'nama_ekspedisi' => ['nullable', 'string', 'max:150'],
+            'nomor_kendaraan' => ['nullable', 'string', 'max:50'],
+            'biaya_ekspedisi' => ['nullable', 'numeric', 'min:0'],
+            'upah_buruh_logistik' => ['nullable', 'numeric', 'min:0'],
+            'biaya_lain_perolehan' => ['nullable', 'numeric', 'min:0'],
+            'metode_alokasi_biaya' => ['nullable', 'in:nilai,kuantitas'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.barang_material_id' => ['required', 'exists:barang_materials,id'],
             'items.*.material_unit_id' => ['nullable', 'exists:material_units,id'],
@@ -515,6 +607,15 @@ class MaterialPurchaseController extends Controller
             'gudang_id' => (string) ($purchase->gudang_id ?? ''),
             'keterangan' => $purchase->keterangan ?? '',
             'diskon_transaksi' => (float) ($purchase->diskon_transaksi ?? 0),
+            'nomor_faktur' => $purchase->nomor_faktur ?? '',
+            'tanggal_faktur' => $purchase->tanggal_faktur?->format('Y-m-d') ?? '',
+            'nomor_surat_jalan' => $purchase->nomor_surat_jalan ?? '',
+            'nama_ekspedisi' => $purchase->nama_ekspedisi ?? '',
+            'nomor_kendaraan' => $purchase->nomor_kendaraan ?? '',
+            'biaya_ekspedisi' => (float) $purchase->biaya_ekspedisi,
+            'upah_buruh_logistik' => (float) $purchase->upah_buruh_logistik,
+            'biaya_lain_perolehan' => (float) $purchase->biaya_lain_perolehan,
+            'metode_alokasi_biaya' => $purchase->metode_alokasi_biaya ?? 'nilai',
             'material_purchase_request_id' => (string) ($purchase->material_purchase_request_id ?? ''),
             'items' => $purchase->details->map(fn (MaterialPurchaseDetail $detail) => [
                 'barang_material_id' => (string) $detail->barang_material_id,

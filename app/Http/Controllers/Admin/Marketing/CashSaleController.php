@@ -8,7 +8,6 @@ use App\Http\Controllers\Controller;
 use App\Models\CashSale;
 use App\Models\CashSalePayment;
 use App\Models\ChartOfAccount;
-use App\Models\DetailRumah;
 use App\Models\Spr;
 use App\Models\TipePost;
 use App\Models\TransaksiKeuangan;
@@ -16,20 +15,24 @@ use App\Services\AccountingService;
 use App\Services\Marketing\MarketingLeadStatusService;
 use App\Services\UnitOwnershipService;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CashSaleController extends Controller
 {
-    use HandlesCrudLock, ScopesActivePerumahan;
+    use HandlesCrudLock, ScopesActivePerumahan {
+        HandlesCrudLock::lock as private traitLock;
+        HandlesCrudLock::unlock as private traitUnlock;
+    }
 
     public function index(Request $request): Response
     {
+        $this->authorizePermission($request, 'view');
         $search = trim((string) $request->query('search', ''));
 
         $rows = CashSale::query()
@@ -37,7 +40,6 @@ class CashSaleController extends Controller
                 'spr.costumer:id,nama,no_identitas,telepon',
                 'spr.detailRumah.perumahan:id,nama_perusahaan,cabang_id',
                 'handler:id,name',
-                'payments.creator:id,name',
             ])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
             ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
@@ -63,16 +65,62 @@ class CashSaleController extends Controller
             'baseUrl' => route('admin.marketing.transaksi-pembelian.cash.index', absolute: false),
             'rows' => $rows,
             'filters' => ['search' => $search],
-            'options' => [
-                'sprOptions' => $this->sprOptions(),
-                'paymentMethods' => $this->paymentMethodOptions(),
-                'statusOptions' => $this->statusOptions(),
+            'permissions' => [
+                'canCreate' => $this->can($request, 'create'),
             ],
+        ]);
+    }
+
+    public function create(Request $request): Response
+    {
+        $this->authorizePermission($request, 'create');
+
+        return Inertia::render('Admin/Marketing/Cash/Form', [
+            'title' => 'Buat Transaksi Cash',
+            'baseUrl' => route('admin.marketing.transaksi-pembelian.cash.index', absolute: false),
+            'actionUrl' => route('admin.marketing.transaksi-pembelian.cash.store', absolute: false),
+            'sprOptions' => $this->sprOptions(),
+        ]);
+    }
+
+    public function show(Request $request, string $id): Response
+    {
+        $this->authorizePermission($request, 'view');
+        $sale = $this->findSale($request, $id, [
+            'spr.costumer:id,nama,no_identitas,telepon',
+            'spr.detailRumah.perumahan:id,nama_perusahaan,cabang_id',
+            'handler:id,name',
+            'payments.creator:id,name',
+        ]);
+
+        return Inertia::render('Admin/Marketing/Cash/Show', [
+            'title' => 'Detail Transaksi '.$sale->kode_cash,
+            'baseUrl' => route('admin.marketing.transaksi-pembelian.cash.index', absolute: false),
+            'row' => $this->row($sale),
+        ]);
+    }
+
+    public function createPayment(Request $request, string $id): Response
+    {
+        $this->authorizePermission($request, 'update');
+        $sale = $this->findSale($request, $id, [
+            'spr.costumer:id,nama,no_identitas,telepon',
+            'spr.detailRumah.perumahan:id,nama_perusahaan,cabang_id',
+        ]);
+        $this->abortIfLocked($sale);
+
+        return Inertia::render('Admin/Marketing/Cash/PaymentForm', [
+            'title' => 'Tambah Pembayaran '.$sale->kode_cash,
+            'baseUrl' => route('admin.marketing.transaksi-pembelian.cash.show', $sale->id, absolute: false),
+            'actionUrl' => route('admin.marketing.transaksi-pembelian.cash.payment.store', $sale->id, absolute: false),
+            'paymentMethods' => $this->paymentMethodOptions(),
+            'row' => $this->row($sale),
         ]);
     }
 
     public function store(Request $request, MarketingLeadStatusService $leadStatus): RedirectResponse
     {
+        $this->authorizePermission($request, 'create');
         $validated = $request->validate([
             'spr_id' => ['required', 'exists:sprs,id', Rule::unique('cash_sales', 'spr_id')],
             'tanggal_transaksi' => ['required', 'date'],
@@ -114,11 +162,12 @@ class CashSaleController extends Controller
         $spr->detailRumah?->update(['status_penjualan' => 'proses_penjualan']);
         $leadStatus->markSpr($spr, MarketingLeadStatusService::CLOSING);
 
-        return back()->with('success', 'Transaksi cash berhasil dibuat dari SPR.');
+        return redirect()->route('admin.marketing.transaksi-pembelian.cash.index')->with('success', 'Transaksi cash berhasil dibuat dari SPR.');
     }
 
     public function storePayment(Request $request, string $id): RedirectResponse
     {
+        $this->authorizePermission($request, 'update');
         $sale = CashSale::query()
             ->with(['spr.detailRumah.perumahan'])
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
@@ -168,11 +217,12 @@ class CashSaleController extends Controller
             $sale->update($this->recalculatePaymentState($sale));
         });
 
-        return back()->with('success', 'Pembayaran cash berhasil disimpan dan masuk ke kas.');
+        return redirect()->route('admin.marketing.transaksi-pembelian.cash.show', $sale->id)->with('success', 'Pembayaran cash berhasil disimpan dan masuk ke kas.');
     }
 
     public function handover(Request $request, string $id): RedirectResponse
     {
+        $this->authorizePermission($request, 'update');
         $leadStatus = app(MarketingLeadStatusService::class);
         $sale = CashSale::query()
             ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
@@ -204,6 +254,8 @@ class CashSaleController extends Controller
 
     protected function row(CashSale $sale): array
     {
+        $request = request();
+
         return [
             'id' => $sale->id,
             'kode_cash' => $sale->kode_cash,
@@ -219,16 +271,15 @@ class CashSaleController extends Controller
             'sisa_tagihan' => $sale->sisa_tagihan,
             'status_pembayaran' => $sale->status_pembayaran,
             'status_label' => $this->statusLabel($sale->status_pembayaran),
-            'payments_count' => $sale->payments->count(),
-            'last_payment' => $sale->payments->sortByDesc('tanggal_pembayaran')->first()?->nominal ?? 0,
             'catatan' => $sale->catatan,
             'created_by' => $sale->handler?->name ?? '-',
             'record_status' => $sale->record_status ?? 'draft',
             'record_status_label' => ($sale->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
-            'can_lock' => ($sale->record_status ?? 'draft') !== 'locked' && (bool) auth()->check(),
+            'can_update' => ($sale->record_status ?? 'draft') !== 'locked' && $this->can($request, 'update'),
+            'can_lock' => ($sale->record_status ?? 'draft') !== 'locked' && $this->can($request, 'lock'),
             'can_unlock' => $this->currentUserCanManageLockedRecords() && ($sale->record_status ?? 'draft') === 'locked',
-            'can_handover' => $sale->status_pembayaran === CashSale::STATUS_LUNAS,
-            'payments' => $sale->payments->sortByDesc('tanggal_pembayaran')->values()->map(fn (CashSalePayment $payment) => [
+            'can_handover' => ($sale->record_status ?? 'draft') !== 'locked' && $sale->status_pembayaran === CashSale::STATUS_LUNAS && $this->can($request, 'update'),
+            'payments' => ($sale->relationLoaded('payments') ? $sale->payments : collect())->sortByDesc('tanggal_pembayaran')->values()->map(fn (CashSalePayment $payment) => [
                 'id' => $payment->id,
                 'tanggal_pembayaran' => optional($payment->tanggal_pembayaran)->format('Y-m-d'),
                 'nominal' => $payment->nominal,
@@ -238,6 +289,15 @@ class CashSaleController extends Controller
                 'created_by' => $payment->creator?->name ?? '-',
             ])->all(),
         ];
+    }
+
+    protected function findSale(Request $request, string $id, array $with = []): CashSale
+    {
+        return CashSale::query()
+            ->with($with)
+            ->when($this->shouldScopeToCurrentMarketing($request), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', $request->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan($request), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, $request)))
+            ->findOrFail($id);
     }
 
     protected function sprOptions(): array
@@ -362,6 +422,23 @@ class CashSaleController extends Controller
         return CashSale::class;
     }
 
+    protected function lockableQuery()
+    {
+        return CashSale::query()
+            ->when($this->shouldScopeToCurrentMarketing(request()), fn (Builder $query) => $query->whereHas('spr', fn (Builder $query) => $query->where('created_by', request()->user()?->id)))
+            ->when($this->shouldScopeToActivePerumahan(request()), fn (Builder $query) => $query->whereHas('spr.detailRumah', fn (Builder $query) => $this->scopeToActivePerumahan($query, request())));
+    }
+
+    protected function authorizeLockPermission(): void
+    {
+        $this->authorizePermission(request(), 'lock');
+    }
+
+    protected function abortIfLocked(Model $model): void
+    {
+        abort_if(($model->record_status ?? 'draft') === 'locked', 422, 'Data sudah dikunci. Gunakan Unlock sebelum melakukan perubahan.');
+    }
+
     protected function shouldScopeToCurrentMarketing(Request $request): bool
     {
         $user = $request->user();
@@ -386,5 +463,17 @@ class CashSaleController extends Controller
         }
 
         abort_unless((int) $spr->detailRumah?->perumahan_id === $this->ensureActivePerumahan($request), 403);
+    }
+
+    private function authorizePermission(Request $request, string $action): void
+    {
+        abort_unless($this->can($request, $action), 403);
+    }
+
+    private function can(Request $request, string $action): bool
+    {
+        return (bool) ($request->user()?->hasRole('super_admin')
+            || $request->user()?->can("cash-sale.{$action}")
+            || $request->user()?->can('cash-sale.manage'));
     }
 }

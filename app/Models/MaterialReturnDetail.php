@@ -12,12 +12,19 @@ class MaterialReturnDetail extends Model
         'site_material_stock_id',
         'barang_material_id',
         'qty',
+        'qty_normal',
+        'qty_quarantine',
+        'qty_scrap',
+        'qty_lost',
         'satuan',
+        'condition_status',
+        'stock_disposition',
+        'condition_note',
         'harga_satuan',
         'subtotal',
     ];
 
-    protected $casts = ['qty' => 'float', 'harga_satuan' => 'float', 'subtotal' => 'float'];
+    protected $casts = ['qty' => 'float', 'qty_normal' => 'float', 'qty_quarantine' => 'float', 'qty_scrap' => 'float', 'qty_lost' => 'float', 'harga_satuan' => 'float', 'subtotal' => 'float'];
 
     public function materialReturn(): BelongsTo
     {

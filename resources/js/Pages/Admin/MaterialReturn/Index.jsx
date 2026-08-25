@@ -20,7 +20,12 @@ import {
 } from "../../../Components/UI";
 import AdminLayout from "../../../Layouts/AdminLayout";
 
-const itemTemplate = () => ({ site_material_stock_id: "", qty: "" });
+const itemTemplate = () => ({
+    site_material_stock_id: "",
+    qty: "",
+    condition_status: "utuh",
+    condition_note: "",
+});
 
 export default function Index({
     title,
@@ -173,7 +178,7 @@ export default function Index({
                             </div>
                             {form.data.items.map((item, index) => (
                                 <div
-                                    className="grid gap-3 rounded-lg border border-silver-deep/70 p-3 md:grid-cols-[1fr_180px_auto]"
+                                    className="grid gap-3 rounded-lg border border-silver-deep/70 p-3 md:grid-cols-[1fr_150px_190px_1fr_auto]"
                                     key={index}
                                 >
                                     <div className="grid gap-2">
@@ -206,6 +211,81 @@ export default function Index({
                                                                   qty: event
                                                                       .target
                                                                       .value,
+                                                              }
+                                                            : row,
+                                                ),
+                                            )
+                                        }
+                                    />
+                                    <div className="grid gap-2">
+                                        <span className="text-sm font-extrabold">
+                                            Kondisi
+                                        </span>
+                                        <Dropdown
+                                            value={item.condition_status}
+                                            searchable={false}
+                                            options={[
+                                                {
+                                                    value: "utuh",
+                                                    label: "Utuh",
+                                                },
+                                                {
+                                                    value: "layak_pakai",
+                                                    label: "Layak Pakai",
+                                                },
+                                                {
+                                                    value: "cacat_dapat_diperbaiki",
+                                                    label: "Cacat - Dapat Diperbaiki",
+                                                },
+                                                {
+                                                    value: "rusak",
+                                                    label: "Rusak",
+                                                },
+                                                {
+                                                    value: "sisa_potongan",
+                                                    label: "Sisa Potongan",
+                                                },
+                                                {
+                                                    value: "scrap",
+                                                    label: "Scrap",
+                                                },
+                                                {
+                                                    value: "hilang",
+                                                    label: "Hilang",
+                                                },
+                                            ]}
+                                            onChange={(value) =>
+                                                form.setData(
+                                                    "items",
+                                                    form.data.items.map(
+                                                        (row, rowIndex) =>
+                                                            rowIndex === index
+                                                                ? {
+                                                                      ...row,
+                                                                      condition_status:
+                                                                          value,
+                                                                  }
+                                                                : row,
+                                                    ),
+                                                )
+                                            }
+                                        />
+                                    </div>
+                                    <Input
+                                        label="Catatan Kondisi"
+                                        value={item.condition_note}
+                                        onChange={(event) =>
+                                            form.setData(
+                                                "items",
+                                                form.data.items.map(
+                                                    (row, rowIndex) =>
+                                                        rowIndex === index
+                                                            ? {
+                                                                  ...row,
+                                                                  condition_note:
+                                                                      event
+                                                                          .target
+                                                                          .value,
                                                               }
                                                             : row,
                                                 ),

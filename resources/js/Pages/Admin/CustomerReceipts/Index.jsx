@@ -366,7 +366,10 @@ export default function Index({
                 </section>
 
                 {reservationApprovals.length > 0 && (
-                    <section className="grid gap-3 rounded-xl border border-amber-300/70 bg-amber-50/70 p-5 dark:border-amber-400/20 dark:bg-amber-400/5">
+                    <section
+                        id="verifikasi-booking-fee"
+                        className="scroll-mt-6 grid gap-3 rounded-xl border border-amber-300/70 bg-amber-50/70 p-5 dark:border-amber-400/20 dark:bg-amber-400/5"
+                    >
                         <div>
                             <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">
                                 Menunggu verifikasi Keuangan

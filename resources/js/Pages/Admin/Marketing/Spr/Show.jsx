@@ -15,6 +15,7 @@ import {
     Lock,
     MapPin,
     Phone,
+    Plus,
     Printer,
     ShieldCheck,
     Unlock,
@@ -114,6 +115,18 @@ export default function Show({ title, baseUrl, row, documentTemplates = [] }) {
                                     >
                                         <Edit3 size={16} />
                                         Ubah SPR
+                                    </Button>
+                                )}
+                                {row.can_create_quality_upgrade && (
+                                    <Button
+                                        variant="outline"
+                                        className="border-white/30 bg-white/10 text-white hover:bg-white/20"
+                                        onClick={() =>
+                                            router.visit(row.quality_upgrade_url)
+                                        }
+                                    >
+                                        <Plus size={16} />
+                                        Penambahan Mutu
                                     </Button>
                                 )}
                                 {row.can_lock && (

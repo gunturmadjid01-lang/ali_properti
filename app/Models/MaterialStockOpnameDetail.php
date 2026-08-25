@@ -19,6 +19,10 @@ class MaterialStockOpnameDetail extends Model
         'masuk',
         'keluar',
         'selisih',
+        'unit_cost_snapshot',
+        'value_before',
+        'value_adjustment',
+        'value_after',
         'catatan',
     ];
 
@@ -29,6 +33,10 @@ class MaterialStockOpnameDetail extends Model
         'masuk' => 'float',
         'keluar' => 'float',
         'selisih' => 'float',
+        'unit_cost_snapshot' => 'float',
+        'value_before' => 'float',
+        'value_adjustment' => 'float',
+        'value_after' => 'float',
     ];
 
     public function opname(): BelongsTo

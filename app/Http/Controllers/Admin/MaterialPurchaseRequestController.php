@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Concerns\HandlesCrudLock;
 use App\Http\Controllers\Controller;
 use App\Models\BarangMaterial;
+use App\Models\ApprovalRequest;
 use App\Models\Gudang;
 use App\Models\MaterialPurchaseRequest;
 use App\Models\MaterialPurchaseRequestDetail;
+use App\Services\ApprovalWorkflowService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -18,7 +20,10 @@ use Inertia\Response;
 
 class MaterialPurchaseRequestController extends Controller
 {
-    use HandlesCrudLock;
+    use HandlesCrudLock {
+        lock as protected traitLock;
+        unlock as protected traitUnlock;
+    }
 
     public function index(Request $request): Response
     {
@@ -162,36 +167,22 @@ class MaterialPurchaseRequestController extends Controller
         return back()->with('success', 'Permintaan pembelian berhasil dihapus.');
     }
 
-    public function approve(string $id): RedirectResponse
+    public function approve(string $id, ApprovalWorkflowService $workflow): RedirectResponse
     {
         $row = MaterialPurchaseRequest::query()->findOrFail($id);
-        abort_unless($this->permissions()['canApprove'], 403, 'Anda tidak memiliki permission approval permintaan pembelian.');
-        $this->abortIfLocked($row);
-        abort_unless($row->status === MaterialPurchaseRequest::STATUS_DIAJUKAN, 422, 'Hanya permintaan berstatus diajukan yang bisa diapprove.');
-
-        $row->update([
-            'status' => MaterialPurchaseRequest::STATUS_DISETUJUI,
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
-            'updated_by' => auth()->id(),
-        ]);
+        $approval = $this->pendingApproval($row);
+        abort_unless($workflow->canReview($approval), 403, 'Role Anda tidak terdaftar pada tahap approval aktif.');
+        $workflow->approve($approval);
 
         return back()->with('success', 'Permintaan pembelian berhasil diapprove.');
     }
 
-    public function reject(string $id): RedirectResponse
+    public function reject(Request $request, string $id, ApprovalWorkflowService $workflow): RedirectResponse
     {
         $row = MaterialPurchaseRequest::query()->findOrFail($id);
-        abort_unless($this->permissions()['canApprove'], 403, 'Anda tidak memiliki permission menolak permintaan pembelian.');
-        $this->abortIfLocked($row);
-        abort_unless($row->status === MaterialPurchaseRequest::STATUS_DIAJUKAN, 422, 'Hanya permintaan berstatus diajukan yang bisa ditolak.');
-
-        $row->update([
-            'status' => MaterialPurchaseRequest::STATUS_DITOLAK,
-            'approved_by' => auth()->id(),
-            'approved_at' => now(),
-            'updated_by' => auth()->id(),
-        ]);
+        $approval = $this->pendingApproval($row);
+        abort_unless($workflow->canReview($approval), 403, 'Role Anda tidak terdaftar pada tahap approval aktif.');
+        $workflow->reject($approval, $request->string('note')->toString());
 
         return back()->with('success', 'Permintaan pembelian ditolak.');
     }
@@ -199,6 +190,38 @@ class MaterialPurchaseRequestController extends Controller
     protected function modelClass(): string
     {
         return MaterialPurchaseRequest::class;
+    }
+
+    public function lock(string $id): RedirectResponse
+    {
+        abort_unless($this->permissions()['canLock'], 403);
+
+        return $this->traitLock($id);
+    }
+
+    public function unlock(string $id): RedirectResponse
+    {
+        abort_unless($this->currentUserCanManageLockedRecords(), 403);
+
+        return $this->traitUnlock($id);
+    }
+
+    protected function beforeUnlock(MaterialPurchaseRequest $request): void
+    {
+        if ($request->purchases()->exists() || $request->status === MaterialPurchaseRequest::STATUS_DIPROSES) {
+            throw ValidationException::withMessages([
+                'unlock' => 'Permintaan pembelian tidak dapat di-unlock sebelum seluruh pembelian turunannya dibatalkan melalui alur reversal.',
+            ]);
+        }
+
+        $request->update([
+            'status' => MaterialPurchaseRequest::STATUS_DIAJUKAN,
+            'approved_by' => null,
+            'approved_at' => null,
+            'processed_by' => null,
+            'processed_at' => null,
+            'updated_by' => auth()->id(),
+        ]);
     }
 
     protected function validated(Request $request, ?int $ignoreId = null): array
@@ -238,7 +261,8 @@ class MaterialPurchaseRequestController extends Controller
         $canEdit = ($row->record_status ?? 'draft') !== 'locked' && $row->status === MaterialPurchaseRequest::STATUS_DIAJUKAN;
         $canDelete = ($row->record_status ?? 'draft') !== 'locked' && in_array($row->status, [MaterialPurchaseRequest::STATUS_DIAJUKAN, MaterialPurchaseRequest::STATUS_DITOLAK], true);
         $canApprove = ($row->record_status ?? 'draft') !== 'locked' && $row->status === MaterialPurchaseRequest::STATUS_DIAJUKAN;
-        $canProcess = ($row->record_status ?? 'draft') !== 'locked' && $row->status === MaterialPurchaseRequest::STATUS_DISETUJUI;
+        $canProcess = $row->status === MaterialPurchaseRequest::STATUS_DISETUJUI;
+        $approval = ApprovalRequest::query()->where(['module_key' => 'material-purchase-request', 'action' => 'lock', 'model_type' => MaterialPurchaseRequest::class, 'model_id' => $row->id])->latest('id')->first();
 
         return [
             'id' => $row->id,
@@ -266,9 +290,10 @@ class MaterialPurchaseRequestController extends Controller
             'record_status_label' => ($row->record_status ?? 'draft') === 'locked' ? 'Locked' : 'Draft',
             'can_edit' => $canEdit,
             'can_delete' => $canDelete,
-            'can_approve' => $canApprove,
+            'approval_stage' => $approval?->status === ApprovalRequest::STATUS_PENDING ? "Tahap {$approval->current_step}/{$approval->total_steps}" : ($approval?->status ?? 'Belum diajukan'),
+            'can_approve' => $approval?->status === ApprovalRequest::STATUS_PENDING && app(ApprovalWorkflowService::class)->canReview($approval),
             'can_process' => $canProcess,
-            'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && auth()->check(),
+            'can_lock' => ($row->record_status ?? 'draft') !== 'locked' && $this->permissions()['canLock'],
             'can_unlock' => ($row->record_status ?? 'draft') === 'locked' && $this->currentUserCanManageLockedRecords(),
             'items' => $row->details->map(fn (MaterialPurchaseRequestDetail $detail) => [
                 'id' => $detail->id,
@@ -335,14 +360,19 @@ class MaterialPurchaseRequestController extends Controller
         $user = auth()->user();
 
         return [
-            'canCreate' => (bool) ($user?->can('material-purchase.create') || $user?->can('material-purchase.manage') || $user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])),
+            'canCreate' => (bool) ($user?->can('material-purchase-request.create') || $user?->can('material-purchase.create') || $user?->can('material-purchase.manage') || $user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])),
             'canUpdate' => (bool) ($user?->can('material-purchase.update') || $user?->can('material-purchase.manage') || $user?->hasAnyRole(['user_area_gudang', 'admin_gudang'])),
             'canDelete' => (bool) ($user?->can('material-purchase.delete') || $user?->can('material-purchase.manage')),
-            'canApprove' => (bool) $user?->hasAnyRole(['owner', 'manager', 'manajer_pimpro', 'super_admin']),
+            'canApprove' => true,
             'canProcess' => (bool) ($user?->can('material-purchase.create') || $user?->can('material-purchase.manage') || $user?->hasAnyRole(['admin', 'keuangan', 'admin_keuangan', 'owner', 'super_admin'])),
-            'canLock' => (bool) auth()->check(),
-            'canUnlock' => (bool) $user?->can('material-purchase.unlock'),
+            'canLock' => (bool) ($user?->can('material-purchase-request.lock') || $user?->hasRole('super_admin')),
+            'canUnlock' => $this->currentUserCanManageLockedRecords(),
         ];
+    }
+
+    private function pendingApproval(MaterialPurchaseRequest $row): ApprovalRequest
+    {
+        return ApprovalRequest::query()->where(['module_key' => 'material-purchase-request', 'action' => 'lock', 'model_type' => MaterialPurchaseRequest::class, 'model_id' => $row->id, 'status' => ApprovalRequest::STATUS_PENDING])->latest('id')->firstOrFail();
     }
 
     protected function nextRequestCode(): string

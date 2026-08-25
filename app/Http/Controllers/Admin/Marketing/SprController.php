@@ -114,16 +114,6 @@ class SprController extends Controller
             'analytics' => ['total' => (clone $analyticsQuery)->count(), 'status' => $statusChart, 'methods' => $methodChart, 'financial' => $financial],
             'filters' => compact('search', 'status', 'paymentMethod', 'perumahanId', 'dateFrom', 'dateTo'),
             'filterOptions' => ['housing' => Perumahan::query()->finalized()->orderBy('nama_perusahaan')->get(['id', 'nama_perusahaan'])->map(fn ($row) => ['value' => (string) $row->id, 'label' => $row->nama_perusahaan]), 'statuses' => $this->statusOptions(), 'paymentMethods' => $this->paymentOptions()],
-            'customers' => $this->customerOptions(),
-            'units' => $this->unitOptions(),
-            'bankKreditOptions' => $this->bankKreditOptions(),
-            'dokumenOptions' => $this->dokumenOptions(),
-            'repositoryDocuments' => CustomerDocument::query()->with('documentType:id,kode_dokumen,nama_dokumen')->where('status', 'active')->orderByDesc('id')->get()->map(fn ($doc) => ['id' => (string) $doc->id, 'customer_id' => (string) $doc->costumer_id, 'document_type_id' => (string) $doc->dokumen_costumer_id, 'label' => $doc->documentType?->nama_dokumen ?: $doc->label, 'file_name' => $doc->nama_file, 'path' => $doc->path_file, 'party_scope' => $doc->party_scope, 'version' => $doc->version])->values()->all(),
-            'options' => [
-                'paymentOptions' => $this->paymentOptions(),
-                'statusOptions' => $this->statusOptions(),
-            ],
-            'permissions' => [],
         ]);
     }
 
@@ -659,6 +649,9 @@ class SprController extends Controller
             'can_unlock' => $this->currentUserCanUnlockSpr()
                 && ($spr->record_status ?? 'draft') === 'locked'
                 && $approval?->status === ApprovalRequest::STATUS_PENDING,
+            'can_create_quality_upgrade' => $spr->status === Spr::STATUS_DISETUJUI
+                && (auth()->user()?->can('quality-upgrade.create') || auth()->user()?->hasRole('super_admin')),
+            'quality_upgrade_url' => route('admin.quality-upgrades.create', ['spr' => $spr->id], false),
             'berkas_count' => $spr->berkasCostumers()->count(),
             'berkas' => $spr->berkasCostumers->map(fn (SprBerkasCostumer $berkas) => [
                 'id' => $berkas->id,

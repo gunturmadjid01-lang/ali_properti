@@ -287,7 +287,7 @@ function Pipeline({ data }) {
     const keyword = search.trim().toLowerCase();
     const columns = (data.columns ?? []).map((column) => ({
         ...column,
-        filteredCustomers: column.customers.filter((row) => {
+        filteredLeads: column.leads.filter((row) => {
             if (!keyword) return true;
 
             return [
@@ -310,14 +310,14 @@ function Pipeline({ data }) {
                 <div className="grid gap-3 md:grid-cols-[minmax(260px,520px)_1fr] md:items-end">
                     <Input
                         icon={<Users size={16} />}
-                        label="Cari Pelanggan di Alur Penjualan"
+                        label="Cari Lead di Pipeline"
                         placeholder="Nama, kode, telepon, sumber, atau campaign"
                         value={search}
                         onChange={(event) => setSearch(event.target.value)}
                     />
                     <p className="text-sm font-semibold leading-6 text-ink-soft dark:text-white/55">
                         Setiap kolom dapat di-scroll sendiri. Angka pada header
-                        menunjukkan total customer pada tahap tersebut.
+                        menunjukkan total lead pada tahap tersebut.
                     </p>
                 </div>
             </Card>
@@ -333,23 +333,19 @@ function Pipeline({ data }) {
                                 <strong>{column.label}</strong>
                                 <div className="flex items-center gap-2">
                                     {keyword &&
-                                        column.filteredCustomers.length !==
-                                            column.customers.length && (
+                                        column.filteredLeads.length !==
+                                            column.leads.length && (
                                             <span className="text-xs font-bold text-ink-soft">
-                                                {
-                                                    column.filteredCustomers
-                                                        .length
-                                                }
-                                                /
+                                                {column.filteredLeads.length}/
                                             </span>
                                         )}
                                     <span className="rounded-full bg-ink px-2.5 py-1 text-xs font-extrabold text-white dark:bg-white dark:text-ink">
-                                        {column.customers.length}
+                                        {column.leads.length}
                                     </span>
                                 </div>
                             </div>
                             <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-3">
-                                {column.filteredCustomers.map((row) => (
+                                {column.filteredLeads.map((row) => (
                                     <article
                                         className="rounded-xl border border-silver-deep/60 bg-silver-soft/70 p-4 dark:border-white/10 dark:bg-white/5"
                                         key={row.id}
@@ -369,7 +365,7 @@ function Pipeline({ data }) {
                                         </div>
                                     </article>
                                 ))}
-                                {column.filteredCustomers.length === 0 && (
+                                {column.filteredLeads.length === 0 && (
                                     <div className="grid min-h-32 place-items-center rounded-xl border border-dashed border-silver-deep/70 px-4 text-center text-xs font-bold text-ink-soft dark:border-white/10">
                                         {keyword
                                             ? "Pelanggan tidak ditemukan pada tahap ini."
@@ -450,7 +446,7 @@ function KampanyeTable({ data, onEdit, onDelete, onLock, permissions = {} }) {
                                         onLock={onLock}
                                         canEdit={permissions.canUpdate}
                                         canDelete={permissions.canDelete}
-                                        canLock={permissions.canUnlock}
+                                        canLock={permissions.canLock}
                                     />
                                 </td>
                             </tr>
@@ -778,19 +774,19 @@ function TargetCommission({
     onEdit,
     onDelete,
     onLock,
-    setCreateType,
+    onCreate,
     permissions = {},
 }) {
     return (
         <div className="grid gap-6">
             {permissions.canCreate && (
                 <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => setCreateType("target")}>
+                    <Button onClick={() => onCreate("target")}>
                         <Target size={16} /> Tambah Target
                     </Button>
                     <Button
                         variant="outline"
-                        onClick={() => setCreateType("commission")}
+                        onClick={() => onCreate("commission")}
                     >
                         <BadgeDollarSign size={16} /> Tambah Komisi
                     </Button>
@@ -857,7 +853,7 @@ function TargetCommission({
                                             onLock={onLock}
                                             canEdit={permissions.canUpdate}
                                             canDelete={permissions.canDelete}
-                                            canLock={permissions.canUnlock}
+                                            canLock={permissions.canLock}
                                         />
                                     </td>
                                 </tr>
@@ -923,7 +919,7 @@ function TargetCommission({
                                             onLock={onLock}
                                             canEdit={permissions.canUpdate}
                                             canDelete={permissions.canDelete}
-                                            canLock={permissions.canUnlock}
+                                            canLock={permissions.canLock}
                                         />
                                     </td>
                                 </tr>
@@ -969,7 +965,7 @@ function Templates({ data, onEdit, onDelete, onLock, permissions = {} }) {
                             onLock={onLock}
                             canEdit={permissions.canUpdate}
                             canDelete={permissions.canDelete}
-                            canLock={permissions.canUnlock}
+                            canLock={permissions.canLock}
                         />
                     </div>
                 </Card>
@@ -1028,7 +1024,10 @@ function CrudModal({ section, row, type, options, baseUrl, onClose }) {
             tahun: new Date().getFullYear(),
             bulan: new Date().getMonth() + 1,
             target_lead: 0,
+            target_follow_up: 0,
+            target_visit: 0,
             target_survey: 0,
+            target_reservation: 0,
             target_spr: 0,
             target_closing: 0,
             target_nilai_penjualan: "",
@@ -1266,7 +1265,10 @@ function CrudModal({ section, row, type, options, baseUrl, onClose }) {
                         />
                         {[
                             "target_lead",
+                            "target_follow_up",
+                            "target_visit",
                             "target_survey",
+                            "target_reservation",
                             "target_spr",
                             "target_closing",
                         ].map((field) => (
@@ -1386,11 +1388,8 @@ export default function Index({
     section,
     baseUrl,
     data = {},
-    options = {},
     permissions = {},
 }) {
-    const [editing, setEditing] = useState(null);
-    const [createType, setCreateType] = useState(null);
     const canCreate = Boolean(permissions.canCreate);
     const deleteRow = (row, type) => {
         if (!window.confirm("Hapus data ini?")) return;
@@ -1399,7 +1398,10 @@ export default function Index({
             preserveScroll: true,
         });
     };
-    const editRow = (row, type) => setEditing({ row, type });
+    const editRow = (row, type) =>
+        router.visit(`${baseUrl}/${row.id}/edit${type ? `?type=${type}` : ""}`);
+    const createRow = (type) =>
+        router.visit(`${baseUrl}/create${type ? `?type=${type}` : ""}`);
     const lockRow = (row, type) => {
         const modelSection =
             type === "target" || type === "commission" ? type : section;
@@ -1439,8 +1441,8 @@ export default function Index({
                                     Expired
                                 </Button>
                             )}
-                            {canCreate && (
-                                <Button onClick={() => setCreateType(section)}>
+                            {canCreate && section !== "target-komisi" && (
+                                <Button onClick={() => createRow(null)}>
                                     <Plus size={16} /> Tambah Data
                                 </Button>
                             )}
@@ -1481,7 +1483,7 @@ export default function Index({
                         onEdit={editRow}
                         onDelete={deleteRow}
                         onLock={lockRow}
-                        setCreateType={setCreateType}
+                        onCreate={createRow}
                         permissions={permissions}
                     />
                 )}
@@ -1495,24 +1497,6 @@ export default function Index({
                     />
                 )}
             </div>
-            {(createType || editing) && (
-                <CrudModal
-                    section={section}
-                    type={
-                        editing?.type ??
-                        (createType === "commission" || createType === "target"
-                            ? createType
-                            : null)
-                    }
-                    row={editing?.row ?? null}
-                    options={options}
-                    baseUrl={baseUrl}
-                    onClose={() => {
-                        setCreateType(null);
-                        setEditing(null);
-                    }}
-                />
-            )}
         </>
     );
 }

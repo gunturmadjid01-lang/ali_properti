@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class MaterialPurchase extends Model
@@ -30,6 +31,11 @@ class MaterialPurchase extends Model
         'kode_pembelian',
         'tanggal',
         'tanggal_barang_masuk',
+        'nomor_faktur',
+        'tanggal_faktur',
+        'nomor_surat_jalan',
+        'nama_ekspedisi',
+        'nomor_kendaraan',
         'material_request_id',
         'material_purchase_request_id',
         'gudang_id',
@@ -44,7 +50,12 @@ class MaterialPurchase extends Model
         'payment_master_bank_id',
         'subtotal_nominal',
         'diskon_transaksi',
+        'biaya_ekspedisi',
+        'upah_buruh_logistik',
+        'biaya_lain_perolehan',
+        'metode_alokasi_biaya',
         'total_nominal',
+        'total_landed_cost',
         'status',
         'keterangan',
         'created_by',
@@ -61,9 +72,14 @@ class MaterialPurchase extends Model
     protected $casts = [
         'tanggal' => 'date',
         'tanggal_barang_masuk' => 'date',
+        'tanggal_faktur' => 'date',
         'subtotal_nominal' => 'float',
         'diskon_transaksi' => 'float',
+        'biaya_ekspedisi' => 'float',
+        'upah_buruh_logistik' => 'float',
+        'biaya_lain_perolehan' => 'float',
         'total_nominal' => 'float',
+        'total_landed_cost' => 'float',
         'approved_at' => 'datetime',
         'fund_released_at' => 'datetime',
         'received_at' => 'datetime',
@@ -72,6 +88,16 @@ class MaterialPurchase extends Model
     public function details(): HasMany
     {
         return $this->hasMany(MaterialPurchaseDetail::class);
+    }
+
+    public function supplierInvoice(): HasOne
+    {
+        return $this->hasOne(MaterialSupplierInvoice::class);
+    }
+
+    public function supplierClaims(): HasMany
+    {
+        return $this->hasMany(MaterialSupplierClaim::class);
     }
 
     public function gudang(): BelongsTo

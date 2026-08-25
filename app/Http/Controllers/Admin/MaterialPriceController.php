@@ -19,6 +19,7 @@ class MaterialPriceController extends Controller
 
     public function index(Request $request): Response
     {
+        abort_unless($request->user()?->can('material-price.view') || $request->user()?->hasRole('super_admin'), 403);
         $search = trim((string) $request->query('search', ''));
         $tanggalBerlaku = $request->query('tanggal_berlaku') ?: now()->toDateString();
         $materials = BarangMaterial::query()->finalized()
@@ -62,11 +63,16 @@ class MaterialPriceController extends Controller
                 ];
             })->values(),
             'filters' => ['search' => $search, 'tanggal_berlaku' => $tanggalBerlaku],
+            'permissions' => [
+                'canCreate' => (bool) ($request->user()?->can('material-price.create') || $request->user()?->hasRole('super_admin')),
+                'canDelete' => (bool) ($request->user()?->can('material-price.delete') || $request->user()?->hasRole('super_admin')),
+            ],
         ]);
     }
 
     public function store(Request $request): RedirectResponse
     {
+        abort_unless($request->user()?->can('material-price.create') || $request->user()?->hasRole('super_admin'), 403);
         $payload = $this->payload($request);
 
         DB::transaction(function () use ($payload) {
@@ -85,6 +91,7 @@ class MaterialPriceController extends Controller
 
     public function sync(Request $request): RedirectResponse
     {
+        abort_unless($request->user()?->can('material-price.create') || $request->user()?->hasRole('super_admin'), 403);
         $validated = $request->validate([
             'tanggal_berlaku' => ['required', 'date'],
             'keterangan' => ['nullable', 'string'],
@@ -126,6 +133,7 @@ class MaterialPriceController extends Controller
 
     public function destroy(string $id): RedirectResponse
     {
+        abort_unless(auth()->user()?->can('material-price.delete') || auth()->user()?->hasRole('super_admin'), 403);
         $row = MaterialPriceHistory::query()->findOrFail($id);
         $this->abortIfLocked($row);
         $row->delete();

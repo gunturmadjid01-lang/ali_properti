@@ -18,28 +18,35 @@ use App\Models\CashSale;
 use App\Models\Costumer;
 use App\Models\CostumerFollowUp;
 use App\Models\CustomerCharge;
+use App\Models\CustomerDocumentChecklist;
 use App\Models\CustomerReceipt;
 use App\Models\CustomerRefund;
 use App\Models\DetailRumah;
 use App\Models\DeveloperKprApplication;
 use App\Models\DeveloperKprProduct;
 use App\Models\DocumentRequirementSet;
-use App\Models\EmployeeAdvance;
 use App\Models\DokumenCostumer;
 use App\Models\DokumenLegalitas;
 use App\Models\DokumenLegalitasRumah;
+use App\Models\EmployeeAdvance;
 use App\Models\FieldDefect;
 use App\Models\Gudang;
-use App\Models\InternalHandover;
 use App\Models\HousingReservation;
+use App\Models\InternalHandover;
+use App\Models\Journal;
 use App\Models\Kontraktor;
 use App\Models\KprSubmission;
+use App\Models\MarketingActionPlan;
 use App\Models\MarketingCampaign;
 use App\Models\MarketingCommission;
+use App\Models\MarketingEvaluation;
 use App\Models\MarketingLeadSource;
+use App\Models\MarketingReferenceOption;
+use App\Models\MarketingScoreSetting;
 use App\Models\MarketingSurveySchedule;
 use App\Models\MarketingTarget;
 use App\Models\MarketingTemplate;
+use App\Models\MarketingVisit;
 use App\Models\MasterBank;
 use App\Models\MaterialBrand;
 use App\Models\MaterialGroup;
@@ -49,16 +56,20 @@ use App\Models\MaterialPurchase;
 use App\Models\MaterialPurchaseRequest;
 use App\Models\MaterialRequest;
 use App\Models\MaterialReturn;
+use App\Models\MaterialStockOpname;
 use App\Models\MaterialType;
 use App\Models\MaterialUnit;
 use App\Models\MaterialUsage;
 use App\Models\OperationTransactionArchive;
-use App\Models\Perumahan;
-use App\Models\PettyCashFunding;
-use App\Models\PettyCashDeposit;
 use App\Models\PayrollBatch;
+use App\Models\Perumahan;
+use App\Models\PettyCashDeposit;
+use App\Models\PettyCashFunding;
 use App\Models\ProgressPembangunan;
 use App\Models\QualityInspection;
+use App\Models\QualityUpgradeAddendum;
+use App\Models\QualityUpgradeContract;
+use App\Models\QualityUpgradeHandover;
 use App\Models\SafetyReport;
 use App\Models\SalesProcessStep;
 use App\Models\SalesResolutionRequest;
@@ -69,11 +80,12 @@ use App\Models\SpkKontraktor;
 use App\Models\Spr;
 use App\Models\Supplier;
 use App\Models\TipePost;
+use App\Models\TransaksiKeuangan;
 use App\Models\UnitOwnership;
 use App\Models\User;
-use App\Models\WorkChangeRequest;
 use App\Models\WaterBillingPeriod;
 use App\Models\WaterPayment;
+use App\Models\WorkChangeRequest;
 use App\Services\BankCreditProductService;
 use App\Services\BankPartnershipService;
 use App\Services\MaterialGroupService;
@@ -122,7 +134,7 @@ class ApprovalResources
                 'model' => DokumenLegalitas::class,
             ],
             'dokumen-customer' => [
-                'label' => 'Master Dokumen Pelanggan',
+                'label' => 'Jenis Dokumen Pelanggan',
                 'model' => DokumenCostumer::class,
             ],
             'dokumen-legalitas-rumah' => [
@@ -132,6 +144,15 @@ class ApprovalResources
             'tipe-post' => [
                 'label' => 'Management Tipe Post',
                 'model' => TipePost::class,
+            ],
+            'financial-transaction' => [
+                'label' => 'Transaksi Kas & Bank Manual',
+                'model' => TransaksiKeuangan::class,
+            ],
+            'manual-journal' => [
+                'label' => 'Jurnal Umum Manual',
+                'model' => Journal::class,
+                'relation_keys' => ['details'],
             ],
             'progress' => [
                 'label' => 'Progress Pembangunan',
@@ -149,6 +170,9 @@ class ApprovalResources
                 'label' => 'Kontrol Kualitas',
                 'model' => QualityInspection::class,
             ],
+            'quality-upgrade' => ['label' => 'Kontrak Penambahan Mutu Bangunan', 'model' => QualityUpgradeContract::class, 'relation_keys' => ['items']],
+            'quality-upgrade-addendum' => ['label' => 'Addendum Kontrak Penambahan Mutu', 'model' => QualityUpgradeAddendum::class],
+            'quality-upgrade-handover' => ['label' => 'Serah Terima Penambahan Mutu', 'model' => QualityUpgradeHandover::class],
             'field-supervision' => [
                 'label' => 'Pengawasan Lapangan',
                 'model' => FieldDefect::class,
@@ -176,7 +200,7 @@ class ApprovalResources
             'bank-housing-partnership' => ['label' => 'Kerja Sama Bank dan Perumahan', 'model' => BankHousingPartnership::class],
             'cash-installment-scheme' => ['label' => 'Skema Cash Bertahap', 'model' => CashInstallmentScheme::class, 'relation_keys' => ['steps', 'housings']],
             'developer-kpr-product' => ['label' => 'Produk KPR Developer', 'model' => DeveloperKprProduct::class, 'relation_keys' => ['housings']],
-            'document-requirement-set' => ['label' => 'Paket Persyaratan Dokumen Pelanggan', 'model' => DocumentRequirementSet::class, 'relation_keys' => ['items']],
+            'document-requirement-set' => ['label' => 'Paket Persyaratan Kredit', 'model' => DocumentRequirementSet::class, 'relation_keys' => ['items']],
             'supplier' => [
                 'label' => 'Supplier',
                 'model' => Supplier::class,
@@ -206,10 +230,14 @@ class ApprovalResources
             'gudang' => ['label' => 'Gudang', 'model' => Gudang::class],
             'kontraktor' => ['label' => 'Kontraktor', 'model' => Kontraktor::class],
             'customer-follow-up' => ['label' => 'Follow Up Customer', 'model' => CostumerFollowUp::class],
+            'marketing-visit' => ['label' => 'Laporan Kunjungan Customer', 'model' => MarketingVisit::class],
+            'marketing-action-plan' => ['label' => 'Action Plan Marketing', 'model' => MarketingActionPlan::class],
+            'customer-document-checklist' => ['label' => 'Checklist Kelengkapan Berkas', 'model' => CustomerDocumentChecklist::class],
             'kpr-submission' => ['label' => 'Pengajuan KPR', 'model' => KprSubmission::class],
             'marketing-survey' => ['label' => 'Jadwal Survey Marketing', 'model' => MarketingSurveySchedule::class],
             'cash-sale' => ['label' => 'Transaksi Penjualan Cash', 'model' => CashSale::class],
             'material-opening-balance' => ['label' => 'Saldo Awal Material', 'model' => MaterialOpeningBalance::class],
+            'material-stock-opname' => ['label' => 'Stock Opname Material', 'model' => MaterialStockOpname::class, 'relation_keys' => ['details']],
             'material-price' => ['label' => 'Harga Material', 'model' => MaterialPriceHistory::class],
             'material-purchase-request' => ['label' => 'Permintaan Pembelian Material', 'model' => MaterialPurchaseRequest::class],
             'material-return' => ['label' => 'Pengembalian Material', 'model' => MaterialReturn::class],
@@ -230,6 +258,9 @@ class ApprovalResources
             'marketing-campaign' => ['label' => 'Marketing Campaign', 'model' => MarketingCampaign::class],
             'marketing-template' => ['label' => 'Template Marketing', 'model' => MarketingTemplate::class],
             'marketing-target' => ['label' => 'Target Marketing', 'model' => MarketingTarget::class],
+            'marketing-evaluation' => ['label' => 'Evaluasi Kinerja Marketing', 'model' => MarketingEvaluation::class],
+            'marketing-score-setting' => ['label' => 'Konfigurasi Bobot Kinerja Marketing', 'model' => MarketingScoreSetting::class],
+            'marketing-reference-option' => ['label' => 'Master Pilihan Marketing', 'model' => MarketingReferenceOption::class],
             'marketing-commission' => ['label' => 'Komisi Marketing', 'model' => MarketingCommission::class],
             'field-defect' => ['label' => 'Lapangan - Defect', 'model' => FieldDefect::class],
             'field-work-change' => ['label' => 'Lapangan - Perubahan Pekerjaan', 'model' => WorkChangeRequest::class],
@@ -266,9 +297,9 @@ class ApprovalResources
         return [
             'management' => ['label' => 'Manajemen & Akses', 'modules' => ['cabang-perusahaan', 'user', 'role-permission']],
             'property' => ['label' => 'Properti & Legalitas', 'modules' => ['perumahan', 'detail-rumah', 'dokumen-legalitas', 'dokumen-legalitas-rumah', 'unit-ownership', 'water-billing-period']],
-            'marketing' => ['label' => 'Marketing & Pelanggan', 'modules' => ['customer', 'customer-follow-up', 'marketing-lead-source', 'marketing-campaign', 'marketing-template', 'marketing-target', 'marketing-commission', 'marketing-survey', 'dokumen-customer', 'document-requirement-set']],
+            'marketing' => ['label' => 'Marketing & Pelanggan', 'modules' => ['customer', 'customer-follow-up', 'marketing-visit', 'marketing-action-plan', 'customer-document-checklist', 'marketing-lead-source', 'marketing-campaign', 'marketing-template', 'marketing-target', 'marketing-evaluation', 'marketing-score-setting', 'marketing-reference-option', 'marketing-commission', 'marketing-survey', 'dokumen-customer', 'document-requirement-set']],
             'sales' => ['label' => 'Penjualan & Pembiayaan', 'modules' => ['housing-reservation', 'spr', 'cash-sale', 'kpr-submission', 'cash-installment-scheme', 'cash-installment-contract', 'developer-kpr-product', 'developer-kpr-contract', 'bank-credit-master', 'master-bank', 'bank-branch', 'bank-credit-product', 'bank-housing-partnership', 'bank-kpr-financing', 'bank-kpr-disbursement', 'sales-process-step', 'sales-resolution-request']],
-            'finance' => ['label' => 'Keuangan', 'modules' => ['tipe-post', 'customer-receipt', 'customer-refund', 'customer-charge', 'customer-charge-reversal', 'water-payment', 'petty-cash-funding', 'petty-cash-deposit']],
+            'finance' => ['label' => 'Keuangan', 'modules' => ['tipe-post', 'financial-transaction', 'manual-journal', 'quality-upgrade', 'quality-upgrade-addendum', 'quality-upgrade-handover', 'customer-receipt', 'customer-refund', 'customer-charge', 'customer-charge-reversal', 'water-payment', 'petty-cash-funding', 'petty-cash-deposit']],
             'materials' => ['label' => 'Material & Logistik', 'modules' => ['master-material', 'material-type', 'material-brand', 'material-unit', 'material-group', 'supplier', 'gudang', 'material-request', 'material-purchase-request', 'material-purchase', 'material-opening-balance', 'material-price', 'material-return', 'material-usage']],
             'project' => ['label' => 'Proyek & Lapangan', 'modules' => ['progress', 'site-schedule', 'site-report', 'quality-inspection', 'field-supervision', 'field-defect', 'field-work-change', 'field-manpower', 'field-safety', 'field-handover', 'spk-kontraktor', 'kontraktor']],
             'assets' => ['label' => 'Aset & Alat Berat', 'modules' => ['inventory-loans', 'inventory-receipts', 'inventory-returns', 'inventory-transfers', 'inventory-damages', 'inventory-losses', 'inventory-stock-opname', 'heavy-replacements', 'heavy-usage', 'heavy-maintenance', 'heavy-damages', 'heavy-fuel']],

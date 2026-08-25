@@ -109,6 +109,11 @@ class DetailRumah extends Model
         return $this->hasMany(MaterialRequest::class);
     }
 
+    public function qualityUpgradeContracts(): HasMany
+    {
+        return $this->hasMany(QualityUpgradeContract::class);
+    }
+
     public function sprs(): HasMany
     {
         return $this->hasMany(Spr::class);

@@ -116,5 +116,7 @@ export default function Form({ title, actionUrl, method, housing, row }) {
     );
 }
 Form.layout = (page) => (
-    <AdminLayout title={page.props.title}>{page}</AdminLayout>
+    <AdminLayout title={page?.props?.title ?? "Form Periode Tagihan Air"}>
+        {page}
+    </AdminLayout>
 );

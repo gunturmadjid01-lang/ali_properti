@@ -438,7 +438,7 @@ function Replace({ row, close, baseUrl, setResponse }) {
 }
 
 Index.layout = (page) => (
-    <AdminLayout title={page?.props?.title ?? "Repositori Dokumen Pelanggan"}>
+    <AdminLayout title={page?.props?.title ?? "Berkas Pelanggan"}>
         {page}
     </AdminLayout>
 );

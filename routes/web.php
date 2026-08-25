@@ -1,9 +1,13 @@
 <?php
 
 use App\Http\Controllers\Admin\ActivePerumahanController;
+use App\Http\Controllers\Admin\AdminSalesLeadIntakeController;
+use App\Http\Controllers\Admin\AdminSalesWorkspaceController;
 use App\Http\Controllers\Admin\Approval\ApprovalRequestController;
 use App\Http\Controllers\Admin\Approval\ApprovalSettingController;
 use App\Http\Controllers\Admin\AreaController;
+use App\Http\Controllers\Admin\AttendanceAdminController;
+use App\Http\Controllers\Admin\AttendanceSettingController;
 use App\Http\Controllers\Admin\Bank\BankBranchController;
 use App\Http\Controllers\Admin\Bank\BankCreditMasterController;
 use App\Http\Controllers\Admin\Bank\BankCreditProductController;
@@ -14,18 +18,17 @@ use App\Http\Controllers\Admin\BusinessOptionController;
 use App\Http\Controllers\Admin\ChatController;
 use App\Http\Controllers\Admin\ConstructionProgressReportController;
 use App\Http\Controllers\Admin\CustomerChargeController;
-use App\Http\Controllers\Admin\CustomerRefundController;
 use App\Http\Controllers\Admin\CustomerDocumentRepositoryController;
 use App\Http\Controllers\Admin\CustomerReceivableController;
+use App\Http\Controllers\Admin\CustomerRefundController;
 use App\Http\Controllers\Admin\DashboardController;
-use App\Http\Controllers\Admin\AttendanceAdminController;
-use App\Http\Controllers\Admin\AttendanceSettingController;
 use App\Http\Controllers\Admin\DocumentRequirementSetController;
 use App\Http\Controllers\Admin\DocumentTemplateController;
+use App\Http\Controllers\Admin\EmployeeAdvanceController;
 use App\Http\Controllers\Admin\EmployeeSalaryController;
 use App\Http\Controllers\Admin\EmployeeSalaryMasterController;
-use App\Http\Controllers\Admin\EmployeeAdvanceController;
 use App\Http\Controllers\Admin\FieldSupervisionController;
+use App\Http\Controllers\Admin\FieldWorkspaceController;
 use App\Http\Controllers\Admin\FinanceController;
 use App\Http\Controllers\Admin\GudangController;
 use App\Http\Controllers\Admin\HeavyEquipmentController;
@@ -38,6 +41,7 @@ use App\Http\Controllers\Admin\Management\CabangPerusahaan\CabangPerusahaanContr
 use App\Http\Controllers\Admin\Management\DokumenCostumer\DokumenCostumerController as AdminDokumenCostumerController;
 use App\Http\Controllers\Admin\Management\DokumenLegalitas\DokumenLegalitasController as AdminDokumenLegalitasController;
 use App\Http\Controllers\Admin\Management\DokumenLegalitasRumah\DokumenLegalitasRumahController as AdminDokumenLegalitasRumahController;
+use App\Http\Controllers\Admin\Management\Employee\EmployeeController as AdminEmployeeController;
 use App\Http\Controllers\Admin\Management\MasterBank\MasterBankController as AdminMasterBankController;
 use App\Http\Controllers\Admin\Management\Overview\ManagementOverviewController as AdminManagementOverviewController;
 use App\Http\Controllers\Admin\Management\Perumahan\PerumahanController as AdminPerumahanController;
@@ -46,14 +50,20 @@ use App\Http\Controllers\Admin\Management\TipePost\TipePostController as AdminTi
 use App\Http\Controllers\Admin\Management\User\UserController as AdminUserController;
 use App\Http\Controllers\Admin\Marketing\CashSaleController as AdminCashSaleController;
 use App\Http\Controllers\Admin\Marketing\CostumerController as AdminCostumerController;
+use App\Http\Controllers\Admin\Marketing\CrmWorkspaceController as AdminCrmWorkspaceController;
+use App\Http\Controllers\Admin\Marketing\CommunicationController;
+use App\Http\Controllers\Admin\Marketing\PropertyWorkspaceController;
 use App\Http\Controllers\Admin\Marketing\FollowUpController as AdminFollowUpController;
-use App\Http\Controllers\Admin\Marketing\LeadReportController as AdminLeadReportController;
-use App\Http\Controllers\Admin\Marketing\LeadSourceController as AdminLeadSourceController;
-use App\Http\Controllers\Admin\Marketing\MarketingController as AdminMarketingController;
-use App\Http\Controllers\Admin\Marketing\MarketingOperationsController as AdminMarketingOperationsController;
 use App\Http\Controllers\Admin\Marketing\HousingReservationController;
+use App\Http\Controllers\Admin\Marketing\LeadSourceController as AdminLeadSourceController;
+use App\Http\Controllers\Admin\Marketing\MarketingCalendarController;
+use App\Http\Controllers\Admin\Marketing\MarketingController as AdminMarketingController;
+use App\Http\Controllers\Admin\Marketing\MarketingEvaluationController;
+use App\Http\Controllers\Admin\Marketing\MarketingLeadController;
+use App\Http\Controllers\Admin\Marketing\MarketingOperationsController as AdminMarketingOperationsController;
+use App\Http\Controllers\Admin\Marketing\MarketingReferenceController;
+use App\Http\Controllers\Admin\Marketing\MarketingReportController;
 use App\Http\Controllers\Admin\Marketing\MarketingToolsController as AdminMarketingToolsController;
-use App\Http\Controllers\Admin\Marketing\PipelineReportController as AdminPipelineReportController;
 use App\Http\Controllers\Admin\Marketing\SprController as AdminSprController;
 use App\Http\Controllers\Admin\Marketing\SurveyScheduleController as AdminSurveyScheduleController;
 use App\Http\Controllers\Admin\MasterMaterialController;
@@ -75,6 +85,9 @@ use App\Http\Controllers\Admin\PrintTemplateController;
 use App\Http\Controllers\Admin\ProfileController as AdminProfileController;
 use App\Http\Controllers\Admin\ProgressPembangunanController;
 use App\Http\Controllers\Admin\QualityInspectionController;
+use App\Http\Controllers\Admin\QualityUpgradeAddendumController;
+use App\Http\Controllers\Admin\QualityUpgradeContractController;
+use App\Http\Controllers\Admin\QualityUpgradeFieldController;
 use App\Http\Controllers\Admin\ReportCenterController;
 use App\Http\Controllers\Admin\SalesProcessController;
 use App\Http\Controllers\Admin\SalesResolutionController;
@@ -85,20 +98,18 @@ use App\Http\Controllers\Admin\SpkKontraktorController;
 use App\Http\Controllers\Admin\SpkTemplateController as AdminSpkTemplateController;
 use App\Http\Controllers\Admin\StokMaterialController;
 use App\Http\Controllers\Admin\SupplierController;
-use App\Http\Controllers\Admin\TukangController;
-use App\Http\Controllers\Admin\TukangGajiController;
 use App\Http\Controllers\Admin\UnitOwnershipController;
 use App\Http\Controllers\Admin\UnitRumahController as AdminUnitRumahController;
 use App\Http\Controllers\Admin\WaterBillingController;
-use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\Auth\LoginController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/media/{path}', function (string $path) {
     abort_if(str_contains($path, '..'), 404);
 
-    $file = storage_path('app/public/' . $path);
+    $file = storage_path('app/public/'.$path);
 
     abort_unless(is_file($file), 404);
 
@@ -116,6 +127,12 @@ Route::middleware('guest')->group(function () {
 
 Route::post('/logout', [LoginController::class, 'destroy'])
     ->name('logout');
+
+Route::post('/api/sales/leads', [AdminSalesLeadIntakeController::class, 'webhook'])
+    ->middleware('throttle:60,1')->name('api.sales.leads.store');
+
+Route::post('/api/crm/komunikasi/webhook', [CommunicationController::class, 'webhook'])
+    ->middleware('throttle:120,1')->name('api.crm.communication.webhook');
 
 Route::get('/absensi/masuk', [AttendanceController::class, 'loginForm'])->name('attendance.login');
 Route::post('/absensi/check', [AttendanceController::class, 'login'])->middleware('throttle:6,1')->name('attendance.authenticate');
@@ -144,6 +161,37 @@ Route::get('/kontak', function () {
 })->name('contact');
 
 Route::prefix('admin')->middleware('auth')->group(function () {
+    Route::prefix('admin-sales')->name('admin.admin-sales.')->group(function () {
+        Route::get('/', [AdminSalesWorkspaceController::class, 'dashboard'])->name('dashboard');
+        Route::get('/monitoring', [AdminSalesWorkspaceController::class, 'monitoring'])->name('monitoring');
+        Route::get('/kelengkapan-customer', [AdminSalesWorkspaceController::class, 'customerReadiness'])->name('customer-readiness');
+        Route::get('/kalender-penjualan', [AdminSalesWorkspaceController::class, 'salesCalendar'])->name('sales-calendar');
+        Route::get('/leads', [AdminSalesWorkspaceController::class, 'leads'])->name('leads.index');
+        Route::get('/leads/create', [AdminSalesWorkspaceController::class, 'createLead'])->name('leads.create');
+        Route::get('/leads/import', [AdminSalesLeadIntakeController::class, 'importForm'])->name('leads.import');
+        Route::post('/leads/import', [AdminSalesLeadIntakeController::class, 'import'])->name('leads.import.store');
+        Route::get('/leads/import/template', [AdminSalesLeadIntakeController::class, 'template'])->name('leads.import.template');
+        Route::get('/leads/duplicates', [AdminSalesLeadIntakeController::class, 'duplicates'])->name('leads.duplicates');
+        Route::post('/leads/intake/{row}/resolve', [AdminSalesLeadIntakeController::class, 'resolve'])->name('leads.intake.resolve');
+        Route::get('/leads/export', [AdminSalesLeadIntakeController::class, 'export'])->name('leads.export');
+        Route::get('/laporan', [AdminSalesLeadIntakeController::class, 'report'])->name('reports.index');
+        Route::post('/leads', [AdminSalesWorkspaceController::class, 'storeLead'])->name('leads.store');
+        Route::get('/leads/{lead}', [AdminSalesWorkspaceController::class, 'showLead'])->name('leads.show');
+        Route::post('/leads/{lead}/assign', [AdminSalesWorkspaceController::class, 'assignLead'])->name('leads.assign');
+        Route::post('/leads/{lead}/merge', [AdminSalesWorkspaceController::class, 'mergeLead'])->name('leads.merge');
+        Route::post('/leads/{lead}/recycle', [AdminSalesWorkspaceController::class, 'recycleLead'])->name('leads.recycle');
+        Route::post('/assignments/{assignment}/respond', [AdminSalesWorkspaceController::class, 'respondAssignment'])->name('assignments.respond');
+        Route::get('/assignments', [AdminSalesWorkspaceController::class, 'assignments'])->name('assignments.index');
+        Route::get('/tugas', [AdminSalesWorkspaceController::class, 'index'])->name('work-items.index');
+        Route::get('/tugas/create', [AdminSalesWorkspaceController::class, 'create'])->name('work-items.create');
+        Route::post('/tugas', [AdminSalesWorkspaceController::class, 'store'])->name('work-items.store');
+        Route::get('/tugas/{workItem}', [AdminSalesWorkspaceController::class, 'show'])->name('work-items.show');
+        Route::post('/tugas/{workItem}/status', [AdminSalesWorkspaceController::class, 'updateStatus'])->name('work-items.status');
+        Route::get('/lead/{lead}/verify', [AdminSalesWorkspaceController::class, 'verificationForm'])->name('lead.verify.form');
+        Route::post('/lead/{lead}/verify', [AdminSalesWorkspaceController::class, 'verifyLead'])->name('lead.verify');
+        Route::get('/review/{type}/{id}', [AdminSalesWorkspaceController::class, 'reviewForm'])->whereIn('type', ['follow-up', 'visit'])->whereNumber('id')->name('review.form');
+        Route::post('/review/{type}/{id}', [AdminSalesWorkspaceController::class, 'review'])->whereIn('type', ['follow-up', 'visit'])->whereNumber('id')->name('review');
+    });
     Route::get('/absensi-pegawai', [AttendanceAdminController::class, 'index'])->name('admin.attendance.index');
     Route::get('/absensi-pegawai/{attendance}', [AttendanceAdminController::class, 'show'])->name('admin.attendance.show');
     Route::get('/pengaturan-absensi', [AttendanceSettingController::class, 'index'])->name('admin.attendance-settings.index');
@@ -359,6 +407,8 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::get('/stock-opname', [MaterialStockOpnameController::class, 'index'])->name('admin.material-stock-opname.index');
     Route::get('/stock-opname/create', [MaterialStockOpnameController::class, 'create'])->name('admin.material-stock-opname.create');
     Route::post('/stock-opname', [MaterialStockOpnameController::class, 'store'])->name('admin.material-stock-opname.store');
+    Route::post('/stock-opname/{id}/lock', [MaterialStockOpnameController::class, 'lock'])->name('admin.material-stock-opname.lock');
+    Route::post('/stock-opname/{id}/unlock', [MaterialStockOpnameController::class, 'unlock'])->name('admin.material-stock-opname.unlock');
     Route::get('/logistik', [TransaksiLogistikController::class, 'index'])->name('admin.logistik.index');
     Route::get('/kontraktor', [KontraktorController::class, 'index'])->name('admin.kontraktor.index');
     Route::post('/kontraktor', [KontraktorController::class, 'store'])->name('admin.kontraktor.store');
@@ -366,15 +416,6 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::delete('/kontraktor/{id}', [KontraktorController::class, 'destroy'])->name('admin.kontraktor.destroy');
     Route::post('/kontraktor/{id}/lock', [KontraktorController::class, 'lock'])->name('admin.kontraktor.lock');
     Route::post('/kontraktor/{id}/unlock', [KontraktorController::class, 'unlock'])->name('admin.kontraktor.unlock');
-    Route::get('/tukang', [TukangController::class, 'index'])->name('admin.tukang.index');
-    Route::post('/tukang', [TukangController::class, 'store'])->name('admin.tukang.store');
-    Route::put('/tukang/{tukang}', [TukangController::class, 'update'])->name('admin.tukang.update');
-    Route::delete('/tukang/{tukang}', [TukangController::class, 'destroy'])->name('admin.tukang.destroy');
-    Route::get('/tukang/{tukang}/gaji', [TukangGajiController::class, 'index'])->name('admin.tukang.gaji.index');
-    Route::post('/tukang/{tukang}/gaji', [TukangGajiController::class, 'store'])->name('admin.tukang.gaji.store');
-    Route::put('/tukang/{tukang}/gaji/{gaji}', [TukangGajiController::class, 'update'])->name('admin.tukang.gaji.update');
-    Route::post('/tukang/{tukang}/gaji/{gaji}/aktifkan', [TukangGajiController::class, 'activate'])->name('admin.tukang.gaji.activate');
-    Route::delete('/tukang/{tukang}/gaji/{gaji}', [TukangGajiController::class, 'destroy'])->name('admin.tukang.gaji.destroy');
     Route::get('/spk-kontraktor', [SpkKontraktorController::class, 'index'])->name('admin.spk-kontraktor.index');
     Route::get('/spk-kontraktor/approval', [SpkKontraktorController::class, 'approvalIndex'])->name('admin.spk-kontraktor.approval.index');
     Route::get('/spk-kontraktor/pencairan', [SpkKontraktorController::class, 'disbursementIndex'])->name('admin.spk-kontraktor.disbursement.index');
@@ -425,6 +466,8 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::delete('/pemakaian-material/{id}', [MaterialUsageController::class, 'destroy'])->name('admin.material-usage.destroy');
     Route::post('/pemakaian-material/{id}/lock', [MaterialUsageController::class, 'lock'])->name('admin.material-usage.lock');
     Route::post('/pemakaian-material/{id}/unlock', [MaterialUsageController::class, 'unlock'])->name('admin.material-usage.unlock');
+    Route::post('/pemakaian-material/{id}/approve', [MaterialUsageController::class, 'approve'])->name('admin.material-usage.approve');
+    Route::post('/pemakaian-material/{id}/reject', [MaterialUsageController::class, 'reject'])->name('admin.material-usage.reject');
     Route::get('/sisa-material-lokasi', [SiteMaterialStockController::class, 'index'])->name('admin.site-material-stock.index');
     Route::get('/pengembalian-material', [MaterialReturnController::class, 'index'])->name('admin.material-return.index');
     Route::post('/pengembalian-material', [MaterialReturnController::class, 'store'])->name('admin.material-return.store');
@@ -440,6 +483,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::put('/permintaan-barang/{id}', [MaterialRequestController::class, 'update'])->name('admin.material-request.update');
     Route::delete('/permintaan-barang/{id}', [MaterialRequestController::class, 'destroy'])->name('admin.material-request.destroy');
     Route::post('/permintaan-barang/{id}/approve', [MaterialRequestController::class, 'approve'])->name('admin.material-request.approve');
+    Route::post('/permintaan-barang/{id}/reject', [MaterialRequestController::class, 'reject'])->name('admin.material-request.reject');
     Route::post('/permintaan-barang/{id}/approve-owner', [MaterialRequestController::class, 'approveOwner'])->name('admin.material-request.approve-owner');
     Route::post('/permintaan-barang/{id}/issue', [MaterialRequestController::class, 'issue'])->name('admin.material-request.issue');
     Route::post('/permintaan-barang/{id}/lock', [MaterialRequestController::class, 'lock'])->name('admin.material-request.lock');
@@ -460,6 +504,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::put('/laporan-lapangan/{id}', [SiteReportController::class, 'update'])->name('admin.site-report.update');
     Route::delete('/laporan-lapangan/{id}', [SiteReportController::class, 'destroy'])->name('admin.site-report.destroy');
     Route::post('/laporan-lapangan/{id}/approve', [SiteReportController::class, 'approve'])->name('admin.site-report.approve');
+    Route::post('/laporan-lapangan/{id}/reject', [SiteReportController::class, 'reject'])->name('admin.site-report.reject');
     Route::post('/laporan-lapangan/{id}/lock', [SiteReportController::class, 'lock'])->name('admin.site-report.lock');
     Route::post('/laporan-lapangan/{id}/unlock', [SiteReportController::class, 'unlock'])->name('admin.site-report.unlock');
     Route::get('/kontrol-kualitas', [QualityInspectionController::class, 'index'])->name('admin.quality-inspection.index');
@@ -469,6 +514,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::put('/kontrol-kualitas/{id}', [QualityInspectionController::class, 'update'])->name('admin.quality-inspection.update');
     Route::delete('/kontrol-kualitas/{id}', [QualityInspectionController::class, 'destroy'])->name('admin.quality-inspection.destroy');
     Route::post('/kontrol-kualitas/{id}/approve', [QualityInspectionController::class, 'approve'])->name('admin.quality-inspection.approve');
+    Route::post('/kontrol-kualitas/{id}/reject', [QualityInspectionController::class, 'reject'])->name('admin.quality-inspection.reject');
     Route::post('/kontrol-kualitas/{id}/lock', [QualityInspectionController::class, 'lock'])->name('admin.quality-inspection.lock');
     Route::post('/kontrol-kualitas/{id}/unlock', [QualityInspectionController::class, 'unlock'])->name('admin.quality-inspection.unlock');
     Route::get('/jadwal-lapangan', [SiteScheduleController::class, 'index'])->name('admin.site-schedule.index');
@@ -480,11 +526,13 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::delete('/jadwal-lapangan/{id}', [SiteScheduleController::class, 'destroy'])->name('admin.site-schedule.destroy');
     Route::post('/jadwal-lapangan/{id}/lock', [SiteScheduleController::class, 'lock'])->name('admin.site-schedule.lock');
     Route::post('/jadwal-lapangan/{id}/unlock', [SiteScheduleController::class, 'unlock'])->name('admin.site-schedule.unlock');
+    Route::get('/pengawasan', FieldWorkspaceController::class)->name('admin.field-workspace.index');
     Route::get('/pengawasan/{section}', [FieldSupervisionController::class, 'show'])->name('admin.field-supervision.show');
     Route::post('/pengawasan/{section}', [FieldSupervisionController::class, 'store'])->name('admin.field-supervision.store');
     Route::put('/pengawasan/{section}/{id}', [FieldSupervisionController::class, 'update'])->name('admin.field-supervision.update');
     Route::delete('/pengawasan/{section}/{id}', [FieldSupervisionController::class, 'destroy'])->name('admin.field-supervision.destroy');
     Route::post('/pengawasan/{section}/{id}/approve', [FieldSupervisionController::class, 'approve'])->name('admin.field-supervision.approve');
+    Route::post('/pengawasan/{section}/{id}/reject', [FieldSupervisionController::class, 'reject'])->name('admin.field-supervision.reject');
     Route::post('/pengawasan/{section}/{id}/lock', [FieldSupervisionController::class, 'lock'])->name('admin.field-supervision.lock');
     Route::post('/pengawasan/{section}/{id}/unlock', [FieldSupervisionController::class, 'unlock'])->name('admin.field-supervision.unlock');
     Route::get('/pembelian-material', [MaterialPurchaseController::class, 'index'])->name('admin.material-purchase.index');
@@ -500,6 +548,7 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('/pembelian-material/{id}/lock', [MaterialPurchaseController::class, 'lock'])->name('admin.material-purchase.lock');
     Route::post('/pembelian-material/{id}/unlock', [MaterialPurchaseController::class, 'unlock'])->name('admin.material-purchase.unlock');
     Route::get('/pemeriksaan-barang-masuk', [MaterialPurchaseController::class, 'inspectionIndex'])->name('admin.material-purchase.inspection.index');
+    Route::get('/pemeriksaan-barang-masuk/{id}', [MaterialPurchaseController::class, 'inspectionShow'])->name('admin.material-purchase.inspection.show');
     Route::post('/pemeriksaan-barang-masuk/{id}/item/{detailId}', [MaterialPurchaseController::class, 'inspectItem'])->name('admin.material-purchase.inspection.item');
     Route::get('/permintaan-pembelian', [MaterialPurchaseRequestController::class, 'index'])->name('admin.material-purchase-request.index');
     Route::get('/permintaan-pembelian/create', [MaterialPurchaseRequestController::class, 'create'])->name('admin.material-purchase-request.create');
@@ -512,11 +561,38 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('/permintaan-pembelian/{id}/lock', [MaterialPurchaseRequestController::class, 'lock'])->name('admin.material-purchase-request.lock');
     Route::post('/permintaan-pembelian/{id}/unlock', [MaterialPurchaseRequestController::class, 'unlock'])->name('admin.material-purchase-request.unlock');
     Route::get('/rekening-bank', [BankAccountLedgerController::class, 'index'])->name('admin.bank-account-ledger.index');
-    Route::get('/keuangan/transaksi-kas-bank', fn() => redirect('/admin/keuangan/pemasukan'));
+    Route::get('/keuangan/transaksi-kas-bank', fn () => redirect('/admin/keuangan/pemasukan'));
     Route::get('/keuangan/piutang', [CustomerReceivableController::class, 'receivables'])->name('admin.receivables.index');
     Route::get('/keuangan/monitoring-jatuh-tempo', [CustomerReceivableController::class, 'dueMonitor'])->name('admin.receivables.due-monitor');
     Route::put('/keuangan/monitoring-jatuh-tempo/pengaturan', [CustomerReceivableController::class, 'updateDueSetting'])->name('admin.receivables.due-setting');
     Route::get('/keuangan/piutang/{schedule}/invoice', [CustomerReceivableController::class, 'invoice'])->name('admin.receivables.invoice');
+    Route::get('/keuangan/penambahan-mutu', [QualityUpgradeContractController::class, 'index'])->name('admin.quality-upgrades.index');
+    Route::get('/keuangan/penambahan-mutu/create', [QualityUpgradeContractController::class, 'create'])->name('admin.quality-upgrades.create');
+    Route::post('/keuangan/penambahan-mutu', [QualityUpgradeContractController::class, 'store'])->name('admin.quality-upgrades.store');
+    Route::get('/keuangan/penambahan-mutu/{qualityUpgrade}/edit', [QualityUpgradeContractController::class, 'edit'])->name('admin.quality-upgrades.edit');
+    Route::get('/keuangan/penambahan-mutu/{qualityUpgrade}', [QualityUpgradeContractController::class, 'show'])->name('admin.quality-upgrades.show');
+    Route::put('/keuangan/penambahan-mutu/{qualityUpgrade}', [QualityUpgradeContractController::class, 'update'])->name('admin.quality-upgrades.update');
+    Route::delete('/keuangan/penambahan-mutu/{qualityUpgrade}', [QualityUpgradeContractController::class, 'destroy'])->name('admin.quality-upgrades.destroy');
+    Route::post('/keuangan/penambahan-mutu/{id}/lock', [QualityUpgradeContractController::class, 'lock'])->name('admin.quality-upgrades.lock');
+    Route::post('/keuangan/penambahan-mutu/{id}/unlock', [QualityUpgradeContractController::class, 'unlock'])->name('admin.quality-upgrades.unlock');
+    Route::post('/keuangan/penambahan-mutu/{qualityUpgrade}/review/{decision}', [QualityUpgradeContractController::class, 'review'])->whereIn('decision', ['approve', 'reject'])->name('admin.quality-upgrades.review');
+    Route::get('/keuangan/penambahan-mutu/{qualityUpgrade}/print', [QualityUpgradeContractController::class, 'print'])->name('admin.quality-upgrades.print');
+    Route::post('/keuangan/penambahan-mutu/{qualityUpgrade}/progress', [QualityUpgradeContractController::class, 'storeProgress'])->name('admin.quality-upgrades.progress.store');
+    Route::post('/keuangan/penambahan-mutu/{qualityUpgrade}/cancel', [QualityUpgradeContractController::class, 'cancel'])->name('admin.quality-upgrades.cancel');
+    Route::post('/keuangan/penambahan-mutu/{qualityUpgrade}/addenda', [QualityUpgradeAddendumController::class, 'store'])->name('admin.quality-upgrades.addenda.store');
+    Route::delete('/keuangan/penambahan-mutu/addenda/{addendum}', [QualityUpgradeAddendumController::class, 'destroy'])->name('admin.quality-upgrades.addenda.destroy');
+    Route::post('/keuangan/penambahan-mutu/addenda/{id}/lock', [QualityUpgradeAddendumController::class, 'lock'])->name('admin.quality-upgrades.addenda.lock');
+    Route::post('/keuangan/penambahan-mutu/addenda/{id}/unlock', [QualityUpgradeAddendumController::class, 'unlock'])->name('admin.quality-upgrades.addenda.unlock');
+    Route::post('/keuangan/penambahan-mutu/addenda/{addendum}/review/{decision}', [QualityUpgradeAddendumController::class, 'review'])->whereIn('decision', ['approve', 'reject'])->name('admin.quality-upgrades.addenda.review');
+    Route::get('/keuangan/penambahan-mutu/addenda/{addendum}/print', [QualityUpgradeAddendumController::class, 'print'])->name('admin.quality-upgrades.addenda.print');
+    Route::post('/keuangan/penambahan-mutu/{qualityUpgrade}/handover', [QualityUpgradeFieldController::class, 'saveHandover'])->name('admin.quality-upgrades.handover.save');
+    Route::post('/keuangan/penambahan-mutu/handover/{id}/lock', [QualityUpgradeFieldController::class, 'lock'])->name('admin.quality-upgrades.handover.lock');
+    Route::post('/keuangan/penambahan-mutu/handover/{id}/unlock', [QualityUpgradeFieldController::class, 'unlock'])->name('admin.quality-upgrades.handover.unlock');
+    Route::post('/keuangan/penambahan-mutu/handover/{handover}/review/{decision}', [QualityUpgradeFieldController::class, 'review'])->whereIn('decision', ['approve', 'reject'])->name('admin.quality-upgrades.handover.review');
+    Route::post('/keuangan/penambahan-mutu/{qualityUpgrade}/defects', [QualityUpgradeFieldController::class, 'storeDefect'])->name('admin.quality-upgrades.defects.store');
+    Route::post('/keuangan/penambahan-mutu/defects/{defect}/resolve', [QualityUpgradeFieldController::class, 'resolveDefect'])->name('admin.quality-upgrades.defects.resolve');
+    Route::delete('/keuangan/penambahan-mutu/defects/{defect}', [QualityUpgradeFieldController::class, 'destroyDefect'])->name('admin.quality-upgrades.defects.destroy');
+
     Route::get('/keuangan/penerimaan-customer', [CustomerReceivableController::class, 'receipts'])->name('admin.customer-receipts.index');
     Route::get('/keuangan/penerimaan-customer/create', [CustomerReceivableController::class, 'create'])->name('admin.customer-receipts.create');
     Route::post('/keuangan/penerimaan-customer', [CustomerReceivableController::class, 'store'])->name('admin.customer-receipts.store');
@@ -544,8 +620,15 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('/keuangan/tagihan-talangan-customer/{charge}/reversal', [CustomerChargeController::class, 'requestReversal'])->name('admin.customer-charges.reversal');
     Route::get('/keuangan/tagihan-talangan-customer/{charge}/preview', [CustomerChargeController::class, 'preview'])->name('admin.customer-charges.preview');
     Route::get('/keuangan/tagihan-talangan-customer/{charge}/bukti', [CustomerChargeController::class, 'proof'])->name('admin.customer-charges.proof');
+    Route::post('/keuangan/transaksi/{transaction}/lock', [FinanceController::class, 'lockTransaction'])->name('admin.finance.transaction.lock');
+    Route::post('/keuangan/transaksi/{transaction}/unlock', [FinanceController::class, 'unlockTransaction'])->name('admin.finance.transaction.unlock');
+    Route::get('/keuangan/{section}/export/{format}', [FinanceController::class, 'export'])
+        ->whereIn('format', ['pdf', 'excel'])
+        ->name('admin.finance.export');
     Route::get('/keuangan/{section}', [FinanceController::class, 'show'])->name('admin.finance.show');
     Route::post('/keuangan/jurnal-umum', [FinanceController::class, 'storeJournal'])->name('admin.finance.journal.store');
+    Route::post('/keuangan/jurnal-umum/{journal}/lock', [FinanceController::class, 'lockJournal'])->name('admin.finance.journal.lock');
+    Route::post('/keuangan/jurnal-umum/{journal}/unlock', [FinanceController::class, 'unlockJournal'])->name('admin.finance.journal.unlock');
     Route::post('/keuangan/transaksi-kas-bank', [FinanceController::class, 'storeTransaction'])->name('admin.finance.transaction.store');
     Route::post('/keuangan/pemasukan', [FinanceController::class, 'storeIncome'])->name('admin.finance.income.store');
     Route::post('/keuangan/pengeluaran', [FinanceController::class, 'storeExpense'])->name('admin.finance.expense.store');
@@ -577,12 +660,12 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::post('/{section}/records/{id}/unlock', [IntegratedSalesController::class, 'unlockProcess'])->name('admin.integrated-sales.unlock');
         Route::post('/{section}/records/{id}/review/{decision}', [IntegratedSalesController::class, 'reviewProcess'])->whereIn('decision', ['approve', 'reject'])->name('admin.integrated-sales.review');
     });
-    Route::get('/kpr', fn() => redirect()->route('admin.integrated-sales.index', 'bank-applications'))->name('admin.kpr.index');
+    Route::get('/kpr', fn () => redirect()->route('admin.integrated-sales.index', 'bank-applications'))->name('admin.kpr.index');
     Route::post('/kpr/{submission}/financing', [BankKprFinancialController::class, 'saveFinancing'])->name('admin.kpr.financing.save');
     Route::post('/kpr/financing/{financing}/lock', [BankKprFinancialController::class, 'lockFinancing'])->name('admin.kpr.financing.lock');
     Route::post('/kpr/{submission}/disbursements', [BankKprFinancialController::class, 'storeDisbursement'])->name('admin.kpr.disbursement.store');
     Route::post('/kpr/disbursements/{disbursement}/lock', [BankKprFinancialController::class, 'lockDisbursement'])->name('admin.kpr.disbursement.lock');
-    Route::get('/kpr/{id}', fn(string $id) => redirect()->route('admin.integrated-sales.show', ['bank-applications', $id]))->name('admin.kpr.show');
+    Route::get('/kpr/{id}', fn (string $id) => redirect()->route('admin.integrated-sales.show', ['bank-applications', $id]))->name('admin.kpr.show');
 
     Route::prefix('approval')->name('admin.approval.')->group(function () {
         Route::get('/', [ApprovalRequestController::class, 'index'])->name('requests.index');
@@ -634,17 +717,20 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::post('tipe-post/{id}/unlock', [AdminTipePostController::class, 'unlock'])->name('tipe-post.unlock');
         Route::post('user/{id}/lock', [AdminUserController::class, 'lock'])->name('user.lock');
         Route::post('user/{id}/unlock', [AdminUserController::class, 'unlock'])->name('user.unlock');
+        Route::post('employee/{id}/lock', [AdminEmployeeController::class, 'lock'])->name('employee.lock');
+        Route::post('employee/{id}/unlock', [AdminEmployeeController::class, 'unlock'])->name('employee.unlock');
         Route::post('role-permission/{id}/lock', [AdminRolePermissionController::class, 'lock'])->name('role-permission.lock');
         Route::post('role-permission/{id}/unlock', [AdminRolePermissionController::class, 'unlock'])->name('role-permission.unlock');
         Route::resource('cabang-perusahaan', AdminCabangPerusahaanController::class)->parameters(['cabang-perusahaan' => 'id'])->except(['show']);
         Route::resource('perumahan', AdminPerumahanController::class)->parameters(['perumahan' => 'id'])->except(['show']);
         Route::resource('master-bank', AdminMasterBankController::class)->parameters(['master-bank' => 'id'])->except(['show']);
-        Route::get('bank-kredit', fn() => redirect()->route('admin.bank-master.index'))->name('bank-kredit.index');
+        Route::get('bank-kredit', fn () => redirect()->route('admin.bank-master.index'))->name('bank-kredit.index');
         Route::resource('dokumen-legalitas', AdminDokumenLegalitasController::class)->parameters(['dokumen-legalitas' => 'id'])->except(['show']);
         Route::resource('dokumen-legalitas-rumah', AdminDokumenLegalitasRumahController::class)->parameters(['dokumen-legalitas-rumah' => 'id'])->except(['create', 'show', 'edit']);
         Route::resource('master-dokumen-customer', AdminDokumenCostumerController::class)->parameters(['master-dokumen-customer' => 'id'])->except(['show']);
         Route::resource('tipe-post', AdminTipePostController::class)->parameters(['tipe-post' => 'id'])->except(['show']);
         Route::resource('user', AdminUserController::class)->parameters(['user' => 'id'])->except(['show']);
+        Route::resource('employee', AdminEmployeeController::class)->parameters(['employee' => 'id'])->except(['show']);
         Route::resource('role-permission', AdminRolePermissionController::class)->parameters(['role-permission' => 'id'])->except(['create', 'show', 'edit']);
     });
 
@@ -654,6 +740,53 @@ Route::prefix('admin')->middleware('auth')->group(function () {
     Route::post('penanganan-penjualan-gagal/{resolution}/unlock', [SalesResolutionController::class, 'unlock'])->name('admin.sales-resolutions.unlock');
 
     Route::prefix('marketing')->name('admin.marketing.')->group(function () {
+        Route::get('komunikasi', [CommunicationController::class, 'index'])->name('communication.index');
+        Route::post('komunikasi/{thread}/kirim', [CommunicationController::class, 'send'])->name('communication.send');
+        Route::get('ruang-properti', [PropertyWorkspaceController::class, 'index'])->name('property-workspace.index');
+        Route::get('kalender-kegiatan', MarketingCalendarController::class)->name('calendar.index');
+        Route::get('reports/{type}', [MarketingReportController::class, 'show'])->whereIn('type', ['activities', 'follow-ups', 'visits', 'inactive-customers', 'pipeline', 'conversion', 'targets', 'cancellations', 'performance'])->name('reports.show');
+        Route::get('reports/{type}/export/{format}', [MarketingReportController::class, 'export'])->whereIn('type', ['activities', 'follow-ups', 'visits', 'inactive-customers', 'pipeline', 'conversion', 'targets', 'cancellations', 'performance'])->whereIn('format', ['csv', 'excel', 'pdf'])->name('reports.export');
+        Route::get('master-pilihan', [MarketingReferenceController::class, 'index'])->name('references.index');
+        Route::get('master-pilihan/create', [MarketingReferenceController::class, 'create'])->name('references.create');
+        Route::post('master-pilihan', [MarketingReferenceController::class, 'store'])->name('references.store');
+        Route::get('master-pilihan/{option}/edit', [MarketingReferenceController::class, 'edit'])->name('references.edit');
+        Route::put('master-pilihan/{option}', [MarketingReferenceController::class, 'update'])->name('references.update');
+        Route::delete('master-pilihan/{option}', [MarketingReferenceController::class, 'destroy'])->name('references.destroy');
+        Route::post('master-pilihan/{option}/lock', [MarketingReferenceController::class, 'lock'])->name('references.lock');
+        Route::post('master-pilihan/{option}/unlock', [MarketingReferenceController::class, 'unlock'])->name('references.unlock');
+        Route::post('master-pilihan/{option}/review/{decision}', [MarketingReferenceController::class, 'review'])->whereIn('decision', ['approve', 'reject'])->name('references.review');
+        Route::get('kunjungan/{id}/{phase}', [AdminCrmWorkspaceController::class, 'visitExecutionForm'])->whereNumber('id')->whereIn('phase', ['check-in', 'check-out'])->name('visit-execution.form');
+        Route::post('kunjungan/{id}/{phase}', [AdminCrmWorkspaceController::class, 'executeVisit'])->whereNumber('id')->whereIn('phase', ['check-in', 'check-out'])->name('visit-execution.store');
+        Route::get('kunjungan/{id}/{phase}/bukti', [AdminCrmWorkspaceController::class, 'visitEvidence'])->whereNumber('id')->whereIn('phase', ['check-in', 'check-out'])->name('visit-evidence');
+        Route::get('checklist-berkas/{id}/dokumen/{document}', [AdminCrmWorkspaceController::class, 'checklistDocument'])->whereNumber(['id', 'document'])->name('checklist-document');
+        Route::redirect('laporan-crm-owner', 'reports/performance')->name('crm.owner-report');
+        Route::redirect('laporan-crm-owner/export', 'reports/performance')->name('crm.owner-report.export');
+        Route::get('evaluasi-marketing', [MarketingEvaluationController::class, 'index'])->name('evaluations.index');
+        Route::get('evaluasi-marketing/create', [MarketingEvaluationController::class, 'create'])->name('evaluations.create');
+        Route::post('evaluasi-marketing', [MarketingEvaluationController::class, 'store'])->name('evaluations.store');
+        Route::get('evaluasi-marketing/pengaturan', [MarketingEvaluationController::class, 'settings'])->name('evaluations.settings');
+        Route::put('evaluasi-marketing/pengaturan/{setting}', [MarketingEvaluationController::class, 'updateSetting'])->name('evaluations.settings.update');
+        Route::post('evaluasi-marketing/pengaturan/{setting}/lock', [MarketingEvaluationController::class, 'lockSetting'])->name('evaluations.settings.lock');
+        Route::post('evaluasi-marketing/pengaturan/{setting}/unlock', [MarketingEvaluationController::class, 'unlockSetting'])->name('evaluations.settings.unlock');
+        Route::post('evaluasi-marketing/pengaturan/{setting}/review/{decision}', [MarketingEvaluationController::class, 'reviewSetting'])->whereIn('decision', ['approve', 'reject'])->name('evaluations.settings.review');
+        Route::get('evaluasi-marketing/{evaluation}', [MarketingEvaluationController::class, 'show'])->name('evaluations.show');
+        Route::get('evaluasi-marketing/{evaluation}/edit', [MarketingEvaluationController::class, 'edit'])->name('evaluations.edit');
+        Route::put('evaluasi-marketing/{evaluation}', [MarketingEvaluationController::class, 'update'])->name('evaluations.update');
+        Route::post('evaluasi-marketing/{evaluation}/lock', [MarketingEvaluationController::class, 'lock'])->name('evaluations.lock');
+        Route::post('evaluasi-marketing/{evaluation}/unlock', [MarketingEvaluationController::class, 'unlock'])->name('evaluations.unlock');
+        Route::post('evaluasi-marketing/{evaluation}/review/{decision}', [MarketingEvaluationController::class, 'review'])->whereIn('decision', ['approve', 'reject'])->name('evaluations.review');
+        Route::prefix('crm/{resource}')->whereIn('resource', ['visits', 'action-plans', 'document-checklists'])->name('crm.')->group(function () {
+            Route::get('/', [AdminCrmWorkspaceController::class, 'index'])->name('index');
+            Route::get('/create', [AdminCrmWorkspaceController::class, 'create'])->name('create');
+            Route::post('/', [AdminCrmWorkspaceController::class, 'store'])->name('store');
+            Route::get('/{id}', [AdminCrmWorkspaceController::class, 'show'])->whereNumber('id')->name('show');
+            Route::get('/{id}/edit', [AdminCrmWorkspaceController::class, 'edit'])->whereNumber('id')->name('edit');
+            Route::put('/{id}', [AdminCrmWorkspaceController::class, 'update'])->whereNumber('id')->name('update');
+            Route::delete('/{id}', [AdminCrmWorkspaceController::class, 'destroy'])->whereNumber('id')->name('destroy');
+            Route::post('/{id}/lock', [AdminCrmWorkspaceController::class, 'lock'])->whereNumber('id')->name('lock');
+            Route::post('/{id}/unlock', [AdminCrmWorkspaceController::class, 'unlock'])->whereNumber('id')->name('unlock');
+            Route::post('/{id}/review/{decision}', [AdminCrmWorkspaceController::class, 'review'])->whereNumber('id')->whereIn('decision', ['approve', 'reject'])->name('review');
+        });
         Route::get('reservasi-perumahan', [HousingReservationController::class, 'index'])->name('reservations.index');
         Route::get('reservasi-perumahan/create', [HousingReservationController::class, 'create'])->name('reservations.create');
         Route::post('reservasi-perumahan', [HousingReservationController::class, 'store'])->name('reservations.store');
@@ -669,8 +802,10 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::resource('sumber-lead', AdminLeadSourceController::class)->parameters(['sumber-lead' => 'id']);
         Route::post('sumber-lead/{id}/lock', [AdminLeadSourceController::class, 'lock'])->name('sumber-lead.lock');
         Route::post('sumber-lead/{id}/unlock', [AdminLeadSourceController::class, 'unlock'])->name('sumber-lead.unlock');
-        Route::get('laporan-lead', [AdminLeadReportController::class, 'index'])->name('laporan-lead.index');
-        Route::get('laporan-pipeline', [AdminPipelineReportController::class, 'index'])->name('laporan-pipeline.index');
+        Route::redirect('laporan-lead', 'reports/pipeline')->name('laporan-lead.index');
+        Route::redirect('laporan-pipeline', 'reports/pipeline')->name('laporan-pipeline.index');
+        Route::get('operasional/{section}/create', [AdminMarketingOperationsController::class, 'create'])->name('operasional.create');
+        Route::get('operasional/{section}/{id}/edit', [AdminMarketingOperationsController::class, 'edit'])->name('operasional.edit');
         Route::get('operasional/{section}', [AdminMarketingOperationsController::class, 'show'])->name('operasional.show');
         Route::post('operasional/{section}', [AdminMarketingOperationsController::class, 'store'])->name('operasional.store');
         Route::put('operasional/{section}/{id}', [AdminMarketingOperationsController::class, 'update'])->name('operasional.update');
@@ -683,11 +818,26 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::get('tools/{section}', [AdminMarketingToolsController::class, 'show'])->name('tools.show');
         Route::post('tools/distribusi-lead/assign', [AdminMarketingToolsController::class, 'assignLead'])->name('tools.distribusi-lead.assign');
         Route::get('transaksi-pembelian/cash', [AdminCashSaleController::class, 'index'])->name('transaksi-pembelian.cash.index');
+        Route::get('transaksi-pembelian/cash/create', [AdminCashSaleController::class, 'create'])->name('transaksi-pembelian.cash.create');
         Route::post('transaksi-pembelian/cash', [AdminCashSaleController::class, 'store'])->name('transaksi-pembelian.cash.store');
+        Route::get('transaksi-pembelian/cash/{id}/payments/create', [AdminCashSaleController::class, 'createPayment'])->name('transaksi-pembelian.cash.payment.create');
         Route::post('transaksi-pembelian/cash/{id}/payments', [AdminCashSaleController::class, 'storePayment'])->name('transaksi-pembelian.cash.payment.store');
+        Route::get('transaksi-pembelian/cash/{id}', [AdminCashSaleController::class, 'show'])->name('transaksi-pembelian.cash.show');
         Route::post('transaksi-pembelian/cash/{id}/handover', [AdminCashSaleController::class, 'handover'])->name('transaksi-pembelian.cash.handover');
         Route::post('transaksi-pembelian/cash/{id}/lock', [AdminCashSaleController::class, 'lock'])->name('transaksi-pembelian.cash.lock');
         Route::post('transaksi-pembelian/cash/{id}/unlock', [AdminCashSaleController::class, 'unlock'])->name('transaksi-pembelian.cash.unlock');
+        Route::get('leads', [MarketingLeadController::class, 'index'])->name('leads.index');
+        Route::get('leads/check-duplicates', [MarketingLeadController::class, 'checkDuplicates'])->name('leads.check-duplicates');
+        Route::get('leads/create', [MarketingLeadController::class, 'create'])->name('leads.create');
+        Route::post('leads', [MarketingLeadController::class, 'store'])->name('leads.store');
+        Route::get('leads/{lead}', [MarketingLeadController::class, 'show'])->name('leads.show');
+        Route::get('leads/{lead}/edit', [MarketingLeadController::class, 'edit'])->name('leads.edit');
+        Route::put('leads/{lead}', [MarketingLeadController::class, 'update'])->name('leads.update');
+        Route::post('leads/{lead}/stage', [MarketingLeadController::class, 'stage'])->name('leads.stage');
+        Route::post('leads/{lead}/consent', [MarketingLeadController::class, 'updateConsent'])->name('leads.consent');
+        Route::post('leads/{lead}/convert', [MarketingLeadController::class, 'convert'])->name('leads.convert');
+        Route::post('aktivitas-lapangan/{visit}/contacts', [MarketingLeadController::class, 'storeContact'])->name('field-activities.contacts.store');
+        Route::post('aktivitas-lapangan/contacts/{contact}/convert', [MarketingLeadController::class, 'contactToLead'])->name('field-activities.contacts.convert');
         Route::get('calon-konsumen', [AdminCostumerController::class, 'index'])->name('calon-konsumen.index');
         Route::get('calon-konsumen/create', [AdminCostumerController::class, 'create'])->name('calon-konsumen.create');
         Route::get('calon-konsumen/{id}/edit', [AdminCostumerController::class, 'edit'])->name('calon-konsumen.edit');
@@ -700,13 +850,15 @@ Route::prefix('admin')->middleware('auth')->group(function () {
         Route::get('jejak-follow-up', [AdminFollowUpController::class, 'index'])->name('jejak-follow-up.index');
         Route::get('jejak-follow-up/create', [AdminFollowUpController::class, 'create'])->name('jejak-follow-up.create');
         Route::get('jejak-follow-up/{id}', [AdminFollowUpController::class, 'show'])->name('jejak-follow-up.show');
+        Route::get('jejak-follow-up/{id}/bukti', [AdminFollowUpController::class, 'evidence'])->name('jejak-follow-up.evidence');
         Route::get('jejak-follow-up/{id}/edit', [AdminFollowUpController::class, 'edit'])->name('jejak-follow-up.edit');
         Route::post('jejak-follow-up', [AdminFollowUpController::class, 'store'])->name('jejak-follow-up.store');
         Route::put('jejak-follow-up/{id}', [AdminFollowUpController::class, 'update'])->name('jejak-follow-up.update');
         Route::delete('jejak-follow-up/{id}', [AdminFollowUpController::class, 'destroy'])->name('jejak-follow-up.destroy');
         Route::post('jejak-follow-up/{id}/lock', [AdminFollowUpController::class, 'lock'])->name('jejak-follow-up.lock');
         Route::post('jejak-follow-up/{id}/unlock', [AdminFollowUpController::class, 'unlock'])->name('jejak-follow-up.unlock');
-        Route::resource('jadwal-survey', AdminSurveyScheduleController::class)->parameters(['jadwal-survey' => 'id'])->except(['create', 'show', 'edit']);
+        Route::get('jadwal-survey/{id}/hasil', [AdminSurveyScheduleController::class, 'result'])->name('jadwal-survey.result');
+        Route::resource('jadwal-survey', AdminSurveyScheduleController::class)->parameters(['jadwal-survey' => 'id'])->except(['show']);
         Route::put('jadwal-survey/{id}/status', [AdminSurveyScheduleController::class, 'updateStatus'])->name('jadwal-survey.status.update');
         Route::post('jadwal-survey/{id}/lock', [AdminSurveyScheduleController::class, 'lock'])->name('jadwal-survey.lock');
         Route::post('jadwal-survey/{id}/unlock', [AdminSurveyScheduleController::class, 'unlock'])->name('jadwal-survey.unlock');
